@@ -397,3 +397,168 @@ async def get_sector_exposure():
         "total_value": round(total_value, 2),
         "computed_at": datetime.now(UTC).isoformat(),
     }
+
+
+@router.get("/market-brief")
+async def get_market_brief():
+    """
+    Generate a real-time AI market briefing.
+    Fetches SPY, QQQ, VIX, sector ETFs, and top positions performance.
+    Returns a structured brief: market mood, key themes, what to watch today.
+    Fast — uses yfinance for market data, DeepSeek for synthesis.
+    """
+    import asyncio
+    import json
+    import yfinance as yf
+    from openai import OpenAI
+    from app.config import get_settings as _gs
+    import httpx
+
+    s = _gs()
+
+    def _fetch_market_data():
+        symbols = {
+            "SPY": "S&P 500",
+            "QQQ": "NASDAQ 100",
+            "IWM": "Russell 2000",
+            "^VIX": "VIX",
+            "^TNX": "10Y Treasury",
+            "XLK": "Tech sector",
+            "XLF": "Financials",
+            "XLE": "Energy",
+            "GLD": "Gold",
+            "BTC-USD": "Bitcoin",
+        }
+        data = {}
+        for sym, label in symbols.items():
+            try:
+                hist = yf.Ticker(sym).history(period="5d", interval="1d")
+                if len(hist) >= 2:
+                    prev = float(hist["Close"].iloc[-2])
+                    curr = float(hist["Close"].iloc[-1])
+                    chg = (curr - prev) / prev * 100
+                    data[label] = {
+                        "price": round(curr, 2),
+                        "change_pct": round(chg, 2),
+                        "trend_5d": round((curr / float(hist["Close"].iloc[0]) - 1) * 100, 2),
+                    }
+            except Exception:
+                pass
+        return data
+
+    # Fetch positions
+    async def _fetch_positions():
+        try:
+            headers = {
+                "APCA-API-KEY-ID": s.alpaca_api_key,
+                "APCA-API-SECRET-KEY": s.alpaca_api_secret,
+            }
+            async with httpx.AsyncClient(timeout=5.0) as client:
+                r = await client.get(f"{s.alpaca_base_url}/v2/positions", headers=headers)
+            if r.status_code == 200:
+                return r.json()
+        except Exception:
+            pass
+        return []
+
+    loop = asyncio.get_running_loop()
+    market_data, positions = await asyncio.gather(
+        loop.run_in_executor(None, _fetch_market_data),
+        _fetch_positions(),
+    )
+
+    # Build context string
+    mkt_lines = []
+    for label, d in market_data.items():
+        trend = "↑" if d["change_pct"] > 0 else "↓"
+        mkt_lines.append(f"{label}: ${d['price']} ({trend}{abs(d['change_pct']):.2f}% today, {d['trend_5d']:+.2f}% 5d)")
+
+    pos_lines = []
+    for p in positions[:8]:
+        pct = float(p.get("unrealized_plpc", 0)) * 100
+        pos_lines.append(f"{p['symbol']}: {pct:+.2f}% unrealized")
+
+    context = "MARKET DATA:\n" + "\n".join(mkt_lines)
+    if pos_lines:
+        context += "\n\nCURRENT POSITIONS:\n" + "\n".join(pos_lines)
+
+    def _call_ai():
+        client = OpenAI(api_key=s.nvidia_api_key, base_url=s.nvidia_base_url)
+        response = client.chat.completions.create(
+            model="deepseek-ai/deepseek-v4-flash",
+            max_tokens=800,
+            temperature=0.3,
+            messages=[
+                {
+                    "role": "system",
+                    "content": (
+                        "You are a senior market strategist writing a morning brief for a quantitative trader. "
+                        "Be direct and data-driven. No fluff. Reference specific numbers from the data. "
+                        "Identify the dominant market theme today. Flag any concerning signals."
+                    ),
+                },
+                {
+                    "role": "user",
+                    "content": f"Here is today's market data:\n\n{context}\n\nWrite a structured market brief.",
+                },
+            ],
+            tools=[{
+                "type": "function",
+                "function": {
+                    "name": "market_brief",
+                    "description": "Structured market brief",
+                    "parameters": {
+                        "type": "object",
+                        "required": ["market_mood", "dominant_theme", "key_observations", "portfolio_impact", "watch_today"],
+                        "properties": {
+                            "market_mood": {
+                                "type": "string",
+                                "enum": ["RISK_ON", "RISK_OFF", "NEUTRAL", "VOLATILE"],
+                                "description": "Overall market mood",
+                            },
+                            "dominant_theme": {
+                                "type": "string",
+                                "description": "The single dominant market theme in 1 sentence",
+                            },
+                            "key_observations": {
+                                "type": "array",
+                                "items": {"type": "string"},
+                                "description": "3-5 specific data-driven observations",
+                            },
+                            "portfolio_impact": {
+                                "type": "string",
+                                "description": "How today's market conditions affect the current portfolio specifically",
+                            },
+                            "watch_today": {
+                                "type": "array",
+                                "items": {"type": "string"},
+                                "description": "2-3 specific things to monitor today",
+                            },
+                        },
+                    },
+                },
+            }],
+            tool_choice={"type": "function", "function": {"name": "market_brief"}},
+        )
+        msg = response.choices[0].message
+        if msg.tool_calls:
+            return json.loads(msg.tool_calls[0].function.arguments)
+        raise RuntimeError("No tool call response")
+
+    try:
+        brief = await loop.run_in_executor(None, _call_ai)
+    except Exception as e:
+        log.error("market_brief.ai_failed", error=str(e))
+        brief = {
+            "market_mood": "NEUTRAL",
+            "dominant_theme": "AI analysis unavailable",
+            "key_observations": [line for line in mkt_lines[:5]],
+            "portfolio_impact": "Unable to generate AI analysis",
+            "watch_today": [],
+        }
+
+    return {
+        "generated_at": datetime.now(UTC).isoformat(),
+        "market_data": market_data,
+        "brief": brief,
+    }

@@ -18,16 +18,32 @@ import {
 import { cn } from "../../lib/cn";
 import { getUser } from "../../lib/auth";
 
-const NAV = [
-  { to: "/dashboard", icon: LayoutDashboard, label: "Dashboard" },
-  { to: "/agents", icon: BrainCircuit, label: "Agent Hub" },
-  { to: "/options", icon: TrendingUp, label: "Options Desk" },
-  { to: "/scanner", icon: Radar, label: "Scanner" },
-  { to: "/analytics", icon: Brain, label: "Analytics" },
-  { to: "/alerts", icon: Bell, label: "Alerts" },
-  { to: "/portfolio", icon: PieChart, label: "Portfolio" },
-  { to: "/trades", icon: ScrollText, label: "Trade History" },
-  { to: "/backtest", icon: FlaskConical, label: "Backtesting" },
+const NAV_GROUPS = [
+  {
+    label: "Trading",
+    items: [
+      { to: "/dashboard", icon: LayoutDashboard, label: "Dashboard" },
+      { to: "/scanner", icon: Radar, label: "Scanner" },
+      { to: "/agents", icon: BrainCircuit, label: "Agent Hub" },
+      { to: "/options", icon: TrendingUp, label: "Options Desk" },
+    ],
+  },
+  {
+    label: "Portfolio",
+    items: [
+      { to: "/portfolio", icon: PieChart, label: "Portfolio" },
+      { to: "/trades", icon: ScrollText, label: "Trade History" },
+      { to: "/alerts", icon: Bell, label: "Alerts" },
+      { to: "/backtest", icon: FlaskConical, label: "Backtesting" },
+    ],
+  },
+  {
+    label: "Intelligence",
+    items: [
+      { to: "/analytics", icon: Brain, label: "Analytics" },
+      { to: "/settings", icon: Settings, label: "Settings" },
+    ],
+  },
 ];
 
 function useScanRunning() {
@@ -77,46 +93,45 @@ export default function Sidebar({ onLogout }: SidebarProps) {
       </div>
 
       {/* Nav */}
-      <nav className="flex-1 px-3 py-4 space-y-1">
-        {NAV.map(({ to, icon: Icon, label }) => (
-          <NavLink key={to} to={to}>
-            {({ isActive }) => (
-              <motion.div
-                whileHover={{ x: 2 }}
-                transition={{ duration: 0.15 }}
-                className={cn("sidebar-item", isActive && "sidebar-item-active")}
-              >
-                <Icon size={18} className="shrink-0" />
-                <span>{label}</span>
-                {to === "/scanner" && scanRunning && !isActive && (
-                  <span className="ml-auto flex items-center gap-1">
-                    <span className="w-1.5 h-1.5 rounded-full bg-warn animate-pulse-slow" />
-                    <span className="text-2xs text-warn font-medium">Live</span>
-                  </span>
-                )}
-                {isActive && (
+      <nav className="flex-1 px-3 py-4 overflow-y-auto">
+        {NAV_GROUPS.map((group) => (
+          <div key={group.label} className="mb-4">
+            <p className="px-3 mb-1 text-[10px] font-semibold uppercase tracking-widest text-slate-600">
+              {group.label}
+            </p>
+            {group.items.map(({ to, icon: Icon, label }) => (
+              <NavLink key={to} to={to}>
+                {({ isActive }) => (
                   <motion.div
-                    layoutId="sidebar-indicator"
-                    className="ml-auto w-1.5 h-1.5 rounded-full bg-accent-bright"
-                  />
+                    whileHover={{ x: 2 }}
+                    transition={{ duration: 0.15 }}
+                    className={cn("sidebar-item", isActive && "sidebar-item-active")}
+                  >
+                    <Icon size={18} className="shrink-0" />
+                    <span>{label}</span>
+                    {to === "/scanner" && scanRunning && !isActive && (
+                      <span className="ml-auto flex items-center gap-1">
+                        <span className="w-1.5 h-1.5 rounded-full bg-warn animate-pulse-slow" />
+                        <span className="text-2xs text-warn font-medium">Live</span>
+                      </span>
+                    )}
+                    {isActive && (
+                      <motion.div
+                        layoutId="sidebar-indicator"
+                        className="ml-auto w-1.5 h-1.5 rounded-full bg-accent-bright"
+                      />
+                    )}
+                  </motion.div>
                 )}
-              </motion.div>
-            )}
-          </NavLink>
+              </NavLink>
+            ))}
+          </div>
         ))}
       </nav>
 
       {/* Bottom */}
       <div className="px-3 pb-4 border-t border-border pt-4 space-y-1">
-        <NavLink to="/settings">
-          {({ isActive }) => (
-            <div className={cn("sidebar-item", isActive && "sidebar-item-active")}>
-              <Settings size={18} />
-              <span>Settings</span>
-            </div>
-          )}
-        </NavLink>
-        <div className="mt-3 mx-0 p-3 rounded-lg bg-bg-elevated border border-border">
+        <div className="mx-0 p-3 rounded-lg bg-bg-elevated border border-border">
           <div className="flex items-center gap-2 mb-1">
             <div className="w-2 h-2 rounded-full bg-gain animate-pulse-slow" />
             <span className="text-xs text-text-secondary">Paper Trading</span>

@@ -93,6 +93,13 @@ async def market_pulse():
     return result
 
 
+@router.get("/market-brief")
+async def get_market_brief_dashboard():
+    """Proxy to analytics market brief — cached for dashboard use."""
+    from app.api.v1.analytics import get_market_brief
+    return await get_market_brief()
+
+
 @router.get("/agent-activity")
 async def agent_activity():
     """Recent agent runs from DB."""
