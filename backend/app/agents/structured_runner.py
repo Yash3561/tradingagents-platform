@@ -786,6 +786,80 @@ def _run_full_pipeline(run_id: str, ticker: str, date: str, debate_rounds: int, 
     }
 
 
+async def _place_order_if_approved(run_id: str, ticker: str, result: dict):
+    """
+    After pipeline completes, place a real Alpaca paper order if approved.
+    Only fires on BUY or SELL with risk approved. HOLD = no order.
+    """
+    import uuid
+    from app.db.models.trade import Trade
+    from app.broker import alpaca_client
+
+    final = result["reasoning_json"].get("final", {})
+    decision = final.get("decision", "HOLD")
+    risk_approved = final.get("risk_approved", False)
+    position_pct = final.get("position_size_pct")
+    confidence = final.get("confidence", 0)
+
+    if decision == "HOLD" or not risk_approved:
+        log.info("broker.no_order", run_id=run_id, reason=f"decision={decision} approved={risk_approved}")
+        return
+
+    if decision not in ("BUY", "SELL"):
+        return
+
+    try:
+        market_data = result["reasoning_json"].get("market_data", {})
+        current_price = market_data.get("current_price")
+        if not current_price:
+            log.warning("broker.no_price", ticker=ticker)
+            return
+
+        position_pct = position_pct or 2.0  # default 2% if not set
+        qty = alpaca_client.calculate_order_qty(position_pct, current_price)
+        side = "buy" if decision == "BUY" else "sell"
+
+        order = alpaca_client.submit_order(ticker, side, qty)
+
+        async with AsyncSessionLocal() as db:
+            trade = Trade(
+                id=str(uuid.uuid4()),
+                agent_run_id=run_id,
+                alpaca_order_id=order.get("id"),
+                ticker=ticker,
+                side=side,
+                qty=qty,
+                order_type="market",
+                status=order.get("status", "submitted"),
+                reasoning_json={
+                    "decision": decision,
+                    "confidence": confidence,
+                    "position_pct": position_pct,
+                    "current_price": current_price,
+                    "alpaca_order": order,
+                    "agent_summary": result.get("summary"),
+                },
+            )
+            db.add(trade)
+            await db.commit()
+
+        log.info("broker.order_placed", run_id=run_id, ticker=ticker,
+                 side=side, qty=qty, order_id=order.get("id"))
+
+        await _emit(run_id, {
+            "type": "order_placed",
+            "ticker": ticker,
+            "side": side,
+            "qty": qty,
+            "order_id": order.get("id"),
+            "status": order.get("status"),
+        })
+
+    except Exception as e:
+        log.error("broker.order_failed", run_id=run_id, ticker=ticker, error=str(e))
+        await _emit(run_id, {"type": "order_failed", "error": str(e)})
+
+
 async def run_structured_agent_analysis(
     run_id: str,
     ticker: str,
@@ -829,6 +903,9 @@ async def run_structured_agent_analysis(
             "summary": result["summary"],
             "debate_log": result["debate_log"],
         })
+
+        # Place paper order if agents approved a trade
+        await _place_order_if_approved(run_id, ticker, result)
 
     except Exception as exc:
         import traceback
