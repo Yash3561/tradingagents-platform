@@ -880,6 +880,36 @@ async def _place_order_if_approved(run_id: str, ticker: str, result: dict):
             "status": order.get("status"),
         })
 
+        # Save notification for trade placement
+        try:
+            from app.api.v1.notifications import save_notification
+            from app.api.v1.activity import log_activity
+            action_label = "BUY" if side == "buy" else "SELL"
+            await save_notification(
+                type="trade_placed",
+                title=f"Trade placed — {action_label} {ticker}",
+                body=(
+                    f"Agent approved {action_label} {qty} shares of {ticker} "
+                    f"at ~${current_price:,.2f}. Order ID: {order.get('id', 'N/A')}"
+                ),
+                ticker=ticker,
+            )
+            await log_activity(
+                feature="agent_hub",
+                action="trade_placed",
+                ticker=ticker,
+                details={
+                    "side": side,
+                    "qty": qty,
+                    "price": current_price,
+                    "order_id": order.get("id"),
+                    "run_id": run_id,
+                },
+                result=action_label,
+            )
+        except Exception as notif_err:
+            log.warning("broker.notification_failed", error=str(notif_err))
+
     except Exception as e:
         log.error("broker.order_failed", run_id=run_id, ticker=ticker, error=str(e))
         await _emit(run_id, {"type": "order_failed", "error": str(e)})

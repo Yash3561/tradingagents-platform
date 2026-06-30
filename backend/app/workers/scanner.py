@@ -365,4 +365,24 @@ async def run_market_scan(
     }
 
     log.info("scanner.scan.done", **{k: v for k, v in summary.items() if k != "results"})
+
+    # Log activity
+    try:
+        from app.api.v1.activity import log_activity
+        await log_activity(
+            feature="scanner",
+            action="scan_completed",
+            ticker=None,
+            details={
+                "screened": summary["screened"],
+                "candidates_analyzed": summary["candidates_analyzed"],
+                "trades_placed": summary["trades_placed"],
+                "scan_id": scan_id,
+            },
+            result="completed",
+            duration_s=round(duration, 1),
+        )
+    except Exception as act_err:
+        log.warning("scanner.activity_log_failed", error=str(act_err))
+
     return summary

@@ -68,8 +68,15 @@ class MarketScheduler:
         """
         Trigger a market scan. If VIX > 30, passes a sells-only hint to scanner.
         The scanner itself gates BUY signals when VIX is elevated.
+        Broadcasts WS event and saves a Notification on start and completion.
         """
+        import uuid as _uuid
         from app.workers.scanner import run_market_scan
+        from app.core.websocket_manager import ws_manager
+        from app.api.v1.notifications import save_notification
+
+        scan_id = str(_uuid.uuid4())
+        now_str = datetime.now(timezone.utc).isoformat()
 
         vix_high = vix is not None and vix > 30
         if vix_high:
@@ -77,11 +84,35 @@ class MarketScheduler:
                         note="BUYs suppressed — only SELL candidates will pass AI pipeline")
 
         log.info(f"scheduler.scan.{label}", vix=vix)
+
+        # Broadcast scan started
+        await ws_manager.broadcast("alerts", {
+            "type": "scheduled_scan_started",
+            "label": label,
+            "scan_id": scan_id,
+            "time": now_str,
+        })
+        await save_notification(
+            type="scheduled_scan",
+            title=f"Scheduled {label} scan started",
+            body=f"Auto-scan triggered at {now_str[:16].replace('T', ' ')} UTC. VIX: {round(vix, 1) if vix else 'N/A'}",
+        )
+
         try:
-            summary = await run_market_scan(vix_override=vix)
+            summary = await run_market_scan(vix_override=vix, scan_id=scan_id)
+            trades_placed = summary.get("trades_placed", 0)
+            candidates = summary.get("candidates_analyzed", 0)
             log.info(f"scheduler.scan.{label}.done",
-                     candidates=summary.get("candidates_analyzed", 0),
-                     trades=summary.get("trades_placed", 0))
+                     candidates=candidates,
+                     trades=trades_placed)
+            await save_notification(
+                type="scan_complete",
+                title=f"Scheduled {label} scan completed",
+                body=(
+                    f"Analyzed {candidates} candidates, placed {trades_placed} trade(s). "
+                    f"Screened {summary.get('screened', 0)} stocks."
+                ),
+            )
         except Exception as e:
             log.error(f"scheduler.scan.{label}.failed", error=str(e))
 

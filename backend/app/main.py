@@ -1,4 +1,5 @@
 from contextlib import asynccontextmanager
+import asyncio
 import structlog
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
@@ -6,9 +7,11 @@ from fastapi.middleware.cors import CORSMiddleware
 from app.config import get_settings
 from app.core.postgres import init_db
 # Import all models so SQLAlchemy registers them before create_all
-import app.db.models.agent_run  # noqa: F401
-import app.db.models.trade       # noqa: F401
+import app.db.models.agent_run       # noqa: F401
+import app.db.models.trade            # noqa: F401
 import app.db.models.equity_snapshot  # noqa: F401
+import app.db.models.notification     # noqa: F401
+import app.db.models.activity_log     # noqa: F401
 from app.core.redis_client import get_redis
 from app.api.router import api_router
 
@@ -20,7 +23,19 @@ settings = get_settings()
 async def lifespan(app: FastAPI):
     log.info("startup", env=settings.environment)
     await init_db()
+
+    # Start background workers as asyncio tasks
+    from app.workers.position_monitor import run_position_monitor
+    from app.workers.scheduler import run_scheduler
+    monitor_task = asyncio.create_task(run_position_monitor())
+    scheduler_task = asyncio.create_task(run_scheduler())
+    log.info("background_workers.started", workers=["position_monitor", "scheduler"])
+
     yield
+
+    # Cancel background tasks on shutdown
+    monitor_task.cancel()
+    scheduler_task.cancel()
     log.info("shutdown")
 
 

@@ -28,7 +28,7 @@ export default function Dashboard() {
         api.get("/portfolio/risk-metrics"),
         api.get("/dashboard/market-pulse"),
         api.get("/portfolio/positions"),
-        api.get("/dashboard/agent-activity"),
+        api.get("/activity/?limit=10").catch(() => api.get("/dashboard/agent-activity")),
       ]);
       setSummary(s.data);
       setPulse(p.data);
@@ -185,34 +185,38 @@ export default function Dashboard() {
           </div>
           {activity.length > 0 ? (
             <div className="space-y-2">
-              {activity.slice(0, 6).map((r: any, i: number) => (
-                <div key={i} className="flex items-start gap-3 p-3 rounded-lg bg-bg-elevated border border-border">
-                  <div className={cn(
-                    "mt-0.5 w-2 h-2 rounded-full shrink-0",
-                    r.decision === "BUY" ? "bg-gain" : r.decision === "SELL" ? "bg-loss" : "bg-warn"
-                  )} />
-                  <div className="flex-1 min-w-0">
-                    <div className="flex items-center gap-2">
-                      <span className="font-mono font-semibold text-sm text-text-primary">{r.ticker}</span>
-                      <span className={cn(
-                        "text-xs font-semibold",
-                        r.decision === "BUY" ? "text-gain" : r.decision === "SELL" ? "text-loss" : "text-warn"
-                      )}>
-                        {r.decision ?? "HOLD"}
-                      </span>
+              {activity.slice(0, 6).map((r: any, i: number) => {
+                // Support both activity log format and legacy agent-activity format
+                const decision = r.result ?? r.decision ?? "HOLD";
+                const ticker = r.ticker ?? "—";
+                const label = r.action ? r.action.replace(/_/g, " ") : (r.confidence != null ? `${Math.round(r.confidence * 100)}% confidence` : "");
+                const feature = r.feature ?? "agent_hub";
+                const featureColor = feature === "scanner" ? "bg-warn" : feature === "backtest" ? "bg-accent" : (decision === "BUY" ? "bg-gain" : decision === "SELL" ? "bg-loss" : "bg-warn");
+                return (
+                  <div key={i} className="flex items-start gap-3 p-3 rounded-lg bg-bg-elevated border border-border">
+                    <div className={cn("mt-0.5 w-2 h-2 rounded-full shrink-0", featureColor)} />
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-center gap-2">
+                        <span className="font-mono font-semibold text-sm text-text-primary">{ticker}</span>
+                        <span className={cn(
+                          "text-xs font-semibold",
+                          decision === "BUY" ? "text-gain" : decision === "SELL" ? "text-loss" :
+                          decision === "completed" ? "text-accent" : "text-warn"
+                        )}>
+                          {decision}
+                        </span>
+                      </div>
+                      <p className="text-2xs text-text-muted mt-0.5">{label}</p>
                     </div>
-                    <p className="text-2xs text-text-muted mt-0.5">
-                      {r.confidence != null ? `${Math.round(r.confidence * 100)}% confidence` : ""}
-                    </p>
+                    <span className="text-2xs text-text-muted shrink-0">
+                      {new Date(r.created_at).toLocaleTimeString("en-US", { hour: "2-digit", minute: "2-digit" })}
+                    </span>
                   </div>
-                  <span className="text-2xs text-text-muted shrink-0">
-                    {new Date(r.created_at).toLocaleTimeString("en-US", { hour: "2-digit", minute: "2-digit" })}
-                  </span>
-                </div>
-              ))}
+                );
+              })}
             </div>
           ) : (
-            <p className="text-xs text-text-muted text-center py-8">No agent runs yet</p>
+            <p className="text-xs text-text-muted text-center py-8">No activity yet</p>
           )}
         </motion.div>
       </div>
