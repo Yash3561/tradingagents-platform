@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { motion } from "framer-motion";
-import { DollarSign, TrendingUp, BarChart2, Activity, Loader2, RefreshCw, ShieldCheck, ShieldAlert, ShieldX, Clock, Radio, Bell } from "lucide-react";
+import { DollarSign, TrendingUp, BarChart2, Activity, Loader2, RefreshCw, ShieldCheck, ShieldAlert, ShieldX, Clock, Radio, Bell, Brain } from "lucide-react";
 import MetricCard from "../../components/data-display/MetricCard";
 import PnLBadge from "../../components/data-display/PnLBadge";
 import CandlestickChart from "../../components/charts/CandlestickChart";
@@ -203,6 +203,111 @@ function SystemStatus() {
   );
 }
 
+// ── AI Market Brief types + component ─────────────────────────────────────────
+
+interface BriefData {
+  market_data: Record<string, { price: number; change_pct: number; trend_5d: number }>;
+  brief: {
+    market_mood: "RISK_ON" | "RISK_OFF" | "NEUTRAL" | "VOLATILE";
+    dominant_theme: string;
+    key_observations: string[];
+    portfolio_impact: string;
+    watch_today: string[];
+  };
+  generated_at: string;
+}
+
+const MOOD_CONFIG = {
+  RISK_ON:  { label: "Risk On",  color: "text-gain",      bg: "bg-gain/10 border-gain/20",     dot: "bg-gain" },
+  RISK_OFF: { label: "Risk Off", color: "text-loss",      bg: "bg-loss/10 border-loss/20",     dot: "bg-loss" },
+  NEUTRAL:  { label: "Neutral",  color: "text-slate-300", bg: "bg-bg-elevated border-border",  dot: "bg-slate-400" },
+  VOLATILE: { label: "Volatile", color: "text-warn",      bg: "bg-warn/10 border-warn/20",     dot: "bg-warn animate-pulse" },
+};
+
+function MarketBriefCard({ data, loading }: { data: BriefData | null; loading: boolean }) {
+  if (loading) {
+    return (
+      <div className="card p-5 flex items-center gap-3">
+        <Loader2 size={18} className="text-accent animate-spin shrink-0" />
+        <div>
+          <p className="text-sm font-medium text-white">Generating AI Market Brief...</p>
+          <p className="text-xs text-slate-500 mt-0.5">Analyzing SPY, QQQ, VIX, sectors, crypto</p>
+        </div>
+      </div>
+    );
+  }
+  if (!data) return null;
+
+  const mood = data.brief.market_mood;
+  const cfg = MOOD_CONFIG[mood] ?? MOOD_CONFIG.NEUTRAL;
+  const marketItems = Object.entries(data.market_data).slice(0, 5);
+
+  return (
+    <div className={`card p-5 border ${cfg.bg}`}>
+      {/* Header */}
+      <div className="flex items-center justify-between mb-4">
+        <div className="flex items-center gap-3">
+          <Brain size={16} className="text-accent" />
+          <span className="text-sm font-semibold text-white">AI Market Brief</span>
+          <div className={`flex items-center gap-1.5 px-2 py-0.5 rounded-full border ${cfg.bg}`}>
+            <span className={`w-1.5 h-1.5 rounded-full ${cfg.dot}`} />
+            <span className={`text-xs font-semibold ${cfg.color}`}>{cfg.label}</span>
+          </div>
+        </div>
+        <span className="text-xs text-slate-500">
+          {new Date(data.generated_at).toLocaleTimeString()}
+        </span>
+      </div>
+
+      {/* Dominant theme */}
+      <p className="text-sm text-slate-200 mb-4 leading-relaxed font-medium">
+        {data.brief.dominant_theme}
+      </p>
+
+      {/* Market data pills */}
+      <div className="flex flex-wrap gap-2 mb-4">
+        {marketItems.map(([label, d]) => (
+          <div key={label} className="flex items-center gap-1.5 bg-bg-elevated rounded-lg px-2.5 py-1.5">
+            <span className="text-xs text-slate-400">{label}</span>
+            <span className="text-xs font-mono font-bold text-white">${d.price.toLocaleString()}</span>
+            <span className={`text-xs font-mono ${d.change_pct >= 0 ? "text-gain" : "text-loss"}`}>
+              {d.change_pct >= 0 ? "+" : ""}{d.change_pct.toFixed(2)}%
+            </span>
+          </div>
+        ))}
+      </div>
+
+      {/* Key observations */}
+      <div className="space-y-1.5 mb-4">
+        {data.brief.key_observations.slice(0, 3).map((obs, i) => (
+          <div key={i} className="flex items-start gap-2 text-xs text-slate-300">
+            <span className="text-accent mt-0.5 shrink-0">•</span>
+            {obs}
+          </div>
+        ))}
+      </div>
+
+      {/* Portfolio impact */}
+      {data.brief.portfolio_impact && (
+        <div className="bg-bg-elevated rounded-lg px-3 py-2.5 mb-3">
+          <p className="text-xs text-slate-500 mb-0.5">Portfolio Impact</p>
+          <p className="text-xs text-slate-200">{data.brief.portfolio_impact}</p>
+        </div>
+      )}
+
+      {/* Watch today */}
+      {data.brief.watch_today.length > 0 && (
+        <div className="flex flex-wrap gap-1.5">
+          <span className="text-xs text-slate-500">Watch:</span>
+          {data.brief.watch_today.map((w, i) => (
+            <span key={i} className="text-xs bg-accent/10 text-accent px-2 py-0.5 rounded-full">{w}</span>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
 // ── Main Dashboard ─────────────────────────────────────────────────────────────
 
 export default function Dashboard() {
@@ -214,6 +319,8 @@ export default function Dashboard() {
   const [refreshing, setRefreshing] = useState(false);
   const [chartTicker, setChartTicker] = useState("SPY");
   const [alertSummary, setAlertSummary] = useState<{total:number,critical:number,warning:number,info:number} | null>(null);
+  const [brief, setBrief] = useState<BriefData | null>(null);
+  const [briefLoading, setBriefLoading] = useState(false);
 
   const load = async () => {
     setRefreshing(true);
@@ -244,6 +351,14 @@ export default function Dashboard() {
 
   useEffect(() => {
     api.get("/alerts/summary").then(r => setAlertSummary(r.data)).catch(() => {});
+  }, []);
+
+  useEffect(() => {
+    setBriefLoading(true);
+    api.get("/dashboard/market-brief")
+      .then(r => setBrief(r.data))
+      .catch(() => {})
+      .finally(() => setBriefLoading(false));
   }, []);
 
   const today = new Date().toLocaleDateString("en-US", { weekday: "long", month: "long", day: "numeric", year: "numeric" });
@@ -311,6 +426,9 @@ export default function Dashboard() {
           accent="accent"
         />
       </div>
+
+      {/* AI Market Brief */}
+      <MarketBriefCard data={brief} loading={briefLoading} />
 
       {/* System Status + Market Pulse row */}
       <div className="grid grid-cols-5 gap-4">
