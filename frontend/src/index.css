@@ -1,0 +1,80 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  * {
+    border-color: theme("colors.border.DEFAULT");
+    scrollbar-width: thin;
+    scrollbar-color: theme("colors.border.bright") transparent;
+  }
+
+  ::-webkit-scrollbar {
+    width: 4px;
+    height: 4px;
+  }
+  ::-webkit-scrollbar-track { background: transparent; }
+  ::-webkit-scrollbar-thumb {
+    background: theme("colors.border.bright");
+    border-radius: 9999px;
+  }
+
+  body {
+    background-color: theme("colors.bg.base");
+    color: theme("colors.text.primary");
+    font-family: "Inter", system-ui, sans-serif;
+  }
+}
+
+@layer components {
+  .card {
+    @apply bg-bg-card border border-border rounded-xl shadow-card;
+  }
+  .card-hover {
+    @apply transition-all duration-200 hover:shadow-card-hover hover:border-border-bright;
+  }
+  .metric-label {
+    @apply text-xs font-medium text-text-secondary uppercase tracking-wider;
+  }
+  .metric-value {
+    @apply text-2xl font-semibold font-mono text-text-primary;
+  }
+  .price {
+    @apply font-mono tabular-nums;
+  }
+  .gain { @apply text-gain; }
+  .loss { @apply text-loss; }
+  .warn { @apply text-warn; }
+
+  .badge-gain {
+    @apply inline-flex items-center gap-1 px-2 py-0.5 rounded-md
+           bg-gain-bg text-gain text-xs font-medium font-mono;
+  }
+  .badge-loss {
+    @apply inline-flex items-center gap-1 px-2 py-0.5 rounded-md
+           bg-loss-bg text-loss text-xs font-medium font-mono;
+  }
+  .badge-neutral {
+    @apply inline-flex items-center gap-1 px-2 py-0.5 rounded-md
+           bg-bg-elevated text-text-secondary text-xs font-medium;
+  }
+
+  .sidebar-item {
+    @apply flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium
+           text-text-secondary transition-all duration-150
+           hover:bg-bg-elevated hover:text-text-primary cursor-pointer;
+  }
+  .sidebar-item-active {
+    @apply bg-accent-muted text-accent-bright shadow-accent-glow;
+  }
+
+  .glass {
+    @apply bg-bg-surface/80 backdrop-blur-sm border border-border;
+  }
+}
+
+/* TradingView chart overrides */
+.tv-chart-container {
+  border-radius: 0.75rem;
+  overflow: hidden;
+}

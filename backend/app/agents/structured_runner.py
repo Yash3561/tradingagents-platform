@@ -1,0 +1,844 @@
+"""
+Structured agent runner using Claude's tool_use / json mode
+to enforce typed contracts between agents.
+
+Each agent gets:
+  - A focused system prompt (its role only)
+  - Only the data it needs (not the full state blob)
+  - A strict JSON schema it must conform to
+  - REAL market data fetched from yfinance
+
+No free-form text parsing between agents.
+"""
+
+from __future__ import annotations
+import json
+import asyncio
+from datetime import datetime, UTC
+from typing import Any
+
+import anthropic
+import structlog
+
+from app.config import get_settings
+from app.agents.contracts import (
+    TechnicalReport, SentimentReport, NewsReport, FundamentalReport,
+    AnalystBundle, ResearcherDebate, RiskAssessment, FinalDecision,
+    Signal, Decision, RiskLevel,
+)
+from app.core.postgres import AsyncSessionLocal
+from app.core.websocket_manager import ws_manager
+from app.db.models.agent_run import AgentRun
+
+log = structlog.get_logger()
+settings = get_settings()
+
+
+# ── Real market data fetching ──────────────────────────────────────────────────
+
+def _fetch_market_data(ticker: str) -> dict:
+    """Fetch real price, technical, and fundamental data via yfinance."""
+    try:
+        import yfinance as yf
+        import numpy as np
+
+        t = yf.Ticker(ticker)
+        hist = t.history(period="1y", interval="1d")
+        info = t.info or {}
+
+        if hist.empty:
+            return {"error": "No price history available"}
+
+        close = hist["Close"]
+        volume = hist["Volume"]
+        current_price = float(close.iloc[-1])
+        prev_close = float(close.iloc[-2]) if len(close) >= 2 else current_price
+
+        # Moving averages
+        ma50 = float(close.tail(50).mean()) if len(close) >= 50 else None
+        ma200 = float(close.tail(200).mean()) if len(close) >= 200 else None
+
+        # RSI-14
+        delta = close.diff()
+        gain = delta.clip(lower=0).tail(14).mean()
+        loss = (-delta.clip(upper=0)).tail(14).mean()
+        rsi = round(100 - (100 / (1 + gain / loss)), 1) if loss != 0 else 50.0
+
+        # MACD
+        ema12 = float(close.ewm(span=12, adjust=False).mean().iloc[-1])
+        ema26 = float(close.ewm(span=26, adjust=False).mean().iloc[-1])
+        macd_line = round(ema12 - ema26, 3)
+        signal_line = round(float(close.ewm(span=9, adjust=False).mean().iloc[-1]), 3)
+
+        # Volume context
+        avg_vol_30d = int(volume.tail(30).mean()) if len(volume) >= 30 else int(volume.mean())
+        today_vol = int(volume.iloc[-1])
+        vol_ratio = round(today_vol / avg_vol_30d, 2) if avg_vol_30d else 1.0
+
+        # Price momentum
+        price_1w = float(close.iloc[-6]) if len(close) >= 6 else current_price
+        price_1m = float(close.iloc[-22]) if len(close) >= 22 else current_price
+        price_3m = float(close.iloc[-66]) if len(close) >= 66 else current_price
+
+        return {
+            "current_price": round(current_price, 2),
+            "prev_close": round(prev_close, 2),
+            "change_today_pct": round((current_price - prev_close) / prev_close * 100, 2),
+            "change_1w_pct": round((current_price - price_1w) / price_1w * 100, 2),
+            "change_1m_pct": round((current_price - price_1m) / price_1m * 100, 2),
+            "change_3m_pct": round((current_price - price_3m) / price_3m * 100, 2),
+            "52w_high": round(float(hist["High"].max()), 2),
+            "52w_low": round(float(hist["Low"].min()), 2),
+            "pct_from_52w_high": round((current_price / float(hist["High"].max()) - 1) * 100, 1),
+            "ma_50": round(ma50, 2) if ma50 else None,
+            "ma_200": round(ma200, 2) if ma200 else None,
+            "above_ma50": bool(current_price > ma50) if ma50 else None,
+            "above_ma200": bool(current_price > ma200) if ma200 else None,
+            "rsi_14": rsi,
+            "macd_line": macd_line,
+            "macd_signal": signal_line,
+            "macd_bullish": macd_line > signal_line,
+            "volume_today": today_vol,
+            "avg_volume_30d": avg_vol_30d,
+            "volume_ratio": vol_ratio,
+            # Fundamentals from info
+            "pe_ratio": info.get("trailingPE"),
+            "forward_pe": info.get("forwardPE"),
+            "peg_ratio": info.get("pegRatio"),
+            "revenue_growth_yoy": info.get("revenueGrowth"),
+            "earnings_growth_yoy": info.get("earningsGrowth"),
+            "gross_margin": info.get("grossMargins"),
+            "operating_margin": info.get("operatingMargins"),
+            "profit_margin": info.get("profitMargins"),
+            "debt_to_equity": info.get("debtToEquity"),
+            "current_ratio": info.get("currentRatio"),
+            "free_cash_flow": info.get("freeCashflow"),
+            "market_cap": info.get("marketCap"),
+            "enterprise_value": info.get("enterpriseValue"),
+            "sector": info.get("sector"),
+            "industry": info.get("industry"),
+            "beta": info.get("beta"),
+            "short_ratio": info.get("shortRatio"),
+            "short_percent_float": info.get("shortPercentOfFloat"),
+            "held_by_institutions": info.get("heldPercentInstitutions"),
+            "analyst_target_price": info.get("targetMeanPrice"),
+            "analyst_recommendation": info.get("recommendationKey"),
+            "num_analyst_opinions": info.get("numberOfAnalystOpinions"),
+        }
+    except Exception as e:
+        log.warning("market_data.fetch_error", ticker=ticker, error=str(e))
+        return {"error": str(e)}
+
+
+def _fetch_news(ticker: str) -> list[str]:
+    """Fetch recent news headlines via yfinance."""
+    try:
+        import yfinance as yf
+        t = yf.Ticker(ticker)
+        news_items = getattr(t, "news", []) or []
+        headlines = []
+        for n in news_items[:10]:
+            title = n.get("title", "")
+            publisher = n.get("publisher", "")
+            if title:
+                headlines.append(f"- {title} [{publisher}]")
+        return headlines
+    except Exception:
+        return []
+
+
+# ── Claude structured output helper ───────────────────────────────────────────
+
+def _claude_structured(
+    system: str,
+    user: str,
+    schema: type,
+    model: str = "claude-sonnet-4-6",
+) -> dict:
+    """
+    Call Claude with a tool definition matching the Pydantic schema.
+    Forces Claude to respond in the exact contract shape.
+    Returns the parsed dict (not yet validated — call schema(**result) after).
+    """
+    client = anthropic.Anthropic(api_key=settings.anthropic_api_key)
+
+    json_schema = schema.model_json_schema()
+    tool_schema = {k: v for k, v in json_schema.items() if k != "$defs"}
+    if "$defs" in json_schema:
+        tool_schema = _inline_refs(json_schema)
+
+    response = client.messages.create(
+        model=model,
+        max_tokens=2048,
+        system=system,
+        messages=[{"role": "user", "content": user}],
+        tools=[{
+            "name": "submit_report",
+            "description": f"Submit your structured {schema.__name__} report.",
+            "input_schema": tool_schema,
+        }],
+        tool_choice={"type": "tool", "name": "submit_report"},
+    )
+
+    for block in response.content:
+        if block.type == "tool_use" and block.name == "submit_report":
+            return block.input
+
+    raise RuntimeError(f"Claude did not call submit_report. Response: {response}")
+
+
+def _inline_refs(schema: dict) -> dict:
+    """Recursively resolve $ref references within a JSON schema."""
+    defs = schema.get("$defs", {})
+
+    def resolve(node: Any) -> Any:
+        if isinstance(node, dict):
+            if "$ref" in node:
+                ref_name = node["$ref"].split("/")[-1]
+                return resolve(defs.get(ref_name, node))
+            return {k: resolve(v) for k, v in node.items() if k != "$defs"}
+        if isinstance(node, list):
+            return [resolve(i) for i in node]
+        return node
+
+    return resolve(schema)
+
+
+# ── DISCIPLINE CONSTANTS ──────────────────────────────────────────────────────
+
+MIN_ANALYST_CONFIDENCE   = 0.60
+MIN_TRADE_CONFIDENCE     = 0.70
+MIN_BULLISH_CONSENSUS    = 3
+MIN_BEARISH_CONSENSUS    = 3
+MAX_POSITION_SIZE_PCT    = 5.0
+MANDATORY_STOP_LOSS_PCT  = 7.0
+MAX_RISK_LEVEL_TO_TRADE  = "MEDIUM"
+
+
+ANALYST_DISCIPLINE = """
+DISCIPLINE RULES — NON-NEGOTIABLE:
+1. NEVER invent or fabricate data. Use ONLY the real market data provided above.
+2. Set confidence BELOW 0.60 if you have meaningful uncertainty. Do not fake conviction.
+3. Signal NEUTRAL unless your evidence is clear and multi-factor. When in doubt → NEUTRAL.
+4. A single bullish indicator is NOT sufficient for a BUY signal. You need confluence.
+5. Your reasoning must cite specific evidence from the data provided. Vague statements are unacceptable.
+6. Your job is to FIND REASONS NOT TO TRADE as much as reasons to trade.
+   Capital preservation is priority one. Returns are priority two.
+"""
+
+RESEARCHER_DISCIPLINE = """
+DISCIPLINE RULES — NON-NEGOTIABLE:
+1. The bear case must be argued with full conviction, not as a formality.
+2. Identify at least 2 concrete scenarios where the bull thesis fails completely.
+3. Do not let optimism bias the debate. Markets punish overconfidence.
+4. If the evidence is mixed (2 bull / 2 bear analysts), suggest NEUTRAL — not BUY.
+5. A high-confidence BUY requires: strong fundamentals AND technical confirmation
+   AND positive sentiment AND no material adverse news. All four, not two.
+6. Remember: being wrong on a HOLD costs you opportunity. Being wrong on a BUY
+   costs you real money. The asymmetry always favors caution.
+"""
+
+RISK_DISCIPLINE = """
+DISCIPLINE RULES — NON-NEGOTIABLE:
+1. You have VETO POWER. Use it without hesitation when risk is unacceptable.
+2. Set approved=False if ANY of the following are true:
+   - Risk level is HIGH
+   - Confidence from debate is below 0.70
+   - Fewer than 3 analysts agree on direction
+   - There is an unresolved material risk event (earnings, regulatory, macro)
+   - The trade would push portfolio concentration in one sector above 30%
+3. ALWAYS set a stop_loss_pct. A trade with no stop-loss is not a trade — it is gambling.
+   Minimum stop-loss: 5%. Maximum: 12%. Default: 7%.
+4. Recommended position size: 2-5% of portfolio. Never above 5%. Ever.
+5. If you feel even slightly uncertain about approving — REJECT. You can always trade later.
+   You cannot un-lose money.
+6. Your performance is measured by DRAWDOWN PREVENTION, not by trades approved.
+"""
+
+PM_DISCIPLINE = """
+DISCIPLINE RULES — NON-NEGOTIABLE:
+1. If risk.approved is False → decision is HOLD. No exceptions. No overrides.
+2. If confidence is below 0.70 → decision is HOLD. Do not rationalize a trade.
+3. If fewer than 3 analysts agree → decision is HOLD.
+4. NEVER chase momentum. If the move has already happened, the trade is too late.
+5. NEVER average down on a losing position via agent recommendation.
+6. The best trade is often NO trade. HOLD is a valid and often correct decision.
+7. Before approving any BUY or SELL: ask yourself — "What is the specific, quantified
+   scenario where this trade loses 20%? Am I comfortable with that outcome?"
+   If no clear answer → HOLD.
+8. Position sizing follows Risk Manager exactly. Do not size up because you feel confident.
+9. Document every key risk you are accepting in key_risks_acknowledged.
+   If you cannot name at least one real risk — you have not thought hard enough.
+"""
+
+
+# ── Individual agent runners ───────────────────────────────────────────────────
+
+def _run_technical_analyst(ticker: str, date: str, model: str, market_data: dict) -> TechnicalReport:
+    data_block = json.dumps(market_data, indent=2, default=str)
+
+    system = f"""You are the Technical Analyst at a professional trading firm.
+Your job: analyze price action, volume, and technical indicators with surgical precision.
+You have been given REAL, LIVE market data. Use it. Do not fabricate numbers.
+
+{ANALYST_DISCIPLINE}
+
+Technical-specific rules:
+- RSI 30-70 is NEUTRAL range. Only outside this range does it contribute to a signal.
+- A MACD crossover alone is NOT a BUY signal. It is one data point.
+- Volume must confirm price moves. Price without volume is noise.
+- Trend direction takes precedence over oscillators in strong trends.
+- Support/resistance levels must be significant (tested multiple times). Do not invent them."""
+
+    user = (
+        f"Perform rigorous technical analysis for {ticker} as of {date}.\n\n"
+        f"REAL MARKET DATA (use these exact numbers):\n{data_block}\n\n"
+        "Analyze: price trend (vs MA50/MA200), RSI(14), MACD signal, "
+        "volume confirmation (today vs 30d avg), and key support/resistance from the 52w range.\n"
+        "Cite specific numbers from the data provided. "
+        "Be skeptical. Look for reasons the setup is NOT clean before calling a signal.\n"
+        "Submit your TechnicalReport."
+    )
+    result = _claude_structured(system, user, TechnicalReport, model)
+    result["ticker"] = ticker
+    report = TechnicalReport(**result)
+
+    if report.confidence < MIN_ANALYST_CONFIDENCE:
+        report.signal = Signal.NEUTRAL
+    return report
+
+
+def _run_sentiment_analyst(ticker: str, date: str, model: str, market_data: dict) -> SentimentReport:
+    sentiment_data = {
+        "short_ratio": market_data.get("short_ratio"),
+        "short_percent_float": market_data.get("short_percent_float"),
+        "held_by_institutions": market_data.get("held_by_institutions"),
+        "analyst_recommendation": market_data.get("analyst_recommendation"),
+        "analyst_target_price": market_data.get("analyst_target_price"),
+        "num_analyst_opinions": market_data.get("num_analyst_opinions"),
+        "beta": market_data.get("beta"),
+        "current_price": market_data.get("current_price"),
+    }
+    data_block = json.dumps(sentiment_data, indent=2, default=str)
+
+    system = f"""You are the Sentiment Analyst at a professional trading firm.
+Your job: assess real market sentiment through institutional flow, options positioning,
+short interest, and crowd behavior signals.
+You have been given REAL data. Use it. Do not fabricate numbers.
+
+{ANALYST_DISCIPLINE}
+
+Sentiment-specific rules:
+- Retail sentiment (Reddit, StockTwits) is a CONTRARIAN indicator, not a confirmation.
+- High short interest can mean smart money is short. Do not automatically call it a squeeze.
+- Put/call ratio below 0.7 means the market is complacent (bearish contrarian signal).
+- Institutional holding % is a key signal — high institutional ownership = professional validation.
+- Analyst consensus recommendations are lagging indicators; use them as context only."""
+
+    user = (
+        f"Assess market sentiment for {ticker} as of {date}.\n\n"
+        f"REAL SENTIMENT DATA:\n{data_block}\n\n"
+        "Evaluate: institutional ownership, short interest context, analyst consensus, "
+        "and beta (systematic risk). Cite the specific numbers from the data.\n"
+        "Be skeptical of any bullish signals. Weight institutional data heavily.\n"
+        "Submit your SentimentReport."
+    )
+    result = _claude_structured(system, user, SentimentReport, model)
+    result["ticker"] = ticker
+    report = SentimentReport(**result)
+    if report.confidence < MIN_ANALYST_CONFIDENCE:
+        report.signal = Signal.NEUTRAL
+    return report
+
+
+def _run_news_analyst(ticker: str, date: str, model: str, market_data: dict, news_headlines: list[str]) -> NewsReport:
+    news_block = "\n".join(news_headlines) if news_headlines else "No recent headlines available."
+    context = {
+        "sector": market_data.get("sector"),
+        "industry": market_data.get("industry"),
+        "beta": market_data.get("beta"),
+    }
+
+    system = f"""You are the News Analyst at a professional trading firm.
+Your job: identify news events that create MATERIAL RISK or GENUINE CATALYSTS.
+You are a skeptic. You assume news is noise until proven otherwise.
+You have been given REAL recent headlines. Analyze them critically.
+
+{ANALYST_DISCIPLINE}
+
+News-specific rules:
+- Upcoming earnings = HIGH RISK EVENT. Always flag catalyst_upcoming=True near earnings.
+- Positive press releases from the company itself are marketing, not investment signals.
+- Regulatory/legal risk is almost always underestimated by the market. Weight it heavily.
+- If there is ANY pending litigation, investigation, or regulatory review → flag it.
+- "No news" is not automatically bullish. Absence of bad news ≠ presence of good news.
+- Macro events (Fed meetings, CPI, GDP) affect all stocks. Always consider the calendar."""
+
+    user = (
+        f"Analyze news context for {ticker} as of {date}.\n\n"
+        f"Company context: {json.dumps(context)}\n\n"
+        f"REAL RECENT HEADLINES:\n{news_block}\n\n"
+        "Identify: any material adverse news, upcoming earnings or catalysts, "
+        "regulatory or legal risks, and relevant macro events in the next 30 days.\n"
+        "Default to flagging risks. A missed risk is far more costly than a missed opportunity.\n"
+        "Submit your NewsReport."
+    )
+    result = _claude_structured(system, user, NewsReport, model)
+    result["ticker"] = ticker
+    report = NewsReport(**result)
+    if report.confidence < MIN_ANALYST_CONFIDENCE:
+        report.signal = Signal.NEUTRAL
+    return report
+
+
+def _run_fundamental_analyst(ticker: str, date: str, model: str, market_data: dict) -> FundamentalReport:
+    fund_data = {
+        "current_price": market_data.get("current_price"),
+        "market_cap": market_data.get("market_cap"),
+        "pe_ratio": market_data.get("pe_ratio"),
+        "forward_pe": market_data.get("forward_pe"),
+        "peg_ratio": market_data.get("peg_ratio"),
+        "revenue_growth_yoy": market_data.get("revenue_growth_yoy"),
+        "earnings_growth_yoy": market_data.get("earnings_growth_yoy"),
+        "gross_margin": market_data.get("gross_margin"),
+        "operating_margin": market_data.get("operating_margin"),
+        "profit_margin": market_data.get("profit_margin"),
+        "debt_to_equity": market_data.get("debt_to_equity"),
+        "current_ratio": market_data.get("current_ratio"),
+        "free_cash_flow": market_data.get("free_cash_flow"),
+        "enterprise_value": market_data.get("enterprise_value"),
+        "sector": market_data.get("sector"),
+        "industry": market_data.get("industry"),
+    }
+    data_block = json.dumps(fund_data, indent=2, default=str)
+
+    system = f"""You are the Fundamental Analyst at a professional trading firm.
+Your job: determine whether a stock's price is JUSTIFIED by its business quality and financials.
+You value businesses, not stock prices. You have been given REAL financial data.
+
+{ANALYST_DISCIPLINE}
+
+Fundamental-specific rules:
+- High P/E alone is not a sell signal IF growth justifies it (check PEG ratio).
+- Low P/E alone is not a buy signal IF the business is declining (value trap check).
+- Revenue growth means nothing without margin analysis. Growing revenue + shrinking margins = warning.
+- Debt-to-equity above 2.0 requires explicit justification.
+- Free cash flow is more important than reported earnings. FCF cannot be managed.
+- Compare to direct sector peers, not the S&P 500 average."""
+
+    user = (
+        f"Perform rigorous fundamental analysis for {ticker} as of {date}.\n\n"
+        f"REAL FINANCIAL DATA:\n{data_block}\n\n"
+        "Evaluate: valuation (P/E, forward P/E, PEG), revenue and margin trends, "
+        "balance sheet health, and FCF generation.\n"
+        "Actively look for value traps, accounting red flags, and reasons the valuation "
+        "is justified OR unjustified. Cite the specific numbers.\n"
+        "Submit your FundamentalReport."
+    )
+    result = _claude_structured(system, user, FundamentalReport, model)
+    result["ticker"] = ticker
+    report = FundamentalReport(**result)
+    if report.confidence < MIN_ANALYST_CONFIDENCE:
+        report.signal = Signal.NEUTRAL
+    return report
+
+
+def _run_researcher_debate(bundle: AnalystBundle, rounds: int, model: str) -> ResearcherDebate:
+    system = f"""You are the Chief Investment Researcher running a formal debate at a professional trading firm.
+You have received structured, typed reports from 4 specialist analysts.
+Your job: conduct a rigorous adversarial debate that STRESS-TESTS the investment case.
+
+{RESEARCHER_DISCIPLINE}
+
+Consensus check (from analyst data):
+- Bullish analysts: {bundle.bullish_count()} / 4
+- Bearish analysts: {bundle.bearish_count()} / 4
+- Average confidence: {bundle.avg_confidence:.0%}
+
+If bullish < 3 and bearish < 3 → the evidence is mixed → suggest NEUTRAL unless the debate
+produces overwhelming evidence one way.
+"""
+
+    analyst_summary = {
+        "ticker": bundle.ticker,
+        "signals": {k: v.value for k, v in bundle.analyst_signals.items()},
+        "avg_confidence": bundle.avg_confidence,
+        "bullish_analysts": bundle.bullish_count(),
+        "bearish_analysts": bundle.bearish_count(),
+        "technical": {
+            "signal": bundle.technical.signal.value,
+            "rsi_14": bundle.technical.rsi_14,
+            "macd_crossover": bundle.technical.macd_bullish_crossover,
+            "trend": bundle.technical.trend_direction,
+            "key_points": bundle.technical.key_points,
+        },
+        "sentiment": {
+            "signal": bundle.sentiment.signal.value,
+            "score": bundle.sentiment.sentiment_score,
+            "institutional": bundle.sentiment.institutional_flow,
+            "key_points": bundle.sentiment.key_points,
+        },
+        "news": {
+            "signal": bundle.news.signal.value,
+            "catalyst_upcoming": bundle.news.catalyst_upcoming,
+            "material_news": bundle.news.material_news_exists,
+            "key_points": bundle.news.key_points,
+        },
+        "fundamental": {
+            "signal": bundle.fundamental.signal.value,
+            "pe": bundle.fundamental.pe_ratio,
+            "forward_pe": bundle.fundamental.forward_pe,
+            "revenue_growth": bundle.fundamental.revenue_growth_yoy,
+            "vs_sector": bundle.fundamental.vs_sector_pe,
+            "key_points": bundle.fundamental.key_points,
+        },
+    }
+
+    user = (
+        f"Conduct a {rounds}-round bull vs bear debate for {bundle.ticker}.\n\n"
+        f"Analyst Summary:\n{json.dumps(analyst_summary, indent=2)}\n\n"
+        "For each round, present the strongest bull argument, then the strongest bear counterargument. "
+        "After all rounds, determine which side made the stronger case and provide a suggested signal. "
+        "Submit your structured ResearcherDebate."
+    )
+    result = _claude_structured(system, user, ResearcherDebate, model)
+    result["ticker"] = bundle.ticker
+    return ResearcherDebate(**result)
+
+
+def _run_risk_manager(bundle: AnalystBundle, debate: ResearcherDebate, model: str) -> RiskAssessment:
+    system = f"""You are the Risk Manager at a professional trading firm.
+You are the last line of defense before real money is deployed.
+Your mandate: PROTECT THE PORTFOLIO. Returns are secondary. Survival is primary.
+
+{RISK_DISCIPLINE}
+
+Hard rules you must enforce right now:
+- If debate.confidence < {MIN_TRADE_CONFIDENCE} → approved=False, risk_level=HIGH
+- If bullish analyst count < {MIN_BULLISH_CONSENSUS} for a BUY signal → approved=False
+- If bearish analyst count < {MIN_BEARISH_CONSENSUS} for a SELL signal → approved=False
+- recommended_position_pct must NEVER exceed {MAX_POSITION_SIZE_PCT}%
+- stop_loss_pct must ALWAYS be set (default: {MANDATORY_STOP_LOSS_PCT}%)
+- If news.catalyst_upcoming is True (earnings near) → approved=False unless risk_level=LOW
+
+Your performance review is based entirely on how well you PREVENT LOSSES.
+Every dollar lost due to a trade you approved is on you personally."""
+
+    risk_input = {
+        "ticker": bundle.ticker,
+        "suggested_signal": debate.suggested_signal.value,
+        "debate_confidence": debate.confidence,
+        "debate_winner": debate.debate_winner,
+        "key_risks": debate.key_risks,
+        "key_catalysts": debate.key_catalysts,
+        "analyst_agreement": {
+            "bullish": bundle.bullish_count(),
+            "bearish": bundle.bearish_count(),
+            "avg_confidence": bundle.avg_confidence,
+        },
+    }
+
+    user = (
+        f"Assess portfolio risk for a potential {debate.suggested_signal.value} trade on {bundle.ticker}.\n\n"
+        f"Input:\n{json.dumps(risk_input, indent=2)}\n\n"
+        "Evaluate position sizing, stop-loss levels, VaR impact, correlation risk, "
+        "and concentration risk. Approve or reject the trade. Submit your structured RiskAssessment."
+    )
+    result = _claude_structured(system, user, RiskAssessment, model)
+    result["ticker"] = bundle.ticker
+    assessment = RiskAssessment(**result)
+
+    # ── Hard enforcement gates ─────────────────────────────────────────────────
+    rejection_reasons = []
+
+    if debate.confidence < MIN_TRADE_CONFIDENCE:
+        rejection_reasons.append(f"debate confidence {debate.confidence:.0%} below minimum {MIN_TRADE_CONFIDENCE:.0%}")
+
+    if debate.suggested_signal in (Signal.BUY, Signal.STRONG_BUY) and bundle.bullish_count() < MIN_BULLISH_CONSENSUS:
+        rejection_reasons.append(f"only {bundle.bullish_count()}/4 analysts bullish (need {MIN_BULLISH_CONSENSUS})")
+
+    if debate.suggested_signal in (Signal.SELL, Signal.STRONG_SELL) and bundle.bearish_count() < MIN_BEARISH_CONSENSUS:
+        rejection_reasons.append(f"only {bundle.bearish_count()}/4 analysts bearish (need {MIN_BEARISH_CONSENSUS})")
+
+    if assessment.risk_level == RiskLevel.HIGH:
+        rejection_reasons.append("risk level is HIGH — automatic rejection")
+
+    if bundle.news.catalyst_upcoming and assessment.risk_level != RiskLevel.LOW:
+        rejection_reasons.append("material catalyst upcoming (earnings/event) — too risky to hold through")
+
+    if rejection_reasons:
+        assessment.approved = False
+        assessment.risk_level = RiskLevel.HIGH
+        assessment.rejection_reason = "; ".join(rejection_reasons)
+
+    if assessment.recommended_position_pct and assessment.recommended_position_pct > MAX_POSITION_SIZE_PCT:
+        assessment.recommended_position_pct = MAX_POSITION_SIZE_PCT
+    if assessment.max_position_pct and assessment.max_position_pct > MAX_POSITION_SIZE_PCT:
+        assessment.max_position_pct = MAX_POSITION_SIZE_PCT
+
+    if assessment.stop_loss_pct is None:
+        assessment.stop_loss_pct = MANDATORY_STOP_LOSS_PCT
+
+    return assessment
+
+
+def _run_portfolio_manager(
+    bundle: AnalystBundle,
+    debate: ResearcherDebate,
+    risk: RiskAssessment,
+    model: str,
+) -> FinalDecision:
+    system = f"""You are the Portfolio Manager at a professional trading firm.
+Every decision you make is recorded, audited, and attributed to you personally.
+You are accountable for every dollar won and every dollar lost.
+
+{PM_DISCIPLINE}
+
+NON-NEGOTIABLE GATES (enforced in code after your response — do not try to circumvent):
+- risk.approved=False → decision=HOLD, always, no exceptions
+- debate.confidence < {MIN_TRADE_CONFIDENCE} → decision=HOLD
+- position_size_pct must match risk.recommended_position_pct exactly
+- stop_loss_pct must be set if decision is BUY or SELL
+
+Remember: the market will be open tomorrow. A HOLD today is not a failure.
+A reckless BUY that loses 15% is a failure that takes months to recover from."""
+
+    pm_input = {
+        "ticker": bundle.ticker,
+        "analyst_signals": {k: v.value for k, v in bundle.analyst_signals.items()},
+        "avg_analyst_confidence": bundle.avg_confidence,
+        "debate_suggestion": debate.suggested_signal.value,
+        "debate_confidence": debate.confidence,
+        "debate_winner": debate.debate_winner,
+        "risk_approved": risk.approved,
+        "risk_level": risk.risk_level.value,
+        "recommended_position_pct": risk.recommended_position_pct,
+        "stop_loss_pct": risk.stop_loss_pct,
+        "take_profit_pct": risk.take_profit_pct,
+        "risk_rejection_reason": risk.rejection_reason,
+    }
+
+    user = (
+        f"Make the final trade decision for {bundle.ticker}.\n\n"
+        f"Full picture:\n{json.dumps(pm_input, indent=2)}\n\n"
+        "If risk.approved is False, your decision MUST be HOLD. "
+        "Otherwise, weigh all inputs and make your final BUY/HOLD/SELL decision. "
+        "Submit your structured FinalDecision."
+    )
+    result = _claude_structured(system, user, FinalDecision, model)
+    result["ticker"] = bundle.ticker
+    result["analysis_date"] = bundle.analysis_date
+    result["analyst_signals"] = {k: v.value for k, v in bundle.analyst_signals.items()}
+    result["debate_winner"] = debate.debate_winner
+    result["risk_level"] = risk.risk_level.value
+    result["risk_approved"] = risk.approved
+    decision = FinalDecision(**result)
+
+    # ── Final enforcement gates ────────────────────────────────────────────────
+    force_hold_reasons = []
+
+    if not risk.approved:
+        force_hold_reasons.append(f"risk rejected: {risk.rejection_reason}")
+
+    if decision.confidence < MIN_TRADE_CONFIDENCE:
+        force_hold_reasons.append(f"confidence {decision.confidence:.0%} below minimum {MIN_TRADE_CONFIDENCE:.0%}")
+
+    if force_hold_reasons:
+        decision.decision = Decision.HOLD
+        decision.order_side = None
+        decision.position_size_pct = None
+        decision.primary_reason = "HOLD enforced by risk gate: " + "; ".join(force_hold_reasons)
+        decision.summary = (
+            f"Trade blocked by mandatory risk controls. Reasons: {'; '.join(force_hold_reasons)}. "
+            f"Original agent suggestion was {result.get('decision', 'unknown')} — "
+            "overridden to protect capital. Re-evaluate when conditions improve."
+        )
+
+    if decision.decision != Decision.HOLD and risk.recommended_position_pct:
+        decision.position_size_pct = risk.recommended_position_pct
+
+    if decision.decision != Decision.HOLD and decision.stop_loss_pct is None:
+        decision.stop_loss_pct = risk.stop_loss_pct or MANDATORY_STOP_LOSS_PCT
+
+    return decision
+
+
+# ── Main orchestrator ──────────────────────────────────────────────────────────
+
+async def _emit(run_id: str, event: dict):
+    await ws_manager.broadcast(f"run:{run_id}", event)
+
+
+def _run_full_pipeline(run_id: str, ticker: str, date: str, debate_rounds: int, model: str, loop: asyncio.AbstractEventLoop) -> dict:
+    """
+    Synchronous full pipeline. Runs in thread executor.
+    Receives the main event loop so sync_emit works correctly.
+    """
+
+    def sync_emit(event):
+        """Fire-and-forget WS emit from a thread."""
+        try:
+            asyncio.run_coroutine_threadsafe(_emit(run_id, event), loop)
+        except Exception:
+            pass
+
+    # Fetch real market data ONCE and share across analysts
+    log.info("structured_agent.fetching_data", ticker=ticker)
+    sync_emit({"type": "status_update", "message": f"Fetching real market data for {ticker}..."})
+    market_data = _fetch_market_data(ticker)
+    news_headlines = _fetch_news(ticker)
+
+    if market_data.get("error"):
+        log.warning("market_data.unavailable", ticker=ticker, error=market_data["error"])
+
+    sync_emit({"type": "agent_start", "agent": "Technical Analyst", "role": "analyst"})
+    technical = _run_technical_analyst(ticker, date, model, market_data)
+    sync_emit({"type": "debate_event", "agent": "Technical Analyst", "role": "analyst",
+               "content": technical.reasoning, "signal": technical.signal.value,
+               "confidence": technical.confidence})
+
+    sync_emit({"type": "agent_start", "agent": "Sentiment Analyst", "role": "analyst"})
+    sentiment = _run_sentiment_analyst(ticker, date, model, market_data)
+    sync_emit({"type": "debate_event", "agent": "Sentiment Analyst", "role": "analyst",
+               "content": sentiment.reasoning, "signal": sentiment.signal.value,
+               "confidence": sentiment.confidence})
+
+    sync_emit({"type": "agent_start", "agent": "News Analyst", "role": "analyst"})
+    news = _run_news_analyst(ticker, date, model, market_data, news_headlines)
+    sync_emit({"type": "debate_event", "agent": "News Analyst", "role": "analyst",
+               "content": news.reasoning, "signal": news.signal.value,
+               "confidence": news.confidence})
+
+    sync_emit({"type": "agent_start", "agent": "Fundamental Analyst", "role": "analyst"})
+    fundamental = _run_fundamental_analyst(ticker, date, model, market_data)
+    sync_emit({"type": "debate_event", "agent": "Fundamental Analyst", "role": "analyst",
+               "content": fundamental.reasoning, "signal": fundamental.signal.value,
+               "confidence": fundamental.confidence})
+
+    bundle = AnalystBundle(
+        ticker=ticker,
+        analysis_date=date,
+        technical=technical,
+        sentiment=sentiment,
+        news=news,
+        fundamental=fundamental,
+    )
+
+    sync_emit({"type": "agent_start", "agent": "Researcher Team", "role": "researcher"})
+    debate = _run_researcher_debate(bundle, debate_rounds, model)
+    sync_emit({"type": "debate_event", "agent": "Researcher Team", "role": "researcher",
+               "content": f"Bull: {debate.bull_final_thesis}\n\nBear: {debate.bear_final_thesis}",
+               "signal": debate.suggested_signal.value, "confidence": debate.confidence,
+               "debate_winner": debate.debate_winner})
+
+    sync_emit({"type": "agent_start", "agent": "Risk Manager", "role": "risk"})
+    risk = _run_risk_manager(bundle, debate, model)
+    sync_emit({"type": "debate_event", "agent": "Risk Manager", "role": "risk",
+               "content": risk.reasoning, "risk_level": risk.risk_level.value,
+               "approved": risk.approved, "position_pct": risk.recommended_position_pct})
+
+    sync_emit({"type": "agent_start", "agent": "Portfolio Manager", "role": "pm"})
+    final = _run_portfolio_manager(bundle, debate, risk, model)
+    sync_emit({"type": "debate_event", "agent": "Portfolio Manager", "role": "pm",
+               "content": final.summary, "decision": final.decision.value,
+               "confidence": final.confidence})
+
+    debate_log = [
+        {"agent": "Technical Analyst", "role": "analyst", "content": technical.reasoning,
+         "signal": technical.signal.value, "confidence": technical.confidence,
+         "data": technical.model_dump(exclude={"reasoning", "ticker"})},
+        {"agent": "Sentiment Analyst", "role": "analyst", "content": sentiment.reasoning,
+         "signal": sentiment.signal.value, "confidence": sentiment.confidence,
+         "data": sentiment.model_dump(exclude={"reasoning", "ticker"})},
+        {"agent": "News Analyst", "role": "analyst", "content": news.reasoning,
+         "signal": news.signal.value, "confidence": news.confidence,
+         "data": news.model_dump(exclude={"reasoning", "ticker"})},
+        {"agent": "Fundamental Analyst", "role": "analyst", "content": fundamental.reasoning,
+         "signal": fundamental.signal.value, "confidence": fundamental.confidence,
+         "data": fundamental.model_dump(exclude={"reasoning", "ticker"})},
+        {"agent": "Researcher Team", "role": "researcher",
+         "content": f"Bull: {debate.bull_final_thesis}\n\nBear: {debate.bear_final_thesis}",
+         "signal": debate.suggested_signal.value, "confidence": debate.confidence,
+         "data": debate.model_dump(exclude={"ticker"})},
+        {"agent": "Risk Manager", "role": "risk", "content": risk.reasoning,
+         "risk_level": risk.risk_level.value, "approved": risk.approved,
+         "data": risk.model_dump(exclude={"reasoning", "ticker"})},
+        {"agent": "Portfolio Manager", "role": "pm", "content": final.summary,
+         "decision": final.decision.value, "confidence": final.confidence,
+         "data": final.model_dump(exclude={"summary", "ticker", "analysis_date"})},
+    ]
+
+    return {
+        "decision": final.decision.value,
+        "confidence": final.confidence,
+        "summary": final.summary,
+        "debate_log": debate_log,
+        "reasoning_json": {
+            "market_data": market_data,
+            "technical": technical.model_dump(),
+            "sentiment": sentiment.model_dump(),
+            "news": news.model_dump(),
+            "fundamental": fundamental.model_dump(),
+            "debate": debate.model_dump(),
+            "risk": risk.model_dump(),
+            "final": final.model_dump(),
+        },
+    }
+
+
+async def run_structured_agent_analysis(
+    run_id: str,
+    ticker: str,
+    analysis_date: str,
+    debate_rounds: int,
+    model: str,
+):
+    """Async entry point. Updates DB and broadcasts WS events throughout."""
+    log.info("structured_agent.run.start", run_id=run_id, ticker=ticker)
+
+    async with AsyncSessionLocal() as db:
+        run = await db.get(AgentRun, run_id)
+        run.status = "running"
+        await db.commit()
+
+    await _emit(run_id, {"type": "status", "status": "running", "ticker": ticker})
+
+    try:
+        # Capture the running event loop so thread can emit WS events correctly
+        loop = asyncio.get_running_loop()
+
+        result = await loop.run_in_executor(
+            None, _run_full_pipeline, run_id, ticker, analysis_date, debate_rounds, model, loop
+        )
+
+        async with AsyncSessionLocal() as db:
+            run = await db.get(AgentRun, run_id)
+            run.status = "completed"
+            run.decision = result["decision"]
+            run.confidence = result["confidence"]
+            run.summary = result["summary"]
+            run.debate_log = result["debate_log"]
+            run.reasoning_json = result["reasoning_json"]
+            run.completed_at = datetime.now(UTC)
+            await db.commit()
+
+        await _emit(run_id, {
+            "type": "completed",
+            "decision": result["decision"],
+            "confidence": result["confidence"],
+            "summary": result["summary"],
+            "debate_log": result["debate_log"],
+        })
+
+    except Exception as exc:
+        import traceback
+        log.error("structured_agent.run.error", run_id=run_id, error=str(exc))
+
+        async with AsyncSessionLocal() as db:
+            run = await db.get(AgentRun, run_id)
+            run.status = "failed"
+            run.error = f"{exc}\n{traceback.format_exc()}"
+            run.completed_at = datetime.now(UTC)
+            await db.commit()
+
+        await _emit(run_id, {"type": "error", "error": str(exc)})

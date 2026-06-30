@@ -1,0 +1,98 @@
+version: "3.9"
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: tap_postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-tap}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-tap_secret}
+      POSTGRES_DB: ${POSTGRES_DB:-trading}
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    ports:
+      - "5432:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U tap"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  # TimescaleDB removed for free-tier — OHLCV stored in main Postgres.
+  # Add back when moving to paid infra.
+
+  redis:
+    image: redis:7-alpine
+    container_name: tap_redis
+    restart: unless-stopped
+    command: redis-server --save 60 1 --loglevel warning
+    volumes:
+      - redisdata:/data
+    ports:
+      - "6379:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  # Kafka removed for free-tier deployment — using Redis pub/sub instead.
+  # Add back when moving to paid infra: bitnami/kafka:3.7 + MSK on AWS
+
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: tap_backend
+    restart: unless-stopped
+    env_file: .env
+    environment:
+      DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER:-tap}:${POSTGRES_PASSWORD:-tap_secret}@postgres:5432/${POSTGRES_DB:-trading}
+      REDIS_URL: redis://redis:6379/0
+    volumes:
+      - ./backend:/app
+    ports:
+      - "8000:8000"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    command: uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
+
+  worker:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: tap_worker
+    restart: unless-stopped
+    env_file: .env
+    environment:
+      DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER:-tap}:${POSTGRES_PASSWORD:-tap_secret}@postgres:5432/${POSTGRES_DB:-trading}
+      REDIS_URL: redis://redis:6379/0
+    volumes:
+      - ./backend:/app
+    depends_on:
+      backend:
+        condition: service_started
+    command: python -m app.workers.main
+
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    container_name: tap_frontend
+    restart: unless-stopped
+    volumes:
+      - ./frontend:/app
+      - /app/node_modules
+    ports:
+      - "5173:5173"
+    environment:
+      VITE_API_URL: http://localhost:8000
+      VITE_WS_URL: ws://localhost:8000
+
+volumes:
+  pgdata:
+  redisdata:
