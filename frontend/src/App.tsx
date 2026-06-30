@@ -11,6 +11,7 @@ import Settings from "./pages/Settings";
 import Scanner from "./pages/Scanner";
 import OptionsDesk from "./pages/Options";
 import Analytics from "./pages/Analytics";
+import Alerts from "./pages/Alerts";
 import Login from "./pages/Login";
 import Signup from "./pages/Signup";
 import { isAuthenticated, clearAuth } from "./lib/auth";
@@ -46,6 +47,7 @@ export default function App() {
             <Route path="/trades" element={<TradeHistory />} />
             <Route path="/backtest" element={<Backtesting />} />
             <Route path="/analytics" element={<Analytics />} />
+            <Route path="/alerts" element={<Alerts />} />
             <Route path="/settings" element={<Settings />} />
             <Route path="*" element={<Navigate to="/dashboard" replace />} />
           </Routes>

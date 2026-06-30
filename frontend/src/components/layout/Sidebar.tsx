@@ -13,6 +13,7 @@ import {
   TrendingUp,
   LogOut,
   Brain,
+  Bell,
 } from "lucide-react";
 import { cn } from "../../lib/cn";
 import { getUser } from "../../lib/auth";
@@ -23,6 +24,7 @@ const NAV = [
   { to: "/options", icon: TrendingUp, label: "Options Desk" },
   { to: "/scanner", icon: Radar, label: "Scanner" },
   { to: "/analytics", icon: Brain, label: "Analytics" },
+  { to: "/alerts", icon: Bell, label: "Alerts" },
   { to: "/portfolio", icon: PieChart, label: "Portfolio" },
   { to: "/trades", icon: ScrollText, label: "Trade History" },
   { to: "/backtest", icon: FlaskConical, label: "Backtesting" },

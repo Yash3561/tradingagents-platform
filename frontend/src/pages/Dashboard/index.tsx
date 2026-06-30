@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { motion } from "framer-motion";
-import { DollarSign, TrendingUp, BarChart2, Activity, Loader2, RefreshCw, ShieldCheck, ShieldAlert, ShieldX, Clock, Radio } from "lucide-react";
+import { DollarSign, TrendingUp, BarChart2, Activity, Loader2, RefreshCw, ShieldCheck, ShieldAlert, ShieldX, Clock, Radio, Bell } from "lucide-react";
 import MetricCard from "../../components/data-display/MetricCard";
 import PnLBadge from "../../components/data-display/PnLBadge";
 import CandlestickChart from "../../components/charts/CandlestickChart";
@@ -213,6 +213,7 @@ export default function Dashboard() {
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [chartTicker, setChartTicker] = useState("SPY");
+  const [alertSummary, setAlertSummary] = useState<{total:number,critical:number,warning:number,info:number} | null>(null);
 
   const load = async () => {
     setRefreshing(true);
@@ -239,6 +240,10 @@ export default function Dashboard() {
     load();
     const interval = setInterval(load, 30000); // refresh every 30s
     return () => clearInterval(interval);
+  }, []);
+
+  useEffect(() => {
+    api.get("/alerts/summary").then(r => setAlertSummary(r.data)).catch(() => {});
   }, []);
 
   const today = new Date().toLocaleDateString("en-US", { weekday: "long", month: "long", day: "numeric", year: "numeric" });
@@ -335,6 +340,26 @@ export default function Dashboard() {
           )}
         </motion.div>
       </div>
+
+      {/* Active Alerts mini-card */}
+      {alertSummary && alertSummary.total > 0 && (
+        <div className="card p-4 border border-warn/20 bg-warn/5">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-2">
+              <Bell size={16} className="text-warn" />
+              <span className="text-sm font-semibold text-white">
+                {alertSummary.total} Active Alert{alertSummary.total !== 1 ? "s" : ""}
+              </span>
+            </div>
+            <a href="/alerts" className="text-xs text-accent hover:underline">View All →</a>
+          </div>
+          <div className="flex gap-3 mt-2">
+            {alertSummary.critical > 0 && <span className="text-xs text-loss font-mono">{alertSummary.critical} critical</span>}
+            {alertSummary.warning > 0 && <span className="text-xs text-warn font-mono">{alertSummary.warning} warning</span>}
+            {alertSummary.info > 0 && <span className="text-xs text-slate-400 font-mono">{alertSummary.info} info</span>}
+          </div>
+        </div>
+      )}
 
       {/* Price Chart */}
       <div className="mt-2">

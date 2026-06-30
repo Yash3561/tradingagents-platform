@@ -3,6 +3,7 @@ from app.api.v1 import dashboard, agents, portfolio, trades, market, backtest, s
 from app.api.v1 import notifications, activity
 from app.api.v1 import auth
 from app.api.v1 import analytics
+from app.api.v1 import alerts
 
 api_router = APIRouter()
 
@@ -18,3 +19,4 @@ api_router.include_router(websockets.router, prefix="/ws", tags=["websockets"])
 api_router.include_router(notifications.router, prefix="/notifications", tags=["notifications"])
 api_router.include_router(activity.router, prefix="/activity", tags=["activity"])
 api_router.include_router(analytics.router, prefix="/analytics", tags=["analytics"])
+api_router.include_router(alerts.router, prefix="/alerts", tags=["alerts"])
