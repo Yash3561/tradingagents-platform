@@ -823,6 +823,9 @@ async def _place_order_if_approved(run_id: str, ticker: str, result: dict):
 
         order = alpaca_client.submit_order(ticker, side, qty)
 
+        stop_loss_pct = final.get("stop_loss_pct") or 7.0
+        take_profit_pct = final.get("take_profit_pct") or 15.0
+
         async with AsyncSessionLocal() as db:
             trade = Trade(
                 id=str(uuid.uuid4()),
@@ -833,11 +836,15 @@ async def _place_order_if_approved(run_id: str, ticker: str, result: dict):
                 qty=qty,
                 order_type="market",
                 status=order.get("status", "submitted"),
+                stop_loss_pct=stop_loss_pct,
+                take_profit_pct=take_profit_pct,
                 reasoning_json={
                     "decision": decision,
                     "confidence": confidence,
                     "position_pct": position_pct,
                     "current_price": current_price,
+                    "stop_loss_pct": stop_loss_pct,
+                    "take_profit_pct": take_profit_pct,
                     "alpaca_order": order,
                     "agent_summary": result.get("summary"),
                 },

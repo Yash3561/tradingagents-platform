@@ -5,6 +5,10 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from app.config import get_settings
 from app.core.postgres import init_db
+# Import all models so SQLAlchemy registers them before create_all
+import app.db.models.agent_run  # noqa: F401
+import app.db.models.trade       # noqa: F401
+import app.db.models.equity_snapshot  # noqa: F401
 from app.core.redis_client import get_redis
 from app.api.router import api_router
 

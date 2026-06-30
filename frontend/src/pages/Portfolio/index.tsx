@@ -1,38 +1,117 @@
+import { useEffect, useState } from "react";
 import { motion } from "framer-motion";
-import { PieChart, Pie, Cell, Tooltip, ResponsiveContainer } from "recharts";
-import MetricCard from "../../components/data-display/MetricCard";
+import {
+  PieChart, Pie, Cell, Tooltip, ResponsiveContainer,
+  AreaChart, Area, XAxis, YAxis, CartesianGrid,
+} from "recharts";
 import PnLBadge from "../../components/data-display/PnLBadge";
 import { fmt } from "../../lib/formatters";
-import { Shield, Activity, TrendingDown, TrendingUp } from "lucide-react";
+import { api } from "../../lib/api";
+import { cn } from "../../lib/cn";
+import { RefreshCw, Loader2 } from "lucide-react";
 
-const POSITIONS = [
-  { ticker: "AAPL", name: "Apple Inc.", qty: 50, price: 229.87, cost: 198.30, value: 11493.50, weight: 9.21, pct: 15.92, sector: "Technology" },
-  { ticker: "NVDA", name: "NVIDIA Corp.", qty: 20, price: 131.38, cost: 110.00, value: 2627.60, weight: 2.11, pct: 19.44, sector: "Technology" },
-  { ticker: "MSFT", name: "Microsoft Corp.", qty: 30, price: 432.01, cost: 415.50, value: 12960.30, weight: 10.38, pct: 3.97, sector: "Technology" },
-  { ticker: "TSLA", name: "Tesla Inc.", qty: 15, price: 253.18, cost: 280.00, value: 3797.70, weight: 3.04, pct: -9.58, sector: "Consumer Disc." },
-  { ticker: "AMZN", name: "Amazon.com Inc.", qty: 25, price: 196.98, cost: 185.40, value: 4924.50, weight: 3.95, pct: 6.25, sector: "Consumer Disc." },
-  { ticker: "SCHD", name: "Schwab US Dividend", qty: 200, price: 82.14, cost: 78.40, value: 16428.00, weight: 13.16, pct: 4.77, sector: "ETF" },
-  { ticker: "TLT", name: "iShares 20Y Treasury", qty: 100, price: 94.80, cost: 97.20, value: 9480.00, weight: 7.60, pct: -2.47, sector: "Fixed Income" },
-];
+const PIE_COLORS = ["#2D7DD2", "#4A9AEF", "#00E676", "#FFB740", "#FF3D57", "#7C5CBF", "#4D6080"];
 
-const ALLOCATION = [
-  { name: "Technology", value: 42, color: "#2D7DD2" },
-  { name: "ETF", value: 22, color: "#4A9AEF" },
-  { name: "Fixed Income", value: 18, color: "#00E676" },
-  { name: "Consumer Disc.", value: 12, color: "#FFB740" },
-  { name: "Cash", value: 6, color: "#4D6080" },
-];
+interface Position {
+  ticker: string;
+  qty: number;
+  market_value: number;
+  cost_basis: number;
+  unrealized_pnl: number;
+  unrealized_pnl_pct: number;
+  current_price: number;
+  avg_entry_price: number;
+  side: string;
+}
 
-const RISK_METRICS = [
-  { label: "Sharpe Ratio", value: "1.42", accent: "accent" as const },
-  { label: "Sortino Ratio", value: "1.87", accent: "gain" as const },
-  { label: "Max Drawdown", value: "-8.4%", accent: "loss" as const },
-  { label: "Portfolio Beta", value: "0.92", accent: "accent" as const },
-  { label: "Daily VaR (95%)", value: "$1,248", accent: "warn" as const },
-  { label: "Calmar Ratio", value: "2.31", accent: "gain" as const },
-];
+interface RiskMetrics {
+  equity: number;
+  cash: number;
+  long_market_value: number;
+  day_pnl: number;
+  day_pnl_pct: number;
+  buying_power: number;
+  cash_pct: number;
+  invested_pct: number;
+  sharpe: number | null;
+  max_drawdown: number | null;
+  total_return: number | null;
+  snapshot_count: number;
+}
+
+interface EquityPoint {
+  timestamp: string;
+  equity: number;
+  cash: number;
+  day_pnl: number;
+}
+
+function StatCard({ label, value, sub, color }: {
+  label: string; value: string; sub?: string; color?: string;
+}) {
+  return (
+    <div className="card p-4">
+      <p className="metric-label">{label}</p>
+      <p className={cn("metric-value mt-1", color ?? "text-text-primary")}>{value}</p>
+      {sub && <p className="text-xs text-text-muted mt-0.5">{sub}</p>}
+    </div>
+  );
+}
 
 export default function Portfolio() {
+  const [positions, setPositions] = useState<Position[]>([]);
+  const [allocation, setAllocation] = useState<{ ticker: string; market_value: number; pct: number }[]>([]);
+  const [metrics, setMetrics] = useState<RiskMetrics | null>(null);
+  const [curve, setCurve] = useState<EquityPoint[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
+
+  const load = async () => {
+    setRefreshing(true);
+    try {
+      const [posRes, allocRes, metricRes, curveRes] = await Promise.all([
+        api.get("/portfolio/positions"),
+        api.get("/portfolio/allocation"),
+        api.get("/portfolio/risk-metrics"),
+        api.get("/portfolio/equity-curve?limit=100"),
+      ]);
+      setPositions(posRes.data);
+      setAllocation(allocRes.data);
+      setMetrics(metricRes.data);
+      setCurve(curveRes.data);
+    } catch (e) {
+      console.error("Portfolio load failed", e);
+    } finally {
+      setLoading(false);
+      setRefreshing(false);
+    }
+  };
+
+  useEffect(() => { load(); }, []);
+
+  const pieData = allocation.slice(0, 7).map((a, i) => ({
+    name: a.ticker,
+    value: a.pct,
+    color: PIE_COLORS[i % PIE_COLORS.length],
+  }));
+
+  const curveFormatted = curve.map(p => ({
+    t: new Date(p.timestamp).toLocaleDateString("en-US", { month: "short", day: "numeric" }),
+    equity: p.equity,
+    pnl: p.day_pnl,
+  }));
+
+  const equityMin = curve.length ? Math.min(...curve.map(p => p.equity)) * 0.998 : 99000;
+  const equityMax = curve.length ? Math.max(...curve.map(p => p.equity)) * 1.002 : 101000;
+
+  if (loading) {
+    return (
+      <div className="flex items-center justify-center h-64">
+        <Loader2 size={24} className="animate-spin text-accent" />
+      </div>
+    );
+  }
+
   return (
     <motion.div
       key="portfolio"
@@ -42,104 +121,210 @@ export default function Portfolio() {
       transition={{ duration: 0.25 }}
       className="space-y-6"
     >
-      <div>
-        <h1 className="text-xl font-semibold text-text-primary">Portfolio</h1>
-        <p className="text-sm text-text-muted mt-0.5">Positions, allocation &amp; risk metrics</p>
+      <div className="flex items-center justify-between">
+        <div>
+          <h1 className="text-xl font-semibold text-text-primary">Portfolio</h1>
+          <p className="text-sm text-text-muted mt-0.5">Live positions &amp; performance metrics</p>
+        </div>
+        <button
+          onClick={load}
+          disabled={refreshing}
+          className="flex items-center gap-1.5 px-3 py-1.5 text-xs text-text-muted hover:text-text-primary border border-border rounded-lg hover:bg-bg-elevated transition-colors"
+        >
+          <RefreshCw size={13} className={refreshing ? "animate-spin" : ""} />
+          Refresh
+        </button>
       </div>
 
-      {/* Risk metrics grid */}
-      <div className="grid grid-cols-6 gap-3">
-        {RISK_METRICS.map(({ label, value, accent }) => (
-          <MetricCard key={label} label={label} value={value} accent={accent} />
-        ))}
-      </div>
+      {/* Top KPIs */}
+      {metrics && (
+        <div className="grid grid-cols-4 gap-3">
+          <StatCard
+            label="Portfolio Equity"
+            value={fmt.usd(metrics.equity)}
+            sub={`${metrics.invested_pct}% invested`}
+          />
+          <StatCard
+            label="Day P&L"
+            value={(metrics.day_pnl >= 0 ? "+" : "") + fmt.usd(metrics.day_pnl)}
+            sub={`${metrics.day_pnl_pct >= 0 ? "+" : ""}${metrics.day_pnl_pct.toFixed(2)}%`}
+            color={metrics.day_pnl >= 0 ? "text-gain" : "text-loss"}
+          />
+          <StatCard
+            label="Sharpe Ratio"
+            value={metrics.sharpe != null ? metrics.sharpe.toFixed(2) : "—"}
+            sub={metrics.snapshot_count < 10 ? "Building history..." : "90-day annualized"}
+            color={metrics.sharpe != null && metrics.sharpe > 1 ? "text-gain" : undefined}
+          />
+          <StatCard
+            label="Max Drawdown"
+            value={metrics.max_drawdown != null ? `${metrics.max_drawdown.toFixed(1)}%` : "—"}
+            sub={metrics.total_return != null ? `Total return: ${metrics.total_return > 0 ? "+" : ""}${metrics.total_return.toFixed(1)}%` : undefined}
+            color={metrics.max_drawdown != null && metrics.max_drawdown < -5 ? "text-loss" : "text-warn"}
+          />
+        </div>
+      )}
+
+      {/* Equity curve */}
+      {curve.length > 1 && (
+        <div className="card p-5">
+          <h2 className="text-sm font-semibold text-text-primary mb-4">Equity Curve</h2>
+          <ResponsiveContainer width="100%" height={160}>
+            <AreaChart data={curveFormatted} margin={{ top: 0, right: 0, left: 0, bottom: 0 }}>
+              <defs>
+                <linearGradient id="equityGrad" x1="0" y1="0" x2="0" y2="1">
+                  <stop offset="5%" stopColor="#2D7DD2" stopOpacity={0.3} />
+                  <stop offset="95%" stopColor="#2D7DD2" stopOpacity={0} />
+                </linearGradient>
+              </defs>
+              <CartesianGrid strokeDasharray="3 3" stroke="#1E2D45" />
+              <XAxis dataKey="t" tick={{ fill: "#4D6080", fontSize: 10 }} tickLine={false} axisLine={false} />
+              <YAxis
+                domain={[equityMin, equityMax]}
+                tick={{ fill: "#4D6080", fontSize: 10 }}
+                tickLine={false}
+                axisLine={false}
+                tickFormatter={v => `$${(v / 1000).toFixed(0)}k`}
+                width={50}
+              />
+              <Tooltip
+                contentStyle={{ background: "#141D30", border: "1px solid #1E2D45", borderRadius: 8, fontSize: 12 }}
+                formatter={(v: number) => [fmt.usd(v), "Equity"]}
+              />
+              <Area
+                type="monotone"
+                dataKey="equity"
+                stroke="#2D7DD2"
+                strokeWidth={2}
+                fill="url(#equityGrad)"
+                dot={false}
+              />
+            </AreaChart>
+          </ResponsiveContainer>
+        </div>
+      )}
 
       <div className="grid grid-cols-3 gap-4">
         {/* Allocation pie */}
         <div className="card p-5">
           <h2 className="text-sm font-semibold text-text-primary mb-4">Allocation</h2>
-          <ResponsiveContainer width="100%" height={200}>
-            <PieChart>
-              <Pie data={ALLOCATION} cx="50%" cy="50%" innerRadius={55} outerRadius={80} paddingAngle={3} dataKey="value">
-                {ALLOCATION.map((entry, i) => (
-                  <Cell key={i} fill={entry.color} strokeWidth={0} />
+          {pieData.length > 0 ? (
+            <>
+              <ResponsiveContainer width="100%" height={180}>
+                <PieChart>
+                  <Pie data={pieData} cx="50%" cy="50%" innerRadius={50} outerRadius={75} paddingAngle={3} dataKey="value">
+                    {pieData.map((entry, i) => (
+                      <Cell key={i} fill={entry.color} strokeWidth={0} />
+                    ))}
+                  </Pie>
+                  <Tooltip
+                    contentStyle={{ background: "#141D30", border: "1px solid #1E2D45", borderRadius: 8, fontSize: 12 }}
+                    formatter={(v: number) => [`${v.toFixed(1)}%`, ""]}
+                  />
+                </PieChart>
+              </ResponsiveContainer>
+              <div className="space-y-1.5 mt-2">
+                {pieData.map(({ name, value, color }) => (
+                  <div key={name} className="flex items-center justify-between">
+                    <div className="flex items-center gap-2">
+                      <div className="w-2 h-2 rounded-full shrink-0" style={{ backgroundColor: color }} />
+                      <span className="text-xs font-mono text-text-secondary">{name}</span>
+                    </div>
+                    <span className="text-xs font-mono text-text-primary">{value.toFixed(1)}%</span>
+                  </div>
                 ))}
-              </Pie>
-              <Tooltip
-                contentStyle={{ background: "#141D30", border: "1px solid #1E2D45", borderRadius: 8, fontSize: 12 }}
-                formatter={(v: number) => [`${v}%`, ""]}
-              />
-            </PieChart>
-          </ResponsiveContainer>
-          <div className="space-y-2 mt-2">
-            {ALLOCATION.map(({ name, value, color }) => (
-              <div key={name} className="flex items-center justify-between">
-                <div className="flex items-center gap-2">
-                  <div className="w-2.5 h-2.5 rounded-full shrink-0" style={{ backgroundColor: color }} />
-                  <span className="text-xs text-text-secondary">{name}</span>
-                </div>
-                <span className="text-xs font-mono text-text-primary">{value}%</span>
               </div>
-            ))}
-          </div>
+            </>
+          ) : (
+            <p className="text-xs text-text-muted text-center py-8">No positions</p>
+          )}
         </div>
 
-        {/* Sector exposure horizontal bars */}
+        {/* Sector / allocation bars */}
         <div className="card p-5 col-span-2">
-          <h2 className="text-sm font-semibold text-text-primary mb-4">Sector Exposure</h2>
-          <div className="space-y-3">
-            {ALLOCATION.map(({ name, value, color }) => (
-              <div key={name}>
-                <div className="flex justify-between mb-1">
-                  <span className="text-xs text-text-secondary">{name}</span>
-                  <span className="text-xs font-mono text-text-primary">{value}%</span>
+          <h2 className="text-sm font-semibold text-text-primary mb-4">Position Weights</h2>
+          {pieData.length > 0 ? (
+            <div className="space-y-3">
+              {pieData.map(({ name, value, color }) => (
+                <div key={name}>
+                  <div className="flex justify-between mb-1">
+                    <span className="text-xs font-mono text-text-secondary">{name}</span>
+                    <span className="text-xs font-mono text-text-primary">{value.toFixed(1)}%</span>
+                  </div>
+                  <div className="h-2 bg-bg-elevated rounded-full overflow-hidden">
+                    <motion.div
+                      initial={{ width: 0 }}
+                      animate={{ width: `${value}%` }}
+                      transition={{ duration: 0.8, ease: "easeOut" }}
+                      className="h-full rounded-full"
+                      style={{ backgroundColor: color }}
+                    />
+                  </div>
                 </div>
-                <div className="h-2 bg-bg-elevated rounded-full overflow-hidden">
-                  <motion.div
-                    initial={{ width: 0 }}
-                    animate={{ width: `${value}%` }}
-                    transition={{ duration: 0.8, ease: "easeOut" }}
-                    className="h-full rounded-full"
-                    style={{ backgroundColor: color }}
-                  />
-                </div>
-              </div>
-            ))}
-          </div>
+              ))}
+            </div>
+          ) : (
+            <p className="text-xs text-text-muted">No positions — run a scan to auto-build a portfolio.</p>
+          )}
         </div>
       </div>
 
       {/* Positions table */}
-      <div className="card p-5">
-        <h2 className="text-sm font-semibold text-text-primary mb-4">Positions</h2>
-        <div className="overflow-x-auto">
-          <table className="w-full">
-            <thead>
-              <tr>
-                {["Ticker", "Name", "Qty", "Price", "Cost", "Market Value", "Weight", "P&L", "Sector"].map(h => (
-                  <th key={h} className="metric-label text-left pb-3 font-medium">{h}</th>
-                ))}
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-border/50">
-              {POSITIONS.map(({ ticker, name, qty, price, cost, value, weight, pct, sector }) => (
-                <tr key={ticker} className="hover:bg-bg-elevated/50 transition-colors group">
-                  <td className="py-3 pr-4">
-                    <span className="font-mono font-bold text-sm text-text-primary group-hover:text-accent-bright transition-colors">{ticker}</span>
-                  </td>
-                  <td className="py-3 pr-4 text-xs text-text-secondary max-w-[140px] truncate">{name}</td>
-                  <td className="py-3 pr-4 font-mono text-sm text-text-secondary">{qty}</td>
-                  <td className="py-3 pr-4 font-mono text-sm text-text-primary">{fmt.price(price)}</td>
-                  <td className="py-3 pr-4 font-mono text-sm text-text-muted">{fmt.price(cost)}</td>
-                  <td className="py-3 pr-4 font-mono text-sm text-text-primary">{fmt.usd(value)}</td>
-                  <td className="py-3 pr-4 font-mono text-sm text-text-secondary">{weight.toFixed(1)}%</td>
-                  <td className="py-3 pr-4"><PnLBadge value={pct} /></td>
-                  <td className="py-3 text-xs text-text-muted">{sector}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
+      <div className="card overflow-hidden">
+        <div className="px-5 py-4 border-b border-border flex items-center justify-between">
+          <h2 className="text-sm font-semibold text-text-primary">
+            Open Positions
+            {positions.length > 0 && (
+              <span className="ml-2 text-xs text-text-muted font-normal">{positions.length}</span>
+            )}
+          </h2>
+          {metrics && (
+            <span className="text-xs text-text-muted font-mono">
+              Cash: {fmt.usd(metrics.cash)} · BP: {fmt.usd(metrics.buying_power)}
+            </span>
+          )}
         </div>
+        {positions.length > 0 ? (
+          <div className="overflow-x-auto">
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="border-b border-border">
+                  {["Ticker", "Qty", "Entry", "Current", "Mkt Value", "Unrealized P&L", "Stop", "Target"].map(h => (
+                    <th key={h} className="metric-label text-left px-4 py-3 font-medium">{h}</th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-border/50">
+                {positions.map(p => (
+                  <tr key={p.ticker} className="hover:bg-bg-elevated/50 transition-colors group">
+                    <td className="px-4 py-3 font-mono font-bold text-text-primary group-hover:text-accent-bright transition-colors">
+                      {p.ticker}
+                    </td>
+                    <td className="px-4 py-3 font-mono text-text-secondary">{p.qty.toFixed(4)}</td>
+                    <td className="px-4 py-3 font-mono text-text-muted">{fmt.price(p.avg_entry_price)}</td>
+                    <td className="px-4 py-3 font-mono text-text-primary">{fmt.price(p.current_price)}</td>
+                    <td className="px-4 py-3 font-mono text-text-primary">{fmt.usd(p.market_value)}</td>
+                    <td className="px-4 py-3">
+                      <div className="flex items-center gap-2">
+                        <PnLBadge value={p.unrealized_pnl_pct} />
+                        <span className={cn("text-xs font-mono", p.unrealized_pnl >= 0 ? "text-gain" : "text-loss")}>
+                          {p.unrealized_pnl >= 0 ? "+" : ""}{fmt.usd(p.unrealized_pnl)}
+                        </span>
+                      </div>
+                    </td>
+                    <td className="px-4 py-3 text-xs font-mono text-loss/70">—</td>
+                    <td className="px-4 py-3 text-xs font-mono text-gain/70">—</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        ) : (
+          <div className="px-5 py-10 text-center">
+            <p className="text-sm text-text-muted">No open positions</p>
+            <p className="text-xs text-text-muted mt-1">Run a market scan to auto-execute trades</p>
+          </div>
+        )}
       </div>
     </motion.div>
   );

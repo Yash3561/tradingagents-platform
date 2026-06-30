@@ -66,38 +66,49 @@ async def get_allocation():
 
 @router.get("/risk-metrics")
 async def risk_metrics():
-    """Basic portfolio metrics from Alpaca account."""
+    """Portfolio metrics from Alpaca account + computed Sharpe/drawdown from equity curve."""
+    from app.workers.equity_tracker import compute_performance_metrics
+
+    # Fetch live account data
+    acct_data = {}
     try:
         async with httpx.AsyncClient(timeout=8.0) as client:
             r = await client.get(
                 f"{settings.alpaca_base_url}/v2/account",
                 headers=_alpaca_headers(),
             )
-        if r.status_code != 200:
-            raise Exception("Alpaca account fetch failed")
-        acct = r.json()
-        equity = float(acct.get("equity", 100000))
-        last_equity = float(acct.get("last_equity", equity))
-        long_mv = float(acct.get("long_market_value", 0))
-        cash = float(acct.get("cash", equity))
-        day_pnl = equity - last_equity
-        return {
-            "equity": round(equity, 2),
-            "cash": round(cash, 2),
-            "long_market_value": round(long_mv, 2),
-            "day_pnl": round(day_pnl, 2),
-            "day_pnl_pct": round(day_pnl / last_equity * 100, 2) if last_equity else 0,
-            "buying_power": round(float(acct.get("buying_power", equity)), 2),
-            "cash_pct": round(cash / equity * 100, 1) if equity else 100,
-            "invested_pct": round(long_mv / equity * 100, 1) if equity else 0,
-            # Placeholder ratios — need historical equity curve to compute properly
-            "sharpe": None,
-            "max_drawdown": None,
-        }
+        if r.status_code == 200:
+            acct_data = r.json()
     except Exception as e:
-        log.warning("portfolio.metrics_failed", error=str(e))
-        return {
-            "equity": 100000, "cash": 100000, "long_market_value": 0,
-            "day_pnl": 0, "day_pnl_pct": 0, "buying_power": 100000,
-            "cash_pct": 100, "invested_pct": 0, "sharpe": None, "max_drawdown": None,
-        }
+        log.warning("portfolio.metrics_alpaca_failed", error=str(e))
+
+    equity = float(acct_data.get("equity", 100000))
+    last_equity = float(acct_data.get("last_equity", equity))
+    long_mv = float(acct_data.get("long_market_value", 0))
+    cash = float(acct_data.get("cash", equity))
+    day_pnl = equity - last_equity
+
+    # Compute Sharpe + drawdown from historical snapshots
+    perf = await compute_performance_metrics(days=90)
+
+    return {
+        "equity": round(equity, 2),
+        "cash": round(cash, 2),
+        "long_market_value": round(long_mv, 2),
+        "day_pnl": round(day_pnl, 2),
+        "day_pnl_pct": round(day_pnl / last_equity * 100, 2) if last_equity else 0,
+        "buying_power": round(float(acct_data.get("buying_power", equity)), 2),
+        "cash_pct": round(cash / equity * 100, 1) if equity else 100,
+        "invested_pct": round(long_mv / equity * 100, 1) if equity else 0,
+        "sharpe": perf.get("sharpe"),
+        "max_drawdown": perf.get("max_drawdown"),
+        "total_return": perf.get("total_return"),
+        "snapshot_count": perf.get("snapshot_count", 0),
+    }
+
+
+@router.get("/equity-curve")
+async def equity_curve(limit: int = 200):
+    """Historical equity curve for charting."""
+    from app.workers.equity_tracker import get_equity_curve
+    return await get_equity_curve(limit=limit)

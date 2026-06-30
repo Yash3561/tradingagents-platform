@@ -207,12 +207,14 @@ async def run_market_scan(
     model: str = "claude-sonnet-4-6",
     watchlist: list[str] | None = None,
     max_candidates: int = MAX_AI_CANDIDATES,
+    vix_override: float | None = None,
 ) -> dict:
     """
     Full market scan:
-    1. Pre-screen watchlist
-    2. Run AI pipeline on top candidates
-    3. Execute approved trades
+    1. Check VIX regime — if VIX > 30, suppress all BUY signals
+    2. Pre-screen watchlist
+    3. Run AI pipeline on top candidates
+    4. Execute approved trades
     Returns scan summary.
     """
     from app.agents.structured_runner import run_structured_agent_analysis
@@ -223,11 +225,36 @@ async def run_market_scan(
     scan_watchlist = watchlist or WATCHLIST
     scan_start = datetime.now(UTC)
 
-    log.info("scanner.scan.start", watchlist_size=len(scan_watchlist))
+    # ── VIX regime gate ────────────────────────────────────────────────────────
+    vix = vix_override
+    if vix is None:
+        try:
+            import yfinance as yf
+            loop_tmp = asyncio.get_running_loop()
+            def _fetch_vix():
+                hist = yf.Ticker("^VIX").history(period="1d", interval="1m")
+                return float(hist["Close"].iloc[-1]) if not hist.empty else None
+            vix = await loop_tmp.run_in_executor(None, _fetch_vix)
+        except Exception:
+            vix = None
+
+    vix_gate = vix is not None and vix > 30
+    if vix_gate:
+        log.warning("scanner.vix_gate", vix=round(vix, 1),
+                    action="suppressing_buy_signals")
+
+    log.info("scanner.scan.start", watchlist_size=len(scan_watchlist), vix=vix)
 
     # Step 1: Pre-screen (fast, free)
     loop = asyncio.get_running_loop()
     candidates = await loop.run_in_executor(None, _run_pre_screen, scan_watchlist)
+
+    # Apply VIX gate — drop all BUY candidates when volatility is extreme
+    if vix_gate:
+        before = len(candidates)
+        candidates = [c for c in candidates if c["direction"] != "BUY"]
+        log.warning("scanner.vix_gate.applied",
+                    dropped=before - len(candidates), remaining=len(candidates))
 
     log.info("scanner.prescreen.done",
              candidates=len(candidates),

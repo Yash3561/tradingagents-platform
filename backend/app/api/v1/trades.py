@@ -8,6 +8,14 @@ from app.db.models.trade import Trade
 router = APIRouter()
 
 
+@router.post("/sync")
+async def force_sync():
+    """Manually trigger a trade fill sync from Alpaca."""
+    from app.workers.trade_sync import sync_trades_once
+    updated = await sync_trades_once()
+    return {"updated": updated}
+
+
 @router.get("/")
 async def list_trades(limit: int = 50, offset: int = 0, db: AsyncSession = Depends(get_db)):
     result = await db.execute(select(Trade).order_by(desc(Trade.submitted_at)).limit(limit).offset(offset))
@@ -21,7 +29,12 @@ async def list_trades(limit: int = 50, offset: int = 0, db: AsyncSession = Depen
             "filled_price": t.filled_price,
             "status": t.status,
             "pnl": t.pnl,
+            "stop_loss_pct": t.stop_loss_pct,
+            "take_profit_pct": t.take_profit_pct,
+            "closed_reason": t.closed_reason,
             "submitted_at": t.submitted_at.isoformat() if t.submitted_at else None,
+            "filled_at": t.filled_at.isoformat() if t.filled_at else None,
+            "closed_at": t.closed_at.isoformat() if t.closed_at else None,
         }
         for t in trades
     ]
