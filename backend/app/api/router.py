@@ -2,6 +2,7 @@ from fastapi import APIRouter
 from app.api.v1 import dashboard, agents, portfolio, trades, market, backtest, settings, websockets
 from app.api.v1 import notifications, activity
 from app.api.v1 import auth
+from app.api.v1 import analytics
 
 api_router = APIRouter()
 
@@ -16,3 +17,4 @@ api_router.include_router(settings.router, prefix="/settings", tags=["settings"]
 api_router.include_router(websockets.router, prefix="/ws", tags=["websockets"])
 api_router.include_router(notifications.router, prefix="/notifications", tags=["notifications"])
 api_router.include_router(activity.router, prefix="/activity", tags=["activity"])
+api_router.include_router(analytics.router, prefix="/analytics", tags=["analytics"])

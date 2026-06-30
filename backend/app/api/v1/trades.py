@@ -1,6 +1,7 @@
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, desc
+from datetime import datetime, UTC
 
 from app.core.postgres import get_db
 from app.db.models.trade import Trade
@@ -45,7 +46,6 @@ async def list_trades(limit: int = 50, offset: int = 0, db: AsyncSession = Depen
 async def get_trade(trade_id: str, db: AsyncSession = Depends(get_db)):
     trade = await db.get(Trade, trade_id)
     if not trade:
-        from fastapi import HTTPException
         raise HTTPException(404, "Trade not found")
     return {
         "id": trade.id,
@@ -58,4 +58,70 @@ async def get_trade(trade_id: str, db: AsyncSession = Depends(get_db)):
         "reasoning_json": trade.reasoning_json,
         "submitted_at": trade.submitted_at.isoformat() if trade.submitted_at else None,
         "filled_at": trade.filled_at.isoformat() if trade.filled_at else None,
+    }
+
+
+@router.post("/{trade_id}/journal")
+async def generate_trade_journal(trade_id: str, db: AsyncSession = Depends(get_db)):
+    """
+    Generate an AI-written journal entry for a specific trade.
+    Pulls the trade's reasoning_json (full agent audit trail) and summarizes it
+    into a human-readable journal entry.
+    """
+    import json
+    import asyncio
+    from openai import OpenAI
+    from app.config import get_settings
+
+    trade = await db.get(Trade, trade_id)
+    if not trade:
+        raise HTTPException(404, "Trade not found")
+
+    settings = get_settings()
+
+    reasoning = trade.reasoning_json or {}
+    decision = reasoning.get("final_decision", {})
+    risk = reasoning.get("risk_assessment", {})
+    debate = reasoning.get("researcher_debate", {})
+
+    context = f"""
+Trade: {trade.side.upper()} {trade.qty} shares of {trade.ticker}
+Status: {trade.status}
+P&L: ${trade.pnl:+.2f} if trade.pnl else "Open"
+Stop loss: {trade.stop_loss_pct}% | Take profit: {trade.take_profit_pct}%
+
+AI Decision: {decision.get('decision', 'N/A')} at {decision.get('confidence', 0):.0%} confidence
+Risk level: {risk.get('risk_level', 'N/A')} | Approved: {risk.get('approved', False)}
+Debate winner: {debate.get('debate_winner', 'N/A')}
+
+Bull thesis: {debate.get('bull_thesis', 'N/A')}
+Bear thesis: {debate.get('bear_thesis', 'N/A')}
+Key risks: {', '.join(debate.get('key_risks', [])[:3])}
+Key catalysts: {', '.join(debate.get('key_catalysts', [])[:3])}
+"""
+
+    def _call_ai():
+        client = OpenAI(api_key=settings.nvidia_api_key, base_url=settings.nvidia_base_url)
+        response = client.chat.completions.create(
+            model="deepseek-ai/deepseek-v4-flash",
+            max_tokens=512,
+            temperature=0.4,
+            messages=[
+                {"role": "system", "content": "You are a trading journal writer. Write clear, concise trade journal entries that capture the thesis, reasoning, and outcome. 3-5 sentences max. First-person. Professional tone."},
+                {"role": "user", "content": f"Write a trade journal entry for this trade:\n{context}"},
+            ],
+        )
+        return response.choices[0].message.content or ""
+
+    loop = asyncio.get_running_loop()
+    try:
+        journal_text = await loop.run_in_executor(None, _call_ai)
+    except Exception as e:
+        journal_text = f"Journal generation failed: {e}"
+
+    return {
+        "trade_id": trade_id,
+        "ticker": trade.ticker,
+        "journal": journal_text,
+        "generated_at": datetime.now(UTC).isoformat(),
     }

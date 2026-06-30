@@ -12,6 +12,7 @@ import {
   Zap,
   TrendingUp,
   LogOut,
+  Brain,
 } from "lucide-react";
 import { cn } from "../../lib/cn";
 import { getUser } from "../../lib/auth";
@@ -21,6 +22,7 @@ const NAV = [
   { to: "/agents", icon: BrainCircuit, label: "Agent Hub" },
   { to: "/options", icon: TrendingUp, label: "Options Desk" },
   { to: "/scanner", icon: Radar, label: "Scanner" },
+  { to: "/analytics", icon: Brain, label: "Analytics" },
   { to: "/portfolio", icon: PieChart, label: "Portfolio" },
   { to: "/trades", icon: ScrollText, label: "Trade History" },
   { to: "/backtest", icon: FlaskConical, label: "Backtesting" },

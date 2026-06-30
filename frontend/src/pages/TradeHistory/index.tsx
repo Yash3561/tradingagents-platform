@@ -1,6 +1,6 @@
 import { useState, useEffect } from "react";
 import { motion, AnimatePresence } from "framer-motion";
-import { ChevronRight, X, Loader2, RefreshCw } from "lucide-react";
+import { ChevronRight, X, Loader2, RefreshCw, BookOpen } from "lucide-react";
 import PnLBadge from "../../components/data-display/PnLBadge";
 import { fmt } from "../../lib/formatters";
 import { api } from "../../lib/api";
@@ -161,6 +161,23 @@ export default function TradeHistory() {
   const [selected, setSelected] = useState<Trade | null>(null);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
+  const [journalTrade, setJournalTrade] = useState<string | null>(null);  // trade_id being journaled
+  const [journalText, setJournalText] = useState<string | null>(null);
+  const [journalLoading, setJournalLoading] = useState(false);
+
+  const generateJournal = async (tradeId: string) => {
+    setJournalTrade(tradeId);
+    setJournalText(null);
+    setJournalLoading(true);
+    try {
+      const { data } = await api.post(`/trades/${tradeId}/journal`);
+      setJournalText(data.journal);
+    } catch {
+      setJournalText("Failed to generate journal entry.");
+    } finally {
+      setJournalLoading(false);
+    }
+  };
 
   const load = async () => {
     setRefreshing(true);
@@ -275,12 +292,21 @@ export default function TradeHistory() {
                         : "—"}
                     </td>
                     <td className="px-4 py-3">
-                      <button
-                        onClick={() => setSelected(trade)}
-                        className="flex items-center gap-1 text-xs text-accent-bright hover:underline"
-                      >
-                        View <ChevronRight size={12} />
-                      </button>
+                      <div className="flex items-center gap-2">
+                        <button
+                          onClick={() => setSelected(trade)}
+                          className="flex items-center gap-1 text-xs text-accent-bright hover:underline"
+                        >
+                          View <ChevronRight size={12} />
+                        </button>
+                        <button
+                          onClick={() => generateJournal(trade.id)}
+                          className="flex items-center gap-1 text-xs text-slate-400 hover:text-accent transition-colors"
+                          title="Generate AI journal entry"
+                        >
+                          <BookOpen size={12} /> Journal
+                        </button>
+                      </div>
                     </td>
                   </tr>
                 );
@@ -304,6 +330,30 @@ export default function TradeHistory() {
           </>
         )}
       </AnimatePresence>
+
+      {journalTrade && (
+        <div className="fixed inset-0 bg-black/60 z-50 flex items-center justify-center p-4" onClick={() => setJournalTrade(null)}>
+          <motion.div
+            initial={{ opacity: 0, scale: 0.95 }}
+            animate={{ opacity: 1, scale: 1 }}
+            className="card p-6 max-w-lg w-full"
+            onClick={e => e.stopPropagation()}
+          >
+            <div className="flex items-center gap-2 mb-4">
+              <BookOpen size={16} className="text-accent" />
+              <h3 className="font-semibold text-white">Trade Journal Entry</h3>
+              <button onClick={() => setJournalTrade(null)} className="ml-auto text-slate-400 hover:text-white">✕</button>
+            </div>
+            {journalLoading ? (
+              <div className="flex items-center gap-2 text-slate-400 text-sm">
+                <Loader2 size={14} className="animate-spin" /> Generating journal entry...
+              </div>
+            ) : (
+              <p className="text-slate-200 leading-relaxed text-sm">{journalText}</p>
+            )}
+          </motion.div>
+        </div>
+      )}
     </motion.div>
   );
 }
