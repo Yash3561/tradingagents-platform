@@ -21,10 +21,10 @@ api.interceptors.response.use(
   (err) => {
     console.error("[API]", err.response?.status, err.response?.data ?? err.message);
     if (err.response?.status === 401) {
-      // Token expired or invalid — clear and redirect to login
+      // Token expired or invalid — clear storage, reload triggers auth gate in App.tsx
       localStorage.removeItem("tap_token");
       localStorage.removeItem("tap_user");
-      window.location.href = "/login";
+      window.location.reload();
     }
     return Promise.reject(err);
   }

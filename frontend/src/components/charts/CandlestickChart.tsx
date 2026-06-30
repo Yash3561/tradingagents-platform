@@ -65,11 +65,9 @@ export default function CandlestickChart({
       },
       rightPriceScale: {
         borderColor: "#1A2540",
-        textColor: "#94a3b8",
       },
       timeScale: {
         borderColor: "#1A2540",
-        textColor: "#94a3b8",
         timeVisible: true,
         secondsVisible: false,
       },
