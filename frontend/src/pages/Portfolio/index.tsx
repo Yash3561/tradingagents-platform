@@ -8,7 +8,8 @@ import PnLBadge from "../../components/data-display/PnLBadge";
 import { fmt } from "../../lib/formatters";
 import { api } from "../../lib/api";
 import { cn } from "../../lib/cn";
-import { RefreshCw, Loader2 } from "lucide-react";
+import { RefreshCw, Loader2, ChevronDown, ChevronRight } from "lucide-react";
+import CandlestickChart from "../../components/charts/CandlestickChart";
 
 const PIE_COLORS = ["#2D7DD2", "#4A9AEF", "#00E676", "#FFB740", "#FF3D57", "#7C5CBF", "#4D6080"];
 
@@ -65,6 +66,8 @@ export default function Portfolio() {
   const [curve, setCurve] = useState<EquityPoint[]>([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
+  const [expandedTicker, setExpandedTicker] = useState<string | null>(null);
+  const [chartTicker, setChartTicker] = useState<string>("SPY");
 
   const load = async () => {
     setRefreshing(true);
@@ -88,6 +91,10 @@ export default function Portfolio() {
   };
 
   useEffect(() => { load(); }, []);
+
+  useEffect(() => {
+    if (positions.length > 0) setChartTicker(positions[0].ticker);
+  }, [positions]);
 
   const pieData = allocation.slice(0, 7).map((a, i) => ({
     name: a.ticker,
@@ -269,6 +276,31 @@ export default function Portfolio() {
         </div>
       </div>
 
+      {/* Price Chart */}
+      {positions.length > 0 && (
+        <div className="mt-6 mb-6">
+          <div className="flex items-center gap-3 mb-3">
+            <h2 className="text-sm font-semibold text-slate-400 uppercase tracking-wider">Price Chart</h2>
+            <div className="flex flex-wrap gap-1">
+              {positions.slice(0, 6).map(p => (
+                <button
+                  key={p.ticker}
+                  onClick={() => setChartTicker(p.ticker)}
+                  className={`px-2 py-0.5 rounded text-xs font-mono transition-colors ${
+                    chartTicker === p.ticker
+                      ? "bg-accent text-white"
+                      : "text-slate-400 hover:text-white hover:bg-bg-elevated"
+                  }`}
+                >
+                  {p.ticker}
+                </button>
+              ))}
+            </div>
+          </div>
+          <CandlestickChart ticker={chartTicker} period="3mo" height={280} showControls={true} />
+        </div>
+      )}
+
       {/* Positions table */}
       <div className="card overflow-hidden">
         <div className="px-5 py-4 border-b border-border flex items-center justify-between">
@@ -296,25 +328,43 @@ export default function Portfolio() {
               </thead>
               <tbody className="divide-y divide-border/50">
                 {positions.map(p => (
-                  <tr key={p.ticker} className="hover:bg-bg-elevated/50 transition-colors group">
-                    <td className="px-4 py-3 font-mono font-bold text-text-primary group-hover:text-accent-bright transition-colors">
-                      {p.ticker}
-                    </td>
-                    <td className="px-4 py-3 font-mono text-text-secondary">{p.qty.toFixed(4)}</td>
-                    <td className="px-4 py-3 font-mono text-text-muted">{fmt.price(p.avg_entry_price)}</td>
-                    <td className="px-4 py-3 font-mono text-text-primary">{fmt.price(p.current_price)}</td>
-                    <td className="px-4 py-3 font-mono text-text-primary">{fmt.usd(p.market_value)}</td>
-                    <td className="px-4 py-3">
-                      <div className="flex items-center gap-2">
-                        <PnLBadge value={p.unrealized_pnl_pct} />
-                        <span className={cn("text-xs font-mono", p.unrealized_pnl >= 0 ? "text-gain" : "text-loss")}>
-                          {p.unrealized_pnl >= 0 ? "+" : ""}{fmt.usd(p.unrealized_pnl)}
-                        </span>
-                      </div>
-                    </td>
-                    <td className="px-4 py-3 text-xs font-mono text-loss/70">—</td>
-                    <td className="px-4 py-3 text-xs font-mono text-gain/70">—</td>
-                  </tr>
+                  <>
+                    <tr
+                      key={p.ticker}
+                      className="hover:bg-bg-elevated/50 transition-colors group cursor-pointer hover:bg-bg-elevated"
+                      onClick={() => setExpandedTicker(prev => prev === p.ticker ? null : p.ticker)}
+                    >
+                      <td className="px-4 py-3 font-mono font-bold text-text-primary group-hover:text-accent-bright transition-colors">
+                        {expandedTicker === p.ticker
+                          ? <ChevronDown size={14} className="inline mr-1 text-accent" />
+                          : <ChevronRight size={14} className="inline mr-1 text-slate-500" />}
+                        {p.ticker}
+                      </td>
+                      <td className="px-4 py-3 font-mono text-text-secondary">{p.qty.toFixed(4)}</td>
+                      <td className="px-4 py-3 font-mono text-text-muted">{fmt.price(p.avg_entry_price)}</td>
+                      <td className="px-4 py-3 font-mono text-text-primary">{fmt.price(p.current_price)}</td>
+                      <td className="px-4 py-3 font-mono text-text-primary">{fmt.usd(p.market_value)}</td>
+                      <td className="px-4 py-3">
+                        <div className="flex items-center gap-2">
+                          <PnLBadge value={p.unrealized_pnl_pct} />
+                          <span className={cn("text-xs font-mono", p.unrealized_pnl >= 0 ? "text-gain" : "text-loss")}>
+                            {p.unrealized_pnl >= 0 ? "+" : ""}{fmt.usd(p.unrealized_pnl)}
+                          </span>
+                        </div>
+                      </td>
+                      <td className="px-4 py-3 text-xs font-mono text-loss/70">—</td>
+                      <td className="px-4 py-3 text-xs font-mono text-gain/70">—</td>
+                    </tr>
+                    {expandedTicker === p.ticker && (
+                      <tr key={`${p.ticker}-chart`}>
+                        <td colSpan={8} className="p-0">
+                          <div className="p-4 bg-bg-card border-t border-border">
+                            <CandlestickChart ticker={p.ticker} period="3mo" height={260} showControls={true} />
+                          </div>
+                        </td>
+                      </tr>
+                    )}
+                  </>
                 ))}
               </tbody>
             </table>
