@@ -206,10 +206,10 @@ def _inline_refs(schema: dict) -> dict:
 
 # ── DISCIPLINE CONSTANTS ──────────────────────────────────────────────────────
 
-MIN_ANALYST_CONFIDENCE   = 0.55   # Individual analyst min confidence
-MIN_TRADE_CONFIDENCE     = 0.52   # Final decision min confidence to trade
-MIN_BULLISH_CONSENSUS    = 1      # At least 1 of 4 analysts bullish for BUY
-MIN_BEARISH_CONSENSUS    = 1      # At least 1 of 4 analysts bearish for SELL
+MIN_ANALYST_CONFIDENCE   = 0.50   # Individual analyst min confidence
+MIN_TRADE_CONFIDENCE     = 0.48   # Final decision min confidence to trade
+MIN_BULLISH_CONSENSUS    = 0      # Hard gate removed — researcher + PM handle consensus
+MIN_BEARISH_CONSENSUS    = 0      # Hard gate removed — researcher + PM handle consensus
 MAX_POSITION_SIZE_PCT    = 5.0    # Hard cap per position
 MANDATORY_STOP_LOSS_PCT  = 7.0    # Always set stop-loss
 MAX_RISK_LEVEL_TO_TRADE  = "MEDIUM"
@@ -218,24 +218,24 @@ MAX_RISK_LEVEL_TO_TRADE  = "MEDIUM"
 ANALYST_DISCIPLINE = """
 DISCIPLINE RULES — NON-NEGOTIABLE:
 1. NEVER invent or fabricate data. Use ONLY the real market data provided above.
-2. Set confidence BELOW 0.60 if you have meaningful uncertainty. Do not fake conviction.
-3. Signal NEUTRAL unless your evidence is clear and multi-factor. When in doubt → NEUTRAL.
-4. A single bullish indicator is NOT sufficient for a BUY signal. You need confluence.
+2. Set confidence BELOW 0.55 only if you have strong uncertainty. Be willing to commit to a directional view.
+3. Signal NEUTRAL only when evidence genuinely points in both directions equally. Do NOT default to NEUTRAL out of caution.
+4. You are analyzing stocks already pre-screened for momentum and technical strength. Your job is to CONFIRM OR DENY the setup, not to find a reason to avoid it.
 5. Your reasoning must cite specific evidence from the data provided. Vague statements are unacceptable.
-6. Your job is to FIND REASONS NOT TO TRADE as much as reasons to trade.
-   Capital preservation is priority one. Returns are priority two.
+6. IMPORTANT: If the data shows today's volume is below average, note that intraday volume at market open is naturally lower than full-day averages — do NOT penalize a stock solely for low intraday volume.
+7. Strong 3M+ price momentum IS a valid bullish signal. Do not dismiss momentum as "overextended" without concrete valuation evidence.
 """
 
 RESEARCHER_DISCIPLINE = """
 DISCIPLINE RULES — NON-NEGOTIABLE:
 1. The bear case must be argued with full conviction, not as a formality.
 2. Identify at least 2 concrete scenarios where the bull thesis fails completely.
-3. Do not let optimism bias the debate. Markets punish overconfidence.
-4. If the evidence is mixed (2 bull / 2 bear analysts), suggest NEUTRAL — not BUY.
-5. A high-confidence BUY requires: strong fundamentals AND technical confirmation
-   AND positive sentiment AND no material adverse news. All four, not two.
-6. Remember: being wrong on a HOLD costs you opportunity. Being wrong on a BUY
-   costs you real money. The asymmetry always favors caution.
+3. Do not let optimism bias the debate. But equally — do not let pessimism bias it.
+4. If the evidence leans directional (2+ analysts agree), suggest that direction. NEUTRAL should only result from a genuine draw where bull and bear cases are truly equal.
+5. A good BUY requires: technical confirmation OR strong fundamental value AND no immediate binary risk event. You do NOT need all four analysts to agree.
+6. Remember: being wrong on a HOLD costs real opportunity. Being wrong on a BUY
+   costs real money. These risks are SYMMETRIC — excessive caution is also a failure.
+7. Strong multi-month price momentum with improving fundamentals is a valid BUY thesis.
 """
 
 RISK_DISCIPLINE = """
@@ -508,11 +508,10 @@ Your mandate: PROTECT THE PORTFOLIO. Returns are secondary. Survival is primary.
 
 Hard rules you must enforce right now:
 - If debate.confidence < {MIN_TRADE_CONFIDENCE} → approved=False, risk_level=HIGH
-- If bullish analyst count < {MIN_BULLISH_CONSENSUS} for a BUY signal → approved=False
-- If bearish analyst count < {MIN_BEARISH_CONSENSUS} for a SELL signal → approved=False
 - recommended_position_pct must NEVER exceed {MAX_POSITION_SIZE_PCT}%
 - stop_loss_pct must ALWAYS be set (default: {MANDATORY_STOP_LOSS_PCT}%)
-- If news.catalyst_upcoming is True (earnings near) → approved=False unless risk_level=LOW
+- If news.catalyst_upcoming is True AND earnings are within 3 days → approved=False (binary event risk)
+- If earnings are 2+ weeks away, catalyst_upcoming alone does NOT block the trade — reduce position size instead
 
 Your performance review is based entirely on how well you PREVENT LOSSES.
 Every dollar lost due to a trade you approved is on you personally."""
