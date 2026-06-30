@@ -11,8 +11,10 @@ import {
   Radar,
   Zap,
   TrendingUp,
+  LogOut,
 } from "lucide-react";
 import { cn } from "../../lib/cn";
+import { getUser } from "../../lib/auth";
 
 const NAV = [
   { to: "/dashboard", icon: LayoutDashboard, label: "Dashboard" },
@@ -43,8 +45,16 @@ function useScanRunning() {
   return running;
 }
 
-export default function Sidebar() {
+interface SidebarProps {
+  onLogout?: () => void;
+}
+
+export default function Sidebar({ onLogout }: SidebarProps) {
   const scanRunning = useScanRunning();
+  const user = getUser();
+
+  const displayName = user?.full_name || user?.email || "Account";
+  const displaySub = user?.full_name ? user.email : null;
 
   return (
     <aside className="flex flex-col w-60 h-full bg-bg-surface border-r border-border shrink-0">
@@ -108,6 +118,27 @@ export default function Sidebar() {
             <span className="text-xs text-text-secondary">Paper Trading</span>
           </div>
           <p className="text-xs text-text-muted">Alpaca connected</p>
+        </div>
+
+        {/* User section */}
+        <div className="mt-2 mx-0 p-3 rounded-lg bg-bg-elevated border border-border">
+          <div className="flex items-center justify-between gap-2">
+            <div className="min-w-0 flex-1">
+              <p className="text-xs font-medium text-text-primary truncate">{displayName}</p>
+              {displaySub && (
+                <p className="text-2xs text-text-muted truncate">{displaySub}</p>
+              )}
+            </div>
+            {onLogout && (
+              <button
+                onClick={onLogout}
+                className="shrink-0 p-1.5 rounded-md text-text-muted hover:text-loss hover:bg-loss/10 transition-colors"
+                title="Sign out"
+              >
+                <LogOut size={14} />
+              </button>
+            )}
+          </div>
         </div>
       </div>
     </aside>

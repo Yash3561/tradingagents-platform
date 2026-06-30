@@ -1,3 +1,4 @@
+import { useState } from "react";
 import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
 import { AnimatePresence } from "framer-motion";
 import Shell from "./components/layout/Shell";
@@ -9,11 +10,30 @@ import Backtesting from "./pages/Backtesting";
 import Settings from "./pages/Settings";
 import Scanner from "./pages/Scanner";
 import OptionsDesk from "./pages/Options";
+import Login from "./pages/Login";
+import Signup from "./pages/Signup";
+import { isAuthenticated, clearAuth } from "./lib/auth";
 
 export default function App() {
+  const [authed, setAuthed] = useState(isAuthenticated());
+  const [showSignup, setShowSignup] = useState(false);
+
+  const handleAuth = () => setAuthed(true);
+  const handleLogout = () => {
+    clearAuth();
+    setAuthed(false);
+  };
+
+  if (!authed) {
+    if (showSignup) {
+      return <Signup onAuth={handleAuth} onGoLogin={() => setShowSignup(false)} />;
+    }
+    return <Login onAuth={handleAuth} onGoSignup={() => setShowSignup(true)} />;
+  }
+
   return (
     <BrowserRouter>
-      <Shell>
+      <Shell onLogout={handleLogout}>
         <AnimatePresence mode="wait">
           <Routes>
             <Route path="/" element={<Navigate to="/dashboard" replace />} />
@@ -25,6 +45,7 @@ export default function App() {
             <Route path="/trades" element={<TradeHistory />} />
             <Route path="/backtest" element={<Backtesting />} />
             <Route path="/settings" element={<Settings />} />
+            <Route path="*" element={<Navigate to="/dashboard" replace />} />
           </Routes>
         </AnimatePresence>
       </Shell>

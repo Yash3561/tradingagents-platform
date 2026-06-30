@@ -13,6 +13,7 @@ import app.db.models.equity_snapshot  # noqa: F401
 import app.db.models.notification     # noqa: F401
 import app.db.models.activity_log     # noqa: F401
 import app.db.models.settings         # noqa: F401
+import app.db.models.user            # noqa: F401
 from app.core.redis_client import get_redis
 from app.api.router import api_router
 
