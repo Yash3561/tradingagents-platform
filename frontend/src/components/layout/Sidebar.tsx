@@ -1,5 +1,6 @@
 import { NavLink } from "react-router-dom";
 import { motion } from "framer-motion";
+import { useEffect, useState } from "react";
 import {
   LayoutDashboard,
   BrainCircuit,
@@ -21,7 +22,28 @@ const NAV = [
   { to: "/backtest", icon: FlaskConical, label: "Backtesting" },
 ];
 
+function useScanRunning() {
+  const [running, setRunning] = useState(false);
+  useEffect(() => {
+    const check = () => {
+      try {
+        const raw = localStorage.getItem("scanner_state_v2");
+        if (!raw) { setRunning(false); return; }
+        const s = JSON.parse(raw);
+        setRunning(s.scanStatus === "scanning" || s.scanStatus === "prescreening");
+      } catch { setRunning(false); }
+    };
+    check();
+    // Poll every 2s so the indicator updates even when on another page
+    const t = setInterval(check, 2000);
+    return () => clearInterval(t);
+  }, []);
+  return running;
+}
+
 export default function Sidebar() {
+  const scanRunning = useScanRunning();
+
   return (
     <aside className="flex flex-col w-60 h-full bg-bg-surface border-r border-border shrink-0">
       {/* Logo */}
@@ -50,6 +72,12 @@ export default function Sidebar() {
               >
                 <Icon size={18} className="shrink-0" />
                 <span>{label}</span>
+                {to === "/scanner" && scanRunning && !isActive && (
+                  <span className="ml-auto flex items-center gap-1">
+                    <span className="w-1.5 h-1.5 rounded-full bg-warn animate-pulse-slow" />
+                    <span className="text-2xs text-warn font-medium">Live</span>
+                  </span>
+                )}
                 {isActive && (
                   <motion.div
                     layoutId="sidebar-indicator"
