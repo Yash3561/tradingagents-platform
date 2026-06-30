@@ -4,6 +4,7 @@ Always uses ALPACA_BASE_URL which defaults to paper-api.alpaca.markets.
 Never touches live money unless explicitly reconfigured in .env.
 """
 
+import json
 import httpx
 import structlog
 from app.config import get_settings
@@ -93,6 +94,56 @@ def close_position(ticker: str) -> dict | None:
         )
         r.raise_for_status()
         return r.json()
+
+
+def submit_bracket_order(
+    ticker: str,
+    qty: int,
+    stop_loss_pct: float,
+    take_profit_pct: float,
+    current_price: float,
+) -> dict:
+    """
+    Place a market BUY with attached stop-loss and take-profit orders.
+    Alpaca bracket orders: type=market, order_class=bracket,
+    stop_loss.stop_price and take_profit.limit_price attached.
+    Returns the main order dict.
+    """
+    stop_price = round(current_price * (1 - stop_loss_pct / 100), 2)
+    take_price = round(current_price * (1 + take_profit_pct / 100), 2)
+
+    payload = {
+        "symbol": ticker.upper(),
+        "qty": str(int(qty)),
+        "side": "buy",
+        "type": "market",
+        "time_in_force": "day",
+        "order_class": "bracket",
+        "stop_loss": {"stop_price": str(stop_price)},
+        "take_profit": {"limit_price": str(take_price)},
+    }
+    with httpx.Client(timeout=15.0) as client:
+        r = client.post(f"{settings.alpaca_base_url}/v2/orders", headers=_headers(), json=payload)
+        r.raise_for_status()
+        order = r.json()
+        log.info("alpaca.bracket_order.accepted", order_id=order.get("id"),
+                 ticker=ticker, stop=stop_price, take=take_price)
+        return order
+
+
+def get_live_price(ticker: str) -> float | None:
+    """Get latest price from Redis cache, falls back to None if not found."""
+    import redis as redis_sync
+    from app.config import get_settings as _get_settings
+    s = _get_settings()
+    try:
+        r = redis_sync.from_url(s.redis_url)
+        raw = r.get(f"price:{ticker}")
+        if raw:
+            return json.loads(raw)["price"]
+    except Exception:
+        pass
+    return None  # caller should fall back to yfinance
 
 
 def calculate_order_qty(position_pct: float, current_price: float) -> float:

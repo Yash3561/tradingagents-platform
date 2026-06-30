@@ -204,10 +204,10 @@ def _run_pre_screen(watchlist: list[str]) -> list[dict]:
 
 
 async def run_market_scan(
-    model: str = "claude-sonnet-4-6",
+    model: str | None = None,
     senior_model: str | None = "claude-opus-4-6",
     watchlist: list[str] | None = None,
-    max_candidates: int = MAX_AI_CANDIDATES,
+    max_candidates: int | None = None,
     vix_override: float | None = None,
     scan_id: str | None = None,
 ) -> dict:
@@ -224,10 +224,30 @@ async def run_market_scan(
     from app.core.postgres import AsyncSessionLocal
     from app.db.models.agent_run import AgentRun
     from app.api.v1.notifications import save_notification
+    from app.db.models.settings import get_setting as _get_setting
     import uuid
+
+    # Load scan parameters from DB settings (caller overrides take precedence)
+    if model is None:
+        model = str(await _get_setting("llm_model", "deepseek-ai/deepseek-v4-flash"))
+    if max_candidates is None:
+        max_candidates = int(await _get_setting("scan_max_candidates", MAX_AI_CANDIDATES))
+
+    # Respect scan_enabled flag
+    scan_enabled = await _get_setting("scan_enabled", True)
+    if not scan_enabled:
+        log.info("scanner.disabled", reason="scan_enabled=False in settings")
+        return {
+            "status": "disabled",
+            "screened": 0,
+            "candidates": 0,
+            "trades_placed": 0,
+            "duration_s": 0,
+        }
 
     scan_watchlist = watchlist or WATCHLIST
     scan_start = datetime.now(UTC)
+    debate_rounds_setting = int(await _get_setting("debate_rounds", 2))
 
     # ── Circuit breaker gate ───────────────────────────────────────────────────
     try:
@@ -312,7 +332,7 @@ async def run_market_scan(
                 analysis_date=analysis_date,
                 status="pending",
                 llm_model=model,
-                debate_rounds=1,  # 1 round for speed during scan
+                debate_rounds=debate_rounds_setting,
             )
             db.add(run)
             await db.commit()
@@ -342,7 +362,7 @@ async def run_market_scan(
                 run_id=run_id,
                 ticker=ticker,
                 analysis_date=analysis_date,
-                debate_rounds=1,
+                debate_rounds=debate_rounds_setting,
                 model=model,
                 senior_model=senior_model,
             )

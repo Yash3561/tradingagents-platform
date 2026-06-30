@@ -131,6 +131,24 @@ def _fetch_market_data(ticker: str) -> dict:
         return {"error": str(e)}
 
 
+def _inject_live_price(market_data: dict, ticker: str) -> dict:
+    """
+    Try to get a fresher price from Redis (populated by price_feed worker).
+    If found, overwrite current_price in the market_data dict.
+    """
+    try:
+        from app.broker.alpaca_client import get_live_price
+        live = get_live_price(ticker)
+        if live and live > 0:
+            log.info("market_data.live_price", ticker=ticker, live=live,
+                     yfinance=market_data.get("current_price"))
+            market_data = dict(market_data)
+            market_data["current_price"] = round(live, 2)
+    except Exception:
+        pass
+    return market_data
+
+
 def _fetch_news(ticker: str) -> list[str]:
     """Fetch recent news headlines via yfinance."""
     try:
@@ -699,6 +717,7 @@ def _run_full_pipeline(run_id: str, ticker: str, date: str, debate_rounds: int, 
     log.info("structured_agent.fetching_data", ticker=ticker)
     sync_emit({"type": "status_update", "message": f"Fetching real market data for {ticker}..."})
     market_data = _fetch_market_data(ticker)
+    market_data = _inject_live_price(market_data, ticker)
     news_headlines = _fetch_news(ticker)
 
     if market_data.get("error"):
@@ -863,9 +882,19 @@ async def _place_order_if_approved(run_id: str, ticker: str, result: dict):
             log.warning("broker.no_price", ticker=ticker)
             return
 
-        # Minimum 5% position; boost to 7% if high confidence (>70%)
-        min_pct = 7.0 if confidence >= 0.70 else 5.0
+        # Load position sizing and stop parameters from DB settings
+        from app.db.models.settings import get_setting as _get_setting
+        db_pos_size_pct = await _get_setting("position_size_pct", 5.0)
+        db_pos_size_high_conf = await _get_setting("position_size_high_conf", 7.0)
+        db_stop_loss_pct = await _get_setting("stop_loss_pct", 7.0)
+        db_take_profit_pct = await _get_setting("take_profit_pct", 15.0)
+
+        # Boost position size for high-confidence trades (>= 0.70)
+        min_pct = float(db_pos_size_high_conf) if confidence >= 0.70 else float(db_pos_size_pct)
         position_pct = max(position_pct or min_pct, min_pct)
+
+        stop_loss_pct = final.get("stop_loss_pct") or float(db_stop_loss_pct)
+        take_profit_pct = final.get("take_profit_pct") or float(db_take_profit_pct)
 
         # Calculate qty and force whole shares only
         import math
@@ -875,10 +904,10 @@ async def _place_order_if_approved(run_id: str, ticker: str, result: dict):
         qty = max(1, math.floor(dollar_amount / current_price))  # whole shares, minimum 1
 
         side = "buy"
-        order = alpaca_client.submit_order(ticker, side, qty)
-
-        stop_loss_pct = final.get("stop_loss_pct") or 7.0
-        take_profit_pct = final.get("take_profit_pct") or 15.0
+        # Use bracket order so Alpaca manages stop-loss and take-profit natively
+        order = alpaca_client.submit_bracket_order(
+            ticker, qty, stop_loss_pct, take_profit_pct, current_price
+        )
 
         async with AsyncSessionLocal() as db:
             trade = Trade(

@@ -131,6 +131,13 @@ async def check_circuit_breakers() -> dict:
     warnings: list[str] = []
     ticker_blocks: dict[str, str] = {}
 
+    # ── Load thresholds from settings DB ──────────────────────────────────────
+    from app.db.models.settings import get_setting as _get_setting
+    daily_loss_limit_pct = float(await _get_setting("daily_loss_limit_pct", 3.0)) / 100.0
+    vix_warning_threshold = float(await _get_setting("vix_warning_threshold", 30.0))
+    vix_block_threshold = float(await _get_setting("vix_block_threshold", 40.0))
+    max_position_pct = float(await _get_setting("max_position_pct", 20.0)) / 100.0
+
     # ── 1. Daily loss limit ────────────────────────────────────────────────────
     try:
         account = await loop.run_in_executor(None, _fetch_account)
@@ -139,7 +146,7 @@ async def check_circuit_breakers() -> dict:
 
         if last_equity > 0:
             day_pnl_pct = (equity - last_equity) / last_equity
-            if day_pnl_pct < -0.03:
+            if day_pnl_pct < -daily_loss_limit_pct:
                 reason = f"Daily loss limit hit ({day_pnl_pct:.1%})"
                 reasons.append(reason)
                 log.warning("circuit_breaker.daily_loss", pct=round(day_pnl_pct * 100, 2))
@@ -150,11 +157,11 @@ async def check_circuit_breakers() -> dict:
     try:
         vix = await loop.run_in_executor(None, _fetch_vix)
         if vix is not None:
-            if vix > 40:
+            if vix > vix_block_threshold:
                 reason = f"VIX critical ({vix:.1f}) — trading halted"
                 reasons.append(reason)
                 log.warning("circuit_breaker.vix_critical", vix=round(vix, 1))
-            elif vix > 30:
+            elif vix > vix_warning_threshold:
                 warn = f"VIX elevated ({vix:.1f}) — high volatility"
                 warnings.append(warn)
                 log.info("circuit_breaker.vix_elevated", vix=round(vix, 1))
@@ -173,7 +180,7 @@ async def check_circuit_breakers() -> dict:
                 market_val = float(pos.get("market_value", 0) or 0)
                 if total_equity > 0 and ticker:
                     pct = market_val / total_equity
-                    if pct > 0.25:
+                    if pct > max_position_pct:
                         warn = f"Concentration risk: {ticker} is {pct:.0%} of portfolio"
                         warnings.append(warn)
                         log.warning("circuit_breaker.concentration",
@@ -209,15 +216,18 @@ async def check_circuit_breakers() -> dict:
 async def check_ticker_blocked(ticker: str) -> tuple[bool, str]:
     """
     Returns (blocked, reason) for a specific ticker.
-    Checks earnings blackout (within 5 days).
+    Checks earnings blackout (within earnings_blackout_days trading days).
     """
     from app.api.v1.notifications import save_notification
+    from app.db.models.settings import get_setting as _get_setting
 
     loop = asyncio.get_running_loop()
 
+    earnings_blackout_days = int(await _get_setting("earnings_blackout_days", 5))
+
     try:
         blocked, reason = await loop.run_in_executor(
-            None, _check_earnings_soon, ticker, 5
+            None, _check_earnings_soon, ticker, earnings_blackout_days
         )
         if blocked:
             log.warning("circuit_breaker.earnings_blackout",

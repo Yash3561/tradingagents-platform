@@ -12,6 +12,7 @@ import app.db.models.trade            # noqa: F401
 import app.db.models.equity_snapshot  # noqa: F401
 import app.db.models.notification     # noqa: F401
 import app.db.models.activity_log     # noqa: F401
+import app.db.models.settings         # noqa: F401
 from app.core.redis_client import get_redis
 from app.api.router import api_router
 
@@ -24,17 +25,23 @@ async def lifespan(app: FastAPI):
     log.info("startup", env=settings.environment)
     await init_db()
 
+    # Seed default settings on first startup (no-op if already seeded)
+    from app.db.models.settings import seed_defaults
+    await seed_defaults()
+
     # Start background workers as asyncio tasks
     from app.workers.position_monitor import run_position_monitor
     from app.workers.scheduler import run_scheduler
     from app.workers.overnight_agent import run_overnight_agent
     from app.workers.circuit_breakers import check_circuit_breakers  # noqa: F401 — warm import
+    from app.workers.price_feed import run_price_feed
 
     monitor_task = asyncio.create_task(run_position_monitor())
     scheduler_task = asyncio.create_task(run_scheduler())
     overnight_task = asyncio.create_task(run_overnight_agent())
+    price_feed_task = asyncio.create_task(run_price_feed())
     log.info("background_workers.started",
-             workers=["position_monitor", "scheduler", "overnight_agent"])
+             workers=["position_monitor", "scheduler", "overnight_agent", "price_feed"])
 
     yield
 
@@ -42,6 +49,7 @@ async def lifespan(app: FastAPI):
     monitor_task.cancel()
     scheduler_task.cancel()
     overnight_task.cancel()
+    price_feed_task.cancel()
     log.info("shutdown")
 
 
