@@ -213,6 +213,7 @@ async def run_market_scan(
 ) -> dict:
     """
     Full market scan:
+    0. Check circuit breakers — hard block if triggered
     1. Check VIX regime — if VIX > 30, suppress all BUY signals
     2. Pre-screen watchlist
     3. Run AI pipeline on top candidates
@@ -222,10 +223,34 @@ async def run_market_scan(
     from app.agents.structured_runner import run_structured_agent_analysis
     from app.core.postgres import AsyncSessionLocal
     from app.db.models.agent_run import AgentRun
+    from app.api.v1.notifications import save_notification
     import uuid
 
     scan_watchlist = watchlist or WATCHLIST
     scan_start = datetime.now(UTC)
+
+    # ── Circuit breaker gate ───────────────────────────────────────────────────
+    try:
+        from app.workers.circuit_breakers import check_circuit_breakers
+        cb = await check_circuit_breakers()
+        if cb.get("blocked"):
+            reasons = "; ".join(cb.get("reasons", ["Unknown"]))
+            log.warning("scanner.circuit_breaker_blocked", reasons=reasons)
+            await save_notification(
+                type="scan_blocked",
+                title="Scan blocked by circuit breaker",
+                body=f"Market scan skipped — circuit breaker active: {reasons}",
+            )
+            return {
+                "status": "blocked_circuit_breaker",
+                "reasons": cb.get("reasons", []),
+                "screened": 0,
+                "candidates": 0,
+                "trades_placed": 0,
+                "duration_s": 0,
+            }
+    except Exception as e:
+        log.warning("scanner.circuit_breaker_check_failed", error=str(e))
 
     # ── VIX regime gate ────────────────────────────────────────────────────────
     vix = vix_override

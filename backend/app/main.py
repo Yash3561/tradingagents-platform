@@ -27,15 +27,21 @@ async def lifespan(app: FastAPI):
     # Start background workers as asyncio tasks
     from app.workers.position_monitor import run_position_monitor
     from app.workers.scheduler import run_scheduler
+    from app.workers.overnight_agent import run_overnight_agent
+    from app.workers.circuit_breakers import check_circuit_breakers  # noqa: F401 — warm import
+
     monitor_task = asyncio.create_task(run_position_monitor())
     scheduler_task = asyncio.create_task(run_scheduler())
-    log.info("background_workers.started", workers=["position_monitor", "scheduler"])
+    overnight_task = asyncio.create_task(run_overnight_agent())
+    log.info("background_workers.started",
+             workers=["position_monitor", "scheduler", "overnight_agent"])
 
     yield
 
     # Cancel background tasks on shutdown
     monitor_task.cancel()
     scheduler_task.cancel()
+    overnight_task.cancel()
     log.info("shutdown")
 
 
@@ -65,6 +71,10 @@ app.add_middleware(
 )
 
 app.include_router(api_router, prefix="/api/v1")
+
+# System status router
+from app.api.v1.system import router as system_router
+app.include_router(system_router, prefix="/api/v1/system", tags=["system"])
 
 
 @app.get("/health")

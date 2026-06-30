@@ -838,6 +838,18 @@ async def _place_order_if_approved(run_id: str, ticker: str, result: dict):
         return
 
     try:
+        # Check ticker-level circuit breakers (earnings blackout etc.)
+        try:
+            from app.workers.circuit_breakers import check_ticker_blocked
+            ticker_blocked, ticker_block_reason = await check_ticker_blocked(ticker)
+            if ticker_blocked:
+                log.warning("broker.ticker_blocked", run_id=run_id, ticker=ticker,
+                            reason=ticker_block_reason)
+                return
+        except Exception as cb_err:
+            log.warning("broker.circuit_breaker_check_failed",
+                        ticker=ticker, error=str(cb_err))
+
         # Don't stack positions — skip if we already hold this ticker
         existing = alpaca_client.get_position(ticker)
         if existing and float(existing.get("qty", 0)) > 0:

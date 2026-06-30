@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { motion } from "framer-motion";
-import { DollarSign, TrendingUp, BarChart2, Activity, Loader2, RefreshCw } from "lucide-react";
+import { DollarSign, TrendingUp, BarChart2, Activity, Loader2, RefreshCw, ShieldCheck, ShieldAlert, ShieldX, Clock, Radio } from "lucide-react";
 import MetricCard from "../../components/data-display/MetricCard";
 import PnLBadge from "../../components/data-display/PnLBadge";
 import { fmt } from "../../lib/formatters";
@@ -12,6 +12,197 @@ const FADE_UP = {
   animate: { opacity: 1, y: 0 },
   transition: { duration: 0.4 },
 };
+
+// ── System Status types ───────────────────────────────────────────────────────
+
+interface CircuitBreakerStatus {
+  blocked: boolean;
+  reasons: string[];
+  warnings: string[];
+}
+
+interface SystemStatusData {
+  circuit_breakers: CircuitBreakerStatus;
+  market_open: boolean;
+  last_monitor_check: string;
+  positions_count: number;
+  today_pnl_pct: number;
+  next_scheduled_scan: string;
+}
+
+// ── SystemStatus card component ────────────────────────────────────────────────
+
+function SystemStatus() {
+  const [status, setStatus] = useState<SystemStatusData | null>(null);
+  const [lastUpdated, setLastUpdated] = useState<Date | null>(null);
+  const [error, setError] = useState(false);
+
+  const fetchStatus = async () => {
+    try {
+      const res = await api.get("/system/status");
+      setStatus(res.data);
+      setLastUpdated(new Date());
+      setError(false);
+    } catch {
+      setError(true);
+    }
+  };
+
+  useEffect(() => {
+    fetchStatus();
+    const interval = setInterval(fetchStatus, 60000); // poll every 60s
+    return () => clearInterval(interval);
+  }, []);
+
+  // Derive overall health level
+  const healthLevel: "green" | "amber" | "red" = (() => {
+    if (!status) return "green";
+    if (status.circuit_breakers.blocked) return "red";
+    if (status.circuit_breakers.warnings.length > 0) return "amber";
+    return "green";
+  })();
+
+  const healthDot = {
+    green: "bg-gain",
+    amber: "bg-warn",
+    red: "bg-loss",
+  }[healthLevel];
+
+  const healthText = {
+    green: "text-gain",
+    amber: "text-warn",
+    red: "text-loss",
+  }[healthLevel];
+
+  const HealthIcon = healthLevel === "green"
+    ? ShieldCheck
+    : healthLevel === "amber"
+    ? ShieldAlert
+    : ShieldX;
+
+  const cbLabel = (() => {
+    if (!status) return "Checking...";
+    if (status.circuit_breakers.blocked) {
+      return `BLOCKED: ${status.circuit_breakers.reasons[0] ?? "Circuit breaker active"}`;
+    }
+    if (status.circuit_breakers.warnings.length > 0) {
+      return `${status.circuit_breakers.warnings.length} warning(s) active`;
+    }
+    return "All clear";
+  })();
+
+  const lastCheckLabel = (() => {
+    if (!lastUpdated) return "—";
+    const diffMs = Date.now() - lastUpdated.getTime();
+    const mins = Math.floor(diffMs / 60000);
+    if (mins < 1) return "just now";
+    if (mins === 1) return "1 min ago";
+    return `${mins} min ago`;
+  })();
+
+  const nextScanLabel = (() => {
+    if (!status?.next_scheduled_scan) return "—";
+    const d = new Date(status.next_scheduled_scan);
+    const now = new Date();
+    const diffMs = d.getTime() - now.getTime();
+    if (diffMs <= 0) return "Soon";
+    const diffH = Math.floor(diffMs / 3600000);
+    const diffM = Math.floor((diffMs % 3600000) / 60000);
+    if (diffH === 0) return `${diffM}m`;
+    if (diffH < 20) return `${diffH}h ${diffM}m`;
+    // Tomorrow or later — show time in ET
+    return d.toLocaleString("en-US", {
+      weekday: "short",
+      hour: "numeric",
+      minute: "2-digit",
+      timeZone: "America/New_York",
+      timeZoneName: "short",
+    });
+  })();
+
+  return (
+    <motion.div
+      {...FADE_UP}
+      transition={{ delay: 0.05, duration: 0.4 }}
+      className="card p-5"
+    >
+      {/* Header row */}
+      <div className="flex items-center justify-between mb-4">
+        <div className="flex items-center gap-2">
+          <HealthIcon size={15} className={healthText} />
+          <h2 className="text-sm font-semibold text-text-primary">System Control</h2>
+        </div>
+        <div className="flex items-center gap-1.5">
+          <div className={cn("w-2 h-2 rounded-full animate-pulse-slow", healthDot)} />
+          <span className={cn("text-xs font-semibold", healthText)}>
+            {healthLevel === "green" ? "Nominal" : healthLevel === "amber" ? "Alert" : "BLOCKED"}
+          </span>
+        </div>
+      </div>
+
+      {error && (
+        <p className="text-xs text-loss mb-3">Status unavailable — backend unreachable</p>
+      )}
+
+      <div className="grid grid-cols-2 gap-3">
+        {/* Circuit Breakers */}
+        <div className="p-3 rounded-lg bg-bg-elevated border border-border space-y-1">
+          <p className="text-2xs text-text-muted font-medium uppercase tracking-wide">Circuit Breakers</p>
+          <p className={cn("text-xs font-semibold truncate", healthText)}>{cbLabel}</p>
+          {status?.circuit_breakers.warnings.map((w, i) => (
+            <p key={i} className="text-2xs text-warn truncate">{w}</p>
+          ))}
+        </div>
+
+        {/* Market status */}
+        <div className="p-3 rounded-lg bg-bg-elevated border border-border space-y-1">
+          <p className="text-2xs text-text-muted font-medium uppercase tracking-wide">Market</p>
+          <div className="flex items-center gap-1.5">
+            <div className={cn(
+              "w-2 h-2 rounded-full",
+              status?.market_open ? "bg-gain animate-pulse-slow" : "bg-text-muted"
+            )} />
+            <span className={cn(
+              "text-xs font-semibold",
+              status?.market_open ? "text-gain" : "text-text-muted"
+            )}>
+              {status === null ? "—" : status.market_open ? "OPEN" : "CLOSED"}
+            </span>
+          </div>
+          <div className="flex items-center gap-1 mt-0.5">
+            <Radio size={10} className="text-text-muted" />
+            <span className="text-2xs text-text-muted">{status?.positions_count ?? "—"} positions</span>
+          </div>
+        </div>
+
+        {/* Last check */}
+        <div className="p-3 rounded-lg bg-bg-elevated border border-border space-y-1">
+          <p className="text-2xs text-text-muted font-medium uppercase tracking-wide">Last Check</p>
+          <div className="flex items-center gap-1.5">
+            <Clock size={11} className="text-text-muted" />
+            <span className="text-xs text-text-secondary font-mono">{lastCheckLabel}</span>
+          </div>
+          <p className="text-2xs text-text-muted">
+            P&amp;L today: <span className={cn("font-semibold font-mono",
+              (status?.today_pnl_pct ?? 0) >= 0 ? "text-gain" : "text-loss"
+            )}>
+              {status ? `${(status.today_pnl_pct ?? 0) >= 0 ? "+" : ""}${status.today_pnl_pct?.toFixed(2)}%` : "—"}
+            </span>
+          </p>
+        </div>
+
+        {/* Next scan */}
+        <div className="p-3 rounded-lg bg-bg-elevated border border-border space-y-1">
+          <p className="text-2xs text-text-muted font-medium uppercase tracking-wide">Next Scan</p>
+          <span className="text-xs font-mono text-text-secondary">{nextScanLabel}</span>
+          <p className="text-2xs text-text-muted">Auto-scheduled</p>
+        </div>
+      </div>
+    </motion.div>
+  );
+}
+
+// ── Main Dashboard ─────────────────────────────────────────────────────────────
 
 export default function Dashboard() {
   const [summary, setSummary] = useState<any>(null);
@@ -114,27 +305,34 @@ export default function Dashboard() {
         />
       </div>
 
-      {/* Market Pulse */}
-      <motion.div {...FADE_UP} transition={{ delay: 0.1, duration: 0.4 }} className="card p-5">
-        <h2 className="text-sm font-semibold text-text-primary mb-4">Market Pulse</h2>
-        {pulse.length > 0 ? (
-          <div className="grid grid-cols-6 gap-3">
-            {pulse.map(({ label, value, change }: any) => (
-              <div key={label} className="flex flex-col gap-1 p-3 rounded-lg bg-bg-elevated border border-border">
-                <span className="text-2xs text-text-muted font-medium">{label}</span>
-                <span className="text-sm font-mono font-semibold text-text-primary">
-                  {label === "10Y" ? `${value?.toFixed(2)}%` : label === "VIX" ? value?.toFixed(2) : fmt.price(value ?? 0)}
-                </span>
-                <span className={cn("text-2xs font-mono", (change ?? 0) >= 0 ? "text-gain" : "text-loss")}>
-                  {(change ?? 0) >= 0 ? "+" : ""}{(change ?? 0).toFixed(2)}{label === "10Y" ? "" : "%"}
-                </span>
-              </div>
-            ))}
-          </div>
-        ) : (
-          <p className="text-xs text-text-muted">Market data unavailable</p>
-        )}
-      </motion.div>
+      {/* System Status + Market Pulse row */}
+      <div className="grid grid-cols-5 gap-4">
+        <div className="col-span-2">
+          <SystemStatus />
+        </div>
+
+        {/* Market Pulse */}
+        <motion.div {...FADE_UP} transition={{ delay: 0.1, duration: 0.4 }} className="card p-5 col-span-3">
+          <h2 className="text-sm font-semibold text-text-primary mb-4">Market Pulse</h2>
+          {pulse.length > 0 ? (
+            <div className="grid grid-cols-3 gap-3">
+              {pulse.map(({ label, value, change }: any) => (
+                <div key={label} className="flex flex-col gap-1 p-3 rounded-lg bg-bg-elevated border border-border">
+                  <span className="text-2xs text-text-muted font-medium">{label}</span>
+                  <span className="text-sm font-mono font-semibold text-text-primary">
+                    {label === "10Y" ? `${value?.toFixed(2)}%` : label === "VIX" ? value?.toFixed(2) : fmt.price(value ?? 0)}
+                  </span>
+                  <span className={cn("text-2xs font-mono", (change ?? 0) >= 0 ? "text-gain" : "text-loss")}>
+                    {(change ?? 0) >= 0 ? "+" : ""}{(change ?? 0).toFixed(2)}{label === "10Y" ? "" : "%"}
+                  </span>
+                </div>
+              ))}
+            </div>
+          ) : (
+            <p className="text-xs text-text-muted">Market data unavailable</p>
+          )}
+        </motion.div>
+      </div>
 
       <div className="grid grid-cols-5 gap-4">
         {/* Live Positions */}
