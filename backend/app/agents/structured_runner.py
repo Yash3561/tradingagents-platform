@@ -17,7 +17,7 @@ import asyncio
 from datetime import datetime, UTC
 from typing import Any
 
-import anthropic
+from openai import OpenAI
 import structlog
 
 from app.config import get_settings
@@ -147,44 +147,60 @@ def _fetch_news(ticker: str) -> list[str]:
         return []
 
 
-# ── Claude structured output helper ───────────────────────────────────────────
+# ── NIM (NVIDIA) structured output helper ─────────────────────────────────────
 
-def _claude_structured(
+def _nim_structured(
     system: str,
     user: str,
     schema: type,
-    model: str = "claude-sonnet-4-6",
+    model: str = "deepseek-ai/deepseek-v4-pro",
 ) -> dict:
     """
-    Call Claude with a tool definition matching the Pydantic schema.
-    Forces Claude to respond in the exact contract shape.
+    Call DeepSeek via NVIDIA NIM using OpenAI-compatible tool_use.
+    Forces the model to respond in the exact contract shape.
     Returns the parsed dict (not yet validated — call schema(**result) after).
     """
-    client = anthropic.Anthropic(api_key=settings.anthropic_api_key)
+    client = OpenAI(
+        base_url=settings.nvidia_base_url,
+        api_key=settings.nvidia_api_key,
+    )
 
     json_schema = schema.model_json_schema()
     tool_schema = {k: v for k, v in json_schema.items() if k != "$defs"}
     if "$defs" in json_schema:
         tool_schema = _inline_refs(json_schema)
+    # OpenAI tool parameters schema must not have a top-level 'title'
+    tool_schema.pop("title", None)
 
-    response = client.messages.create(
+    response = client.chat.completions.create(
         model=model,
         max_tokens=2048,
-        system=system,
-        messages=[{"role": "user", "content": user}],
+        temperature=0.1,
+        messages=[
+            {"role": "system", "content": system},
+            {"role": "user", "content": user},
+        ],
         tools=[{
-            "name": "submit_report",
-            "description": f"Submit your structured {schema.__name__} report.",
-            "input_schema": tool_schema,
+            "type": "function",
+            "function": {
+                "name": "submit_report",
+                "description": f"Submit your structured {schema.__name__} report.",
+                "parameters": tool_schema,
+            },
         }],
-        tool_choice={"type": "tool", "name": "submit_report"},
+        tool_choice={"type": "function", "function": {"name": "submit_report"}},
     )
 
-    for block in response.content:
-        if block.type == "tool_use" and block.name == "submit_report":
-            return block.input
+    msg = response.choices[0].message
+    if msg.tool_calls:
+        return json.loads(msg.tool_calls[0].function.arguments)
 
-    raise RuntimeError(f"Claude did not call submit_report. Response: {response}")
+    # Fallback: model returned JSON in content instead of tool call
+    content = (msg.content or "").strip()
+    if content.startswith("{"):
+        return json.loads(content)
+
+    raise RuntimeError(f"NIM model did not call submit_report. Response: {response}")
 
 
 def _inline_refs(schema: dict) -> dict:
@@ -292,7 +308,7 @@ Technical-specific rules:
         "Be skeptical. Look for reasons the setup is NOT clean before calling a signal.\n"
         "Submit your TechnicalReport."
     )
-    result = _claude_structured(system, user, TechnicalReport, model)
+    result = _nim_structured(system, user, TechnicalReport, model)
     result["ticker"] = ticker
     report = TechnicalReport(**result)
 
@@ -336,7 +352,7 @@ Sentiment-specific rules:
         "Be skeptical of any bullish signals. Weight institutional data heavily.\n"
         "Submit your SentimentReport."
     )
-    result = _claude_structured(system, user, SentimentReport, model)
+    result = _nim_structured(system, user, SentimentReport, model)
     result["ticker"] = ticker
     report = SentimentReport(**result)
     if report.confidence < MIN_ANALYST_CONFIDENCE:
@@ -376,7 +392,7 @@ News-specific rules:
         "Default to flagging risks. A missed risk is far more costly than a missed opportunity.\n"
         "Submit your NewsReport."
     )
-    result = _claude_structured(system, user, NewsReport, model)
+    result = _nim_structured(system, user, NewsReport, model)
     result["ticker"] = ticker
     report = NewsReport(**result)
     if report.confidence < MIN_ANALYST_CONFIDENCE:
@@ -428,7 +444,7 @@ Fundamental-specific rules:
         "is justified OR unjustified. Cite the specific numbers.\n"
         "Submit your FundamentalReport."
     )
-    result = _claude_structured(system, user, FundamentalReport, model)
+    result = _nim_structured(system, user, FundamentalReport, model)
     result["ticker"] = ticker
     report = FundamentalReport(**result)
     if report.confidence < MIN_ANALYST_CONFIDENCE:
@@ -494,7 +510,7 @@ produces overwhelming evidence one way.
         "After all rounds, determine which side made the stronger case and provide a suggested signal. "
         "Submit your structured ResearcherDebate."
     )
-    result = _claude_structured(system, user, ResearcherDebate, model)
+    result = _nim_structured(system, user, ResearcherDebate, model)
     result["ticker"] = bundle.ticker
     return ResearcherDebate(**result)
 
@@ -536,7 +552,7 @@ Every dollar lost due to a trade you approved is on you personally."""
         "Evaluate position sizing, stop-loss levels, VaR impact, correlation risk, "
         "and concentration risk. Approve or reject the trade. Submit your structured RiskAssessment."
     )
-    result = _claude_structured(system, user, RiskAssessment, model)
+    result = _nim_structured(system, user, RiskAssessment, model)
     result["ticker"] = bundle.ticker
     assessment = RiskAssessment(**result)
 
@@ -616,7 +632,7 @@ A reckless BUY that loses 15% is a failure that takes months to recover from."""
         "Otherwise, weigh all inputs and make your final BUY/HOLD/SELL decision. "
         "Submit your structured FinalDecision."
     )
-    result = _claude_structured(system, user, FinalDecision, model)
+    result = _nim_structured(system, user, FinalDecision, model)
     result["ticker"] = bundle.ticker
     result["analysis_date"] = bundle.analysis_date
     result["analyst_signals"] = {k: v.value for k, v in bundle.analyst_signals.items()}

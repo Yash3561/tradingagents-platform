@@ -28,8 +28,10 @@ class Settings(BaseSettings):
 
     # LLM
     anthropic_api_key: str = ""
-    llm_provider: str = "anthropic"
-    llm_model: str = "claude-sonnet-4-6"
+    nvidia_api_key: str = ""
+    nvidia_base_url: str = "https://integrate.api.nvidia.com/v1"
+    llm_provider: str = "nvidia"
+    llm_model: str = "deepseek-ai/deepseek-v4-flash"
 
     # Agent
     agent_debate_rounds: int = 2
