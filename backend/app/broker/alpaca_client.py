@@ -58,12 +58,8 @@ def submit_order(
 ) -> dict:
     """Submit a paper market order. Returns the Alpaca order object."""
     import math
-    # Alpaca does not support fractional quantities for short sales.
-    # For sells (shorts), always use whole share count.
-    if side.lower() == "sell":
-        final_qty = str(max(1, math.floor(qty)))
-    else:
-        final_qty = str(round(qty, 4))
+    # Always use whole shares — cleaner and avoids Alpaca fractional edge cases
+    final_qty = str(max(1, math.floor(qty)))
 
     payload = {
         "symbol": ticker.upper(),

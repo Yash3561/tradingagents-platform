@@ -266,7 +266,7 @@ DISCIPLINE RULES — NON-NEGOTIABLE:
    Reduce position to 1% if HIGH risk but thesis is clear. Reject only if thesis is absent.
 4. ALWAYS set a stop_loss_pct. A trade with no stop-loss is not a trade — it is gambling.
    Minimum stop-loss: 5%. Maximum: 12%. Default: 7%.
-5. Recommended position size: 1-3% of portfolio for normal trades, 0.5-1% for HIGH risk.
+5. Recommended position size: 5-7% of portfolio for normal BUY trades, 3-5% for HIGH risk. Never recommend less than 3% — tiny positions are pointless.
 6. Your performance is measured by RISK-ADJUSTED returns, not trades blocked.
 """
 
@@ -807,7 +807,12 @@ def _run_full_pipeline(run_id: str, ticker: str, date: str, debate_rounds: int, 
 async def _place_order_if_approved(run_id: str, ticker: str, result: dict):
     """
     After pipeline completes, place a real Alpaca paper order if approved.
-    Only fires on BUY or SELL with risk approved. HOLD = no order.
+    Rules:
+    - HOLD or risk_rejected → skip
+    - SELL decisions → skip (no short selling — long-only strategy)
+    - Already hold a long position in this ticker → skip (no doubling up)
+    - Position size: minimum 5% of equity for confident trades
+    - Quantity: always whole shares (no fractions)
     """
     import uuid
     from app.db.models.trade import Trade
@@ -823,20 +828,41 @@ async def _place_order_if_approved(run_id: str, ticker: str, result: dict):
         log.info("broker.no_order", run_id=run_id, reason=f"decision={decision} approved={risk_approved}")
         return
 
-    if decision not in ("BUY", "SELL"):
+    # Long-only: never short-sell
+    if decision == "SELL":
+        log.info("broker.skipping_short", run_id=run_id, ticker=ticker,
+                 reason="Long-only strategy — SELL signals skipped")
+        return
+
+    if decision != "BUY":
         return
 
     try:
+        # Don't stack positions — skip if we already hold this ticker
+        existing = alpaca_client.get_position(ticker)
+        if existing and float(existing.get("qty", 0)) > 0:
+            log.info("broker.already_positioned", run_id=run_id, ticker=ticker,
+                     qty=existing.get("qty"))
+            return
+
         market_data = result["reasoning_json"].get("market_data", {})
         current_price = market_data.get("current_price")
         if not current_price:
             log.warning("broker.no_price", ticker=ticker)
             return
 
-        position_pct = position_pct or 2.0  # default 2% if not set
-        qty = alpaca_client.calculate_order_qty(position_pct, current_price)
-        side = "buy" if decision == "BUY" else "sell"
+        # Minimum 5% position; boost to 7% if high confidence (>70%)
+        min_pct = 7.0 if confidence >= 0.70 else 5.0
+        position_pct = max(position_pct or min_pct, min_pct)
 
+        # Calculate qty and force whole shares only
+        import math
+        account = alpaca_client.get_account()
+        equity = float(account.get("equity", 100_000))
+        dollar_amount = equity * (position_pct / 100.0)
+        qty = max(1, math.floor(dollar_amount / current_price))  # whole shares, minimum 1
+
+        side = "buy"
         order = alpaca_client.submit_order(ticker, side, qty)
 
         stop_loss_pct = final.get("stop_loss_pct") or 7.0
