@@ -64,8 +64,8 @@ function LiveIndices() {
         <div key={label} className="flex items-center gap-2">
           <span className="text-xs font-semibold text-text-secondary">{label}</span>
           <span className="text-sm font-mono text-text-primary">{fmt.price(value)}</span>
-          <span className={cn("text-xs font-mono", change >= 0 ? "text-gain" : "text-loss")}>
-            {fmt.sign(change)}%
+          <span className={cn("text-xs font-mono", (change ?? 0) >= 0 ? "text-gain" : "text-loss")}>
+            {fmt.sign(change ?? 0)}%
           </span>
         </div>
       ))}

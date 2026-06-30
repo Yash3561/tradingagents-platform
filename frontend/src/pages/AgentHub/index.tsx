@@ -29,12 +29,15 @@ const DECISION_STYLE: Record<string, string> = {
   HOLD: "text-warn border-warn/40 bg-warn/5",
 };
 
-function debateLogToEntries(log: any[]): DebateEntry[] {
+function debateLogToEntries(log: any[], completedAt?: string | null): DebateEntry[] {
+  // Anchor timestamps to the actual run completion time, not the current page-load time.
+  // If completedAt is unavailable (live run), fall back to now.
+  const base = completedAt ? new Date(completedAt).getTime() : Date.now();
   return log.map((e, i) => ({
     agent: e.agent,
     role: e.role,
     content: e.content,
-    timestamp: new Date(Date.now() - (log.length - i) * 8000)
+    timestamp: new Date(base - (log.length - i) * 8000)
       .toLocaleTimeString("en-US", { hour: "2-digit", minute: "2-digit" }),
   }));
 }
@@ -70,7 +73,7 @@ export default function AgentHub() {
           setTicker(result.ticker);
           setDecision({ d: result.decision, confidence: result.confidence, summary: result.summary });
           setFlowState({ technical: "done", sentiment: "done", news: "done", fundamental: "done", researcher: "done", risk: "done", pm: "done" });
-          if (result.debate_log?.length > 0) setEntries(debateLogToEntries(result.debate_log));
+          if (result.debate_log?.length > 0) setEntries(debateLogToEntries(result.debate_log, result.completed_at));
           setStatusBoth("done");
         }
       }).catch(() => {});
@@ -140,13 +143,14 @@ export default function AgentHub() {
           // Always populate debate panel from the full log (handles race where WS events arrived
           // before the connection was established, or were missed)
           if (msg.debate_log && msg.debate_log.length > 0) {
-            setEntries(debateLogToEntries(msg.debate_log));
+            // Live run just completed — anchor to now (the run finished moments ago)
+            setEntries(debateLogToEntries(msg.debate_log, new Date().toISOString()));
           } else {
             // Fallback: fetch from API
             try {
               const { data: result } = await api.get(`/agents/runs/${data.run_id}`);
               if (result.debate_log?.length > 0) {
-                setEntries(debateLogToEntries(result.debate_log));
+                setEntries(debateLogToEntries(result.debate_log, result.completed_at));
               }
             } catch {}
           }
@@ -184,7 +188,7 @@ export default function AgentHub() {
           fundamental: "done", researcher: "done", risk: "done", pm: "done",
         });
         if (result.debate_log?.length > 0) {
-          setEntries(debateLogToEntries(result.debate_log));
+          setEntries(debateLogToEntries(result.debate_log, result.completed_at));
         }
         setDecision({ d: result.decision, confidence: result.confidence, summary: result.summary });
         setStatusBoth("done");
