@@ -153,7 +153,7 @@ def _nim_structured(
     system: str,
     user: str,
     schema: type,
-    model: str = "deepseek-ai/deepseek-v4-pro",
+    model: str = "deepseek-ai/deepseek-v4-flash",
 ) -> dict:
     """
     Call DeepSeek via NVIDIA NIM using OpenAI-compatible tool_use.

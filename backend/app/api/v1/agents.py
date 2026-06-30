@@ -17,8 +17,8 @@ class RunRequest(BaseModel):
     ticker: str
     date: str | None = None        # defaults to today
     debate_rounds: int = 2
-    model: str = "deepseek-ai/deepseek-v4-flash"          # analyst tier (Technical/Sentiment/News/Fundamental)
-    senior_model: str | None = "deepseek-ai/deepseek-v4-pro"  # senior tier (Researcher/Risk/PM)
+    model: str = "deepseek-ai/deepseek-v4-flash"
+    senior_model: str | None = "deepseek-ai/deepseek-v4-flash"
 
 
 class RunResponse(BaseModel):
@@ -122,8 +122,8 @@ async def get_agent_contract(agent_name: str):
 
 
 class ScanRequest(BaseModel):
-    model: str = "deepseek-ai/deepseek-v4-flash"              # analyst tier
-    senior_model: str | None = "deepseek-ai/deepseek-v4-pro"  # senior tier (Researcher/Risk/PM)
+    model: str = "deepseek-ai/deepseek-v4-flash"
+    senior_model: str | None = "deepseek-ai/deepseek-v4-flash"
     max_candidates: int = 8
     watchlist: list[str] | None = None
 
