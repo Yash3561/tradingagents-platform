@@ -1,6 +1,6 @@
 import { useState, useEffect } from "react";
 import { motion, AnimatePresence } from "framer-motion";
-import { Brain, TrendingUp, TrendingDown, Loader2, RefreshCw, Award, AlertTriangle, CheckCircle2, Target } from "lucide-react";
+import { Brain, TrendingUp, TrendingDown, Loader2, RefreshCw, Award, AlertTriangle, CheckCircle2, Target, Activity, PieChart } from "lucide-react";
 import { api } from "../../lib/api";
 import { fmt } from "../../lib/formatters";
 import { cn } from "../../lib/cn";
@@ -58,6 +58,9 @@ export default function Analytics() {
   const [data, setData] = useState<PerfSummary | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [corrData, setCorrData] = useState<{tickers: string[], matrix: {x:string,y:string,value:number}[]} | null>(null);
+  const [corrLoading, setCorrLoading] = useState(false);
+  const [sectorData, setSectorData] = useState<{sectors: {sector:string,value:number,pct:number}[], total_value:number} | null>(null);
 
   const load = async () => {
     setLoading(true);
@@ -70,6 +73,15 @@ export default function Analytics() {
     } finally {
       setLoading(false);
     }
+    try {
+      setCorrLoading(true);
+      const { data: corrRes } = await api.get("/analytics/correlation");
+      setCorrData(corrRes);
+    } catch { /* ignore */ } finally { setCorrLoading(false); }
+    try {
+      const { data: secRes } = await api.get("/analytics/sector-exposure");
+      setSectorData(secRes);
+    } catch { /* ignore */ }
   };
 
   useEffect(() => { load(); }, []);
@@ -212,6 +224,99 @@ export default function Analytics() {
                 )}
               </div>
             </div>
+
+            {/* Correlation Heatmap */}
+            {corrData && corrData.tickers.length >= 2 && (
+              <div className="card p-5">
+                <div className="flex items-center gap-2 mb-4">
+                  <Activity size={16} className="text-accent" />
+                  <h3 className="text-sm font-semibold text-white">Position Correlation Matrix</h3>
+                  <span className="text-xs text-slate-500 ml-1">(3-month daily returns)</span>
+                </div>
+                <div className="overflow-x-auto">
+                  <div
+                    className="grid gap-0.5"
+                    style={{
+                      display: "grid",
+                      gridTemplateColumns: `80px repeat(${corrData.tickers.length}, minmax(52px, 1fr))`,
+                    }}
+                  >
+                    {/* Header row */}
+                    <div /> {/* empty corner */}
+                    {corrData.tickers.map(t => (
+                      <div key={t} className="text-center text-xs font-mono text-slate-400 pb-1 font-medium">{t}</div>
+                    ))}
+                    {/* Data rows */}
+                    {corrData.tickers.map(rowTicker => (
+                      <>
+                        <div key={`label-${rowTicker}`} className="text-xs font-mono text-slate-400 flex items-center pr-2 font-medium">{rowTicker}</div>
+                        {corrData.tickers.map(colTicker => {
+                          const cell = corrData.matrix.find(m => m.x === colTicker && m.y === rowTicker);
+                          const v = cell?.value ?? 0;
+                          const isDiag = rowTicker === colTicker;
+                          // Color: -1 = blue, 0 = neutral, +1 = red (high correlation = risk)
+                          const bg = isDiag
+                            ? "bg-bg-elevated"
+                            : v > 0.7 ? "bg-loss/60"
+                            : v > 0.4 ? "bg-warn/30"
+                            : v > 0 ? "bg-bg-elevated"
+                            : "bg-accent/20";
+                          return (
+                            <div
+                              key={`${rowTicker}-${colTicker}`}
+                              className={`${bg} rounded-sm flex items-center justify-center text-xs font-mono py-2`}
+                              title={`${rowTicker} × ${colTicker}: ${v.toFixed(2)}`}
+                            >
+                              <span className={isDiag ? "text-slate-500" : v > 0.7 ? "text-loss font-bold" : v < 0 ? "text-accent" : "text-slate-300"}>
+                                {isDiag ? "—" : v.toFixed(2)}
+                              </span>
+                            </div>
+                          );
+                        })}
+                      </>
+                    ))}
+                  </div>
+                </div>
+                <p className="text-xs text-slate-500 mt-3">Red = high correlation (&gt;0.7) = concentrated risk. Blue = negative correlation = diversified.</p>
+              </div>
+            )}
+
+            {/* Sector Exposure */}
+            {sectorData && sectorData.sectors.length > 0 && (
+              <div className="card p-5">
+                <div className="flex items-center gap-2 mb-4">
+                  <PieChart size={16} className="text-accent" />
+                  <h3 className="text-sm font-semibold text-white">Sector Exposure</h3>
+                  <span className="text-xs text-slate-500 ml-1">Total: ${sectorData.total_value.toLocaleString()}</span>
+                </div>
+                <div className="space-y-2">
+                  {sectorData.sectors.map((s, i) => {
+                    const COLORS = ["#2D7DD2","#00E676","#FFB740","#FF3D57","#7C5CBF","#4D6080","#4A9AEF"];
+                    const color = COLORS[i % COLORS.length];
+                    return (
+                      <div key={s.sector} className="flex items-center gap-3">
+                        <div className="w-24 text-xs font-medium text-slate-300 shrink-0">{s.sector}</div>
+                        <div className="flex-1 bg-bg-elevated rounded-full h-2 overflow-hidden">
+                          <div
+                            className="h-full rounded-full transition-all duration-500"
+                            style={{ width: `${s.pct}%`, backgroundColor: color }}
+                          />
+                        </div>
+                        <div className="w-20 text-right">
+                          <span className="text-xs font-mono text-slate-300">{s.pct.toFixed(1)}%</span>
+                          <span className="text-xs text-slate-500 ml-1">${(s.value/1000).toFixed(1)}k</span>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+                {sectorData.sectors[0]?.pct > 60 && (
+                  <p className="text-xs text-warn mt-3 flex items-center gap-1">
+                    <span>⚠</span> High concentration in {sectorData.sectors[0].sector} ({sectorData.sectors[0].pct.toFixed(0)}%). Consider diversifying.
+                  </p>
+                )}
+              </div>
+            )}
 
           </motion.div>
         </AnimatePresence>

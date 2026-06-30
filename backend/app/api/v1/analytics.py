@@ -249,3 +249,151 @@ async def get_watchlist_scores():
     loop = asyncio.get_running_loop()
     results = await loop.run_in_executor(None, _run_all)
     return {"scored_at": datetime.now(UTC).isoformat(), "tickers": results}
+
+
+@router.get("/correlation")
+async def get_portfolio_correlation():
+    """
+    Compute pairwise return correlation for all open positions.
+    Uses 3 months of daily returns from yfinance.
+    Returns a correlation matrix suitable for a heatmap.
+    """
+    import asyncio
+    import yfinance as yf
+    import numpy as np
+    import httpx
+    from app.config import get_settings as _gs
+
+    s = _gs()
+
+    # Fetch current positions from Alpaca
+    tickers = []
+    try:
+        headers = {
+            "APCA-API-KEY-ID": s.alpaca_api_key,
+            "APCA-API-SECRET-KEY": s.alpaca_api_secret,
+        }
+        async with httpx.AsyncClient(timeout=5.0) as client:
+            r = await client.get(f"{s.alpaca_base_url}/v2/positions", headers=headers)
+        if r.status_code == 200:
+            tickers = [p["symbol"] for p in r.json()]
+    except Exception as e:
+        log.warning("correlation.positions_failed", error=str(e))
+
+    if len(tickers) < 2:
+        return {"tickers": tickers, "matrix": [], "message": "Need at least 2 positions for correlation"}
+
+    # Always include SPY as benchmark
+    all_tickers = list(dict.fromkeys(tickers + ["SPY"]))
+
+    def _compute():
+        frames = {}
+        for t in all_tickers:
+            try:
+                hist = yf.Ticker(t).history(period="3mo", interval="1d")
+                if not hist.empty:
+                    frames[t] = hist["Close"].pct_change().dropna()
+            except Exception:
+                pass
+
+        if len(frames) < 2:
+            return [], list(frames.keys())
+
+        import pandas as pd
+        df = pd.DataFrame(frames).dropna()
+        corr = df.corr()
+
+        labels = list(corr.columns)
+        matrix = []
+        for i, row_label in enumerate(labels):
+            for j, col_label in enumerate(labels):
+                matrix.append({
+                    "x": col_label,
+                    "y": row_label,
+                    "value": round(float(corr.loc[row_label, col_label]), 3),
+                })
+        return matrix, labels
+
+    loop = asyncio.get_running_loop()
+    matrix, labels = await loop.run_in_executor(None, _compute)
+
+    return {
+        "tickers": labels,
+        "matrix": matrix,
+        "computed_at": datetime.now(UTC).isoformat(),
+        "period": "3mo",
+    }
+
+
+@router.get("/sector-exposure")
+async def get_sector_exposure():
+    """
+    Map current positions to sectors and compute concentration.
+    Returns sector breakdown as % of total portfolio value.
+    """
+    import httpx
+    import yfinance as yf
+    import asyncio
+    from app.config import get_settings as _gs
+
+    s = _gs()
+
+    # Fetch positions
+    positions = []
+    try:
+        headers = {
+            "APCA-API-KEY-ID": s.alpaca_api_key,
+            "APCA-API-SECRET-KEY": s.alpaca_api_secret,
+        }
+        async with httpx.AsyncClient(timeout=5.0) as client:
+            r = await client.get(f"{s.alpaca_base_url}/v2/positions", headers=headers)
+        if r.status_code == 200:
+            positions = r.json()
+    except Exception:
+        pass
+
+    if not positions:
+        return {"sectors": [], "total_value": 0}
+
+    # Hardcoded sector map for speed (avoid yfinance calls)
+    SECTOR_MAP = {
+        "AAPL": "Technology", "MSFT": "Technology", "GOOGL": "Technology",
+        "AMZN": "Consumer Discretionary", "NVDA": "Technology", "META": "Technology",
+        "TSLA": "Consumer Discretionary", "AMD": "Technology", "AVGO": "Technology",
+        "ORCL": "Technology", "ASML": "Technology", "TSM": "Technology",
+        "NFLX": "Communication", "ADBE": "Technology", "CRM": "Technology",
+        "INTC": "Technology", "QCOM": "Technology", "TXN": "Technology",
+        "COIN": "Financials", "PLTR": "Technology", "SNOW": "Technology",
+        "UBER": "Technology", "SHOP": "Consumer Discretionary", "SQ": "Financials",
+        "PYPL": "Financials", "JPM": "Financials", "GS": "Financials",
+        "BAC": "Financials", "V": "Financials", "MA": "Financials",
+        "UNH": "Healthcare", "JNJ": "Healthcare", "LLY": "Healthcare",
+        "SPY": "ETF", "QQQ": "ETF", "IWM": "ETF",
+        "XOM": "Energy", "CVX": "Energy",
+        "SMCI": "Technology", "ARM": "Technology",
+    }
+
+    sector_values: dict[str, float] = {}
+    total_value = 0.0
+
+    for p in positions:
+        ticker = p.get("symbol", "")
+        market_value = float(p.get("market_value", 0))
+        sector = SECTOR_MAP.get(ticker, "Other")
+        sector_values[sector] = sector_values.get(sector, 0) + market_value
+        total_value += market_value
+
+    sectors = [
+        {
+            "sector": sec,
+            "value": round(val, 2),
+            "pct": round(val / total_value * 100, 1) if total_value else 0,
+        }
+        for sec, val in sorted(sector_values.items(), key=lambda x: x[1], reverse=True)
+    ]
+
+    return {
+        "sectors": sectors,
+        "total_value": round(total_value, 2),
+        "computed_at": datetime.now(UTC).isoformat(),
+    }
