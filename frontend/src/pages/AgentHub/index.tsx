@@ -5,6 +5,7 @@ import { useSearchParams } from "react-router-dom";
 import { api, WS_BASE } from "../../lib/api";
 import AgentFlow, { type FlowState, type AgentStatus } from "../../components/agent/AgentFlow";
 import DebateTimeline, { type DebateEntry } from "../../components/agent/DebateTimeline";
+import CandlestickChart from "../../components/charts/CandlestickChart";
 import { cn } from "../../lib/cn";
 
 const ROLE_TO_KEY: Record<string, keyof FlowState> = {
@@ -279,6 +280,9 @@ export default function AgentHub() {
           </button>
         )}
       </div>
+
+      {/* Price chart — shown once a ticker is set */}
+      <CandlestickChart ticker={ticker} period="3mo" height={340} showControls={true} />
 
       <div className="grid grid-cols-5 gap-4">
         {/* Agent Flow diagram */}

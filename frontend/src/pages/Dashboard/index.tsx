@@ -3,6 +3,7 @@ import { motion } from "framer-motion";
 import { DollarSign, TrendingUp, BarChart2, Activity, Loader2, RefreshCw, ShieldCheck, ShieldAlert, ShieldX, Clock, Radio } from "lucide-react";
 import MetricCard from "../../components/data-display/MetricCard";
 import PnLBadge from "../../components/data-display/PnLBadge";
+import CandlestickChart from "../../components/charts/CandlestickChart";
 import { fmt } from "../../lib/formatters";
 import { api } from "../../lib/api";
 import { cn } from "../../lib/cn";
@@ -211,6 +212,7 @@ export default function Dashboard() {
   const [activity, setActivity] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
+  const [chartTicker, setChartTicker] = useState("SPY");
 
   const load = async () => {
     setRefreshing(true);
@@ -332,6 +334,31 @@ export default function Dashboard() {
             <p className="text-xs text-text-muted">Market data unavailable</p>
           )}
         </motion.div>
+      </div>
+
+      {/* Price Chart */}
+      <div className="mt-2">
+        <div className="flex items-center gap-3 mb-3">
+          <h2 className="text-sm font-semibold text-slate-400 uppercase tracking-wider">
+            Price Chart
+          </h2>
+          <div className="flex gap-2">
+            {["SPY", "QQQ", "AAPL", "NVDA"].map((t) => (
+              <button
+                key={t}
+                onClick={() => setChartTicker(t)}
+                className={`px-2 py-0.5 rounded text-xs font-mono transition-colors ${
+                  chartTicker === t
+                    ? "bg-accent text-white"
+                    : "text-slate-400 hover:text-white hover:bg-bg-elevated"
+                }`}
+              >
+                {t}
+              </button>
+            ))}
+          </div>
+        </div>
+        <CandlestickChart ticker={chartTicker} period="3mo" height={300} showControls={true} />
       </div>
 
       <div className="grid grid-cols-5 gap-4">

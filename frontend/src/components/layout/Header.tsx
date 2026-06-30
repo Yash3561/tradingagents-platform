@@ -4,6 +4,7 @@ import { useNavigate } from "react-router-dom";
 import { fmt } from "../../lib/formatters";
 import { api } from "../../lib/api";
 import { cn } from "../../lib/cn";
+import NotificationsDrawer from "./NotificationsDrawer";
 
 // ── Ticker Search ─────────────────────────────────────────────────────────────
 
@@ -314,6 +315,7 @@ function PortfolioValue() {
 export default function Header() {
   const [unreadCount, setUnreadCount] = useState(0);
   const [dropdownOpen, setDropdownOpen] = useState(false);
+  const [drawerOpen, setDrawerOpen] = useState(false);
   const dropdownRef = useRef<HTMLDivElement>(null);
 
   // Poll unread count every 30 seconds
@@ -341,15 +343,8 @@ export default function Header() {
   }, [dropdownOpen]);
 
   const handleBellClick = () => {
-    setDropdownOpen(prev => !prev);
-    // Refresh count after opening (notifications might get marked read)
-    if (!dropdownOpen) {
-      setTimeout(() => {
-        api.get("/notifications/unread-count").then(({ data }) => {
-          setUnreadCount(data.count ?? 0);
-        }).catch(() => {});
-      }, 1500);
-    }
+    setDropdownOpen(false); // close legacy dropdown if open
+    setDrawerOpen(true);
   };
 
   return (
@@ -388,6 +383,12 @@ export default function Header() {
       </div>
 
       <PortfolioValue />
+
+      <NotificationsDrawer
+        open={drawerOpen}
+        onClose={() => setDrawerOpen(false)}
+        onReadAll={() => setUnreadCount(0)}
+      />
     </header>
   );
 }
