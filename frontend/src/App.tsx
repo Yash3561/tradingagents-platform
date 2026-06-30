@@ -7,6 +7,7 @@ import Portfolio from "./pages/Portfolio";
 import TradeHistory from "./pages/TradeHistory";
 import Backtesting from "./pages/Backtesting";
 import Settings from "./pages/Settings";
+import Scanner from "./pages/Scanner";
 
 export default function App() {
   return (
@@ -17,6 +18,7 @@ export default function App() {
             <Route path="/" element={<Navigate to="/dashboard" replace />} />
             <Route path="/dashboard" element={<Dashboard />} />
             <Route path="/agents" element={<AgentHub />} />
+            <Route path="/scanner" element={<Scanner />} />
             <Route path="/portfolio" element={<Portfolio />} />
             <Route path="/trades" element={<TradeHistory />} />
             <Route path="/backtest" element={<Backtesting />} />

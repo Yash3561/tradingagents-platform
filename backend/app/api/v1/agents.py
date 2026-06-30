@@ -120,6 +120,70 @@ async def get_agent_contract(agent_name: str):
         raise HTTPException(404, f"No contract for agent: '{agent_name}'")
 
 
+class ScanRequest(BaseModel):
+    model: str = "claude-sonnet-4-6"
+    max_candidates: int = 8
+    watchlist: list[str] | None = None
+
+
+@router.post("/scan")
+async def trigger_scan(body: ScanRequest, background_tasks: BackgroundTasks):
+    """
+    Trigger a full market scan:
+    1. Pre-screen 40+ stocks with technical analysis (free/fast)
+    2. Run AI pipeline on top candidates
+    3. Auto-execute approved trades on Alpaca paper account
+    Returns scan_id for polling or use SSE to track progress.
+    """
+    import uuid as _uuid
+    scan_id = str(_uuid.uuid4())
+
+    async def _run():
+        from app.workers.scanner import run_market_scan
+        try:
+            result = await run_market_scan(
+                model=body.model,
+                watchlist=body.watchlist,
+                max_candidates=body.max_candidates,
+            )
+            await ws_manager.broadcast(f"scan:{scan_id}", {
+                "type": "scan_completed",
+                "scan_id": scan_id,
+                **result,
+            })
+        except Exception as e:
+            await ws_manager.broadcast(f"scan:{scan_id}", {
+                "type": "scan_error",
+                "scan_id": scan_id,
+                "error": str(e),
+            })
+
+    background_tasks.add_task(_run)
+    return {"scan_id": scan_id, "status": "started"}
+
+
+@router.get("/scan/prescreen")
+async def prescreen_only():
+    """
+    Run only the free technical pre-screen on all watchlist stocks.
+    No Claude calls — instant results (~10s for 40 stocks).
+    """
+    import asyncio
+    from app.workers.scanner import WATCHLIST, _screen_ticker
+    loop = asyncio.get_running_loop()
+
+    def _run_all():
+        results = []
+        for t in WATCHLIST:
+            r = _screen_ticker(t)
+            if r:
+                results.append(r)
+        return sorted(results, key=lambda x: x["score"], reverse=True)
+
+    results = await loop.run_in_executor(None, _run_all)
+    return results
+
+
 @router.delete("/runs/{run_id}")
 async def cancel_run(run_id: str, db: AsyncSession = Depends(get_db)):
     run = await db.get(AgentRun, run_id)

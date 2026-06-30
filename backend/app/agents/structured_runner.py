@@ -206,12 +206,12 @@ def _inline_refs(schema: dict) -> dict:
 
 # ── DISCIPLINE CONSTANTS ──────────────────────────────────────────────────────
 
-MIN_ANALYST_CONFIDENCE   = 0.60
-MIN_TRADE_CONFIDENCE     = 0.70
-MIN_BULLISH_CONSENSUS    = 3
-MIN_BEARISH_CONSENSUS    = 3
-MAX_POSITION_SIZE_PCT    = 5.0
-MANDATORY_STOP_LOSS_PCT  = 7.0
+MIN_ANALYST_CONFIDENCE   = 0.55   # Individual analyst min confidence
+MIN_TRADE_CONFIDENCE     = 0.62   # Final decision min confidence to trade
+MIN_BULLISH_CONSENSUS    = 2      # At least 2 of 4 analysts bullish for BUY
+MIN_BEARISH_CONSENSUS    = 2      # At least 2 of 4 analysts bearish for SELL
+MAX_POSITION_SIZE_PCT    = 5.0    # Hard cap per position
+MANDATORY_STOP_LOSS_PCT  = 7.0    # Always set stop-loss
 MAX_RISK_LEVEL_TO_TRADE  = "MEDIUM"
 
 
@@ -563,8 +563,10 @@ Every dollar lost due to a trade you approved is on you personally."""
     if assessment.risk_level == RiskLevel.HIGH:
         rejection_reasons.append("risk level is HIGH — automatic rejection")
 
-    if bundle.news.catalyst_upcoming and assessment.risk_level != RiskLevel.LOW:
-        rejection_reasons.append("material catalyst upcoming (earnings/event) — too risky to hold through")
+    # Catalyst upcoming is flagged as a risk but not an auto-veto
+    # Risk manager will factor it into risk_level assessment
+    if bundle.news.catalyst_upcoming and assessment.risk_level == RiskLevel.HIGH:
+        rejection_reasons.append("material catalyst upcoming with HIGH risk — too risky to hold through")
 
     if rejection_reasons:
         assessment.approved = False

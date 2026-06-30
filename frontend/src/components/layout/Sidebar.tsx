@@ -7,7 +7,7 @@ import {
   ScrollText,
   FlaskConical,
   Settings,
-  TrendingUp,
+  Radar,
   Zap,
 } from "lucide-react";
 import { cn } from "../../lib/cn";
@@ -15,6 +15,7 @@ import { cn } from "../../lib/cn";
 const NAV = [
   { to: "/dashboard", icon: LayoutDashboard, label: "Dashboard" },
   { to: "/agents", icon: BrainCircuit, label: "Agent Hub" },
+  { to: "/scanner", icon: Radar, label: "Scanner" },
   { to: "/portfolio", icon: PieChart, label: "Portfolio" },
   { to: "/trades", icon: ScrollText, label: "Trade History" },
   { to: "/backtest", icon: FlaskConical, label: "Backtesting" },

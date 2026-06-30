@@ -19,6 +19,18 @@ async def agent_run_ws(ws: WebSocket, run_id: str):
         ws_manager.disconnect(ws, room=f"run:{run_id}")
 
 
+@router.websocket("/scans/{scan_id}")
+async def scan_ws(ws: WebSocket, scan_id: str):
+    await ws_manager.connect(ws, room=f"scan:{scan_id}")
+    try:
+        while True:
+            data = await ws.receive_text()
+            if data == "ping":
+                await ws.send_text("pong")
+    except WebSocketDisconnect:
+        ws_manager.disconnect(ws, room=f"scan:{scan_id}")
+
+
 @router.websocket("/quotes")
 async def quotes_ws(ws: WebSocket):
     await ws_manager.connect(ws, room="quotes")
