@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { Radar, Play, RefreshCw, Loader2, TrendingUp, TrendingDown, Minus, Zap, CheckCircle2, XCircle, Clock } from "lucide-react";
 import { api, WS_BASE } from "../../lib/api";
@@ -84,6 +84,19 @@ export default function Scanner() {
   const [progress, setProgress] = useState({ current: 0, total: 0 });
   const [activeTicker, setActiveTicker] = useState<string | null>(null);
   const [scanLog, setScanLog] = useState<string[]>([]);
+  const [history, setHistory] = useState<{ ticker: string; decision: string | null; confidence: number | null; created_at: string }[]>([]);
+
+  // Load recent agent runs from DB on mount (persists across refresh)
+  useEffect(() => {
+    api.get("/agents/runs?limit=30").then(({ data }) => {
+      setHistory(data.map((r: any) => ({
+        ticker: r.ticker,
+        decision: r.decision,
+        confidence: r.confidence,
+        created_at: r.created_at,
+      })));
+    }).catch(() => {});
+  }, []);
   const [maxCandidates, setMaxCandidates] = useState(8);
 
   const addLog = (msg: string) => setScanLog(prev => [...prev.slice(-19), msg]);
@@ -540,6 +553,53 @@ export default function Scanner() {
           )}
         </div>
       </div>
+
+      {/* Past Analysis — persists across refresh, loaded from DB */}
+      {history.length > 0 && (
+        <div className="card overflow-hidden">
+          <div className="px-4 py-3 border-b border-border flex items-center justify-between">
+            <h3 className="text-sm font-semibold text-text-primary">Past Analysis</h3>
+            <span className="text-xs text-text-muted">From database — survives refresh &amp; restart</span>
+          </div>
+          <div className="overflow-x-auto">
+            <table className="w-full text-xs">
+              <thead>
+                <tr className="border-b border-border">
+                  <th className="text-left px-4 py-2 text-text-muted font-medium">Ticker</th>
+                  <th className="text-left px-4 py-2 text-text-muted font-medium">Decision</th>
+                  <th className="text-left px-4 py-2 text-text-muted font-medium">Confidence</th>
+                  <th className="text-left px-4 py-2 text-text-muted font-medium">Time</th>
+                </tr>
+              </thead>
+              <tbody>
+                {history.map((r, i) => (
+                  <tr key={i} className="border-b border-border/40 hover:bg-bg-elevated/40 transition-colors">
+                    <td className="px-4 py-2 font-mono font-bold text-text-primary">{r.ticker}</td>
+                    <td className="px-4 py-2">
+                      <span className={cn(
+                        "px-1.5 py-0.5 rounded text-2xs font-semibold border",
+                        r.decision === "BUY" ? "text-gain bg-gain/10 border-gain/30" :
+                        r.decision === "SELL" ? "text-loss bg-loss/10 border-loss/30" :
+                        "text-text-muted bg-bg-elevated border-border"
+                      )}>
+                        {r.decision ?? "HOLD"}
+                      </span>
+                    </td>
+                    <td className="px-4 py-2 font-mono text-text-secondary">
+                      {r.confidence != null ? `${Math.round(r.confidence * 100)}%` : "—"}
+                    </td>
+                    <td className="px-4 py-2 text-text-muted">
+                      {new Date(r.created_at).toLocaleTimeString("en-US", { hour: "2-digit", minute: "2-digit" })}
+                      {" · "}
+                      {new Date(r.created_at).toLocaleDateString("en-US", { month: "short", day: "numeric" })}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
     </motion.div>
   );
 }

@@ -1,4 +1,4 @@
-import { useState, useRef, useCallback } from "react";
+import { useState, useRef, useCallback, useEffect } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { Play, RefreshCw, Loader2 } from "lucide-react";
 import { api, WS_BASE } from "../../lib/api";
@@ -59,6 +59,23 @@ export default function AgentHub() {
     setStatus(s);
     statusRef.current = s;
   };
+
+  // Restore last completed run from DB on mount
+  useEffect(() => {
+    api.get("/agents/runs?limit=1").then(({ data }) => {
+      const last = data[0];
+      if (!last || last.status !== "completed") return;
+      api.get(`/agents/runs/${last.run_id}`).then(({ data: result }) => {
+        if (result.status === "completed" && result.decision) {
+          setTicker(result.ticker);
+          setDecision({ d: result.decision, confidence: result.confidence, summary: result.summary });
+          setFlowState({ technical: "done", sentiment: "done", news: "done", fundamental: "done", researcher: "done", risk: "done", pm: "done" });
+          if (result.debate_log?.length > 0) setEntries(debateLogToEntries(result.debate_log));
+          setStatusBoth("done");
+        }
+      }).catch(() => {});
+    }).catch(() => {});
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   const handleRun = async () => {
     if (statusRef.current === "running") return;
