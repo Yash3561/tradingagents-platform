@@ -14,6 +14,7 @@ No free-form text parsing between agents.
 from __future__ import annotations
 import json
 import asyncio
+from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, UTC
 from typing import Any
 
@@ -703,26 +704,31 @@ def _run_full_pipeline(run_id: str, ticker: str, date: str, debate_rounds: int, 
     if market_data.get("error"):
         log.warning("market_data.unavailable", ticker=ticker, error=market_data["error"])
 
+    # ── Analyst phase: all 4 run in parallel (they are independent) ──────────
     sync_emit({"type": "agent_start", "agent": "Technical Analyst", "role": "analyst"})
-    technical = _run_technical_analyst(ticker, date, model, market_data)
+    sync_emit({"type": "agent_start", "agent": "Sentiment Analyst", "role": "analyst"})
+    sync_emit({"type": "agent_start", "agent": "News Analyst", "role": "analyst"})
+    sync_emit({"type": "agent_start", "agent": "Fundamental Analyst", "role": "analyst"})
+
+    with ThreadPoolExecutor(max_workers=4) as pool:
+        f_technical   = pool.submit(_run_technical_analyst,   ticker, date, model, market_data)
+        f_sentiment   = pool.submit(_run_sentiment_analyst,   ticker, date, model, market_data)
+        f_news        = pool.submit(_run_news_analyst,        ticker, date, model, market_data, news_headlines)
+        f_fundamental = pool.submit(_run_fundamental_analyst, ticker, date, model, market_data)
+        technical   = f_technical.result()
+        sentiment   = f_sentiment.result()
+        news        = f_news.result()
+        fundamental = f_fundamental.result()
+
     sync_emit({"type": "debate_event", "agent": "Technical Analyst", "role": "analyst",
                "content": technical.reasoning, "signal": technical.signal.value,
                "confidence": technical.confidence})
-
-    sync_emit({"type": "agent_start", "agent": "Sentiment Analyst", "role": "analyst"})
-    sentiment = _run_sentiment_analyst(ticker, date, model, market_data)
     sync_emit({"type": "debate_event", "agent": "Sentiment Analyst", "role": "analyst",
                "content": sentiment.reasoning, "signal": sentiment.signal.value,
                "confidence": sentiment.confidence})
-
-    sync_emit({"type": "agent_start", "agent": "News Analyst", "role": "analyst"})
-    news = _run_news_analyst(ticker, date, model, market_data, news_headlines)
     sync_emit({"type": "debate_event", "agent": "News Analyst", "role": "analyst",
                "content": news.reasoning, "signal": news.signal.value,
                "confidence": news.confidence})
-
-    sync_emit({"type": "agent_start", "agent": "Fundamental Analyst", "role": "analyst"})
-    fundamental = _run_fundamental_analyst(ticker, date, model, market_data)
     sync_emit({"type": "debate_event", "agent": "Fundamental Analyst", "role": "analyst",
                "content": fundamental.reasoning, "signal": fundamental.signal.value,
                "confidence": fundamental.confidence})
