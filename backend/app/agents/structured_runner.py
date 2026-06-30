@@ -661,11 +661,16 @@ async def _emit(run_id: str, event: dict):
     await ws_manager.broadcast(f"run:{run_id}", event)
 
 
-def _run_full_pipeline(run_id: str, ticker: str, date: str, debate_rounds: int, model: str, loop: asyncio.AbstractEventLoop) -> dict:
+def _run_full_pipeline(run_id: str, ticker: str, date: str, debate_rounds: int, model: str, loop: asyncio.AbstractEventLoop, senior_model: str | None = None) -> dict:
     """
     Synchronous full pipeline. Runs in thread executor.
     Receives the main event loop so sync_emit works correctly.
+
+    analyst_model  (model)        → Technical, Sentiment, News, Fundamental  (fast/cheap)
+    senior_model   (senior_model) → Researcher, Risk Manager, PM              (smart/expensive)
+    If senior_model is None, falls back to model.
     """
+    _senior = senior_model or model
 
     def sync_emit(event):
         """Fire-and-forget WS emit from a thread."""
@@ -717,20 +722,20 @@ def _run_full_pipeline(run_id: str, ticker: str, date: str, debate_rounds: int, 
     )
 
     sync_emit({"type": "agent_start", "agent": "Researcher Team", "role": "researcher"})
-    debate = _run_researcher_debate(bundle, debate_rounds, model)
+    debate = _run_researcher_debate(bundle, debate_rounds, _senior)
     sync_emit({"type": "debate_event", "agent": "Researcher Team", "role": "researcher",
                "content": f"Bull: {debate.bull_final_thesis}\n\nBear: {debate.bear_final_thesis}",
                "signal": debate.suggested_signal.value, "confidence": debate.confidence,
                "debate_winner": debate.debate_winner})
 
     sync_emit({"type": "agent_start", "agent": "Risk Manager", "role": "risk"})
-    risk = _run_risk_manager(bundle, debate, model)
+    risk = _run_risk_manager(bundle, debate, _senior)
     sync_emit({"type": "debate_event", "agent": "Risk Manager", "role": "risk",
                "content": risk.reasoning, "risk_level": risk.risk_level.value,
                "approved": risk.approved, "position_pct": risk.recommended_position_pct})
 
     sync_emit({"type": "agent_start", "agent": "Portfolio Manager", "role": "pm"})
-    final = _run_portfolio_manager(bundle, debate, risk, model)
+    final = _run_portfolio_manager(bundle, debate, risk, _senior)
     sync_emit({"type": "debate_event", "agent": "Portfolio Manager", "role": "pm",
                "content": final.summary, "decision": final.decision.value,
                "confidence": final.confidence})
@@ -865,6 +870,7 @@ async def run_structured_agent_analysis(
     analysis_date: str,
     debate_rounds: int,
     model: str,
+    senior_model: str | None = None,
 ):
     """Async entry point. Updates DB and broadcasts WS events throughout."""
     log.info("structured_agent.run.start", run_id=run_id, ticker=ticker)
@@ -881,7 +887,7 @@ async def run_structured_agent_analysis(
         loop = asyncio.get_running_loop()
 
         result = await loop.run_in_executor(
-            None, _run_full_pipeline, run_id, ticker, analysis_date, debate_rounds, model, loop
+            None, _run_full_pipeline, run_id, ticker, analysis_date, debate_rounds, model, loop, senior_model
         )
 
         async with AsyncSessionLocal() as db:

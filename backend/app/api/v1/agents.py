@@ -17,7 +17,8 @@ class RunRequest(BaseModel):
     ticker: str
     date: str | None = None        # defaults to today
     debate_rounds: int = 2
-    model: str = "claude-sonnet-4-6"
+    model: str = "claude-sonnet-4-6"          # analyst tier (Technical/Sentiment/News/Fundamental)
+    senior_model: str | None = "claude-opus-4-6"  # senior tier (Researcher/Risk/PM) — None = same as model
 
 
 class RunResponse(BaseModel):
@@ -47,7 +48,7 @@ async def trigger_run(
     db.add(run)
     await db.commit()
 
-    background_tasks.add_task(run_structured_agent_analysis, run_id, body.ticker.upper(), analysis_date, body.debate_rounds, body.model)
+    background_tasks.add_task(run_structured_agent_analysis, run_id, body.ticker.upper(), analysis_date, body.debate_rounds, body.model, body.senior_model)
 
     return RunResponse(
         run_id=run_id,
@@ -121,7 +122,8 @@ async def get_agent_contract(agent_name: str):
 
 
 class ScanRequest(BaseModel):
-    model: str = "claude-sonnet-4-6"
+    model: str = "claude-sonnet-4-6"              # analyst tier
+    senior_model: str | None = "claude-opus-4-6"  # senior tier (Researcher/Risk/PM)
     max_candidates: int = 8
     watchlist: list[str] | None = None
 
@@ -143,6 +145,7 @@ async def trigger_scan(body: ScanRequest, background_tasks: BackgroundTasks):
         try:
             result = await run_market_scan(
                 model=body.model,
+                senior_model=body.senior_model,
                 watchlist=body.watchlist,
                 max_candidates=body.max_candidates,
                 scan_id=scan_id,

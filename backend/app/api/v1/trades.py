@@ -23,6 +23,7 @@ async def list_trades(limit: int = 50, offset: int = 0, db: AsyncSession = Depen
     return [
         {
             "id": t.id,
+            "agent_run_id": t.agent_run_id,
             "ticker": t.ticker,
             "side": t.side,
             "qty": t.qty,

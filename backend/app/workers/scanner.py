@@ -205,6 +205,7 @@ def _run_pre_screen(watchlist: list[str]) -> list[dict]:
 
 async def run_market_scan(
     model: str = "claude-sonnet-4-6",
+    senior_model: str | None = "claude-opus-4-6",
     watchlist: list[str] | None = None,
     max_candidates: int = MAX_AI_CANDIDATES,
     vix_override: float | None = None,
@@ -318,6 +319,7 @@ async def run_market_scan(
                 analysis_date=analysis_date,
                 debate_rounds=1,
                 model=model,
+                senior_model=senior_model,
             )
             r = {"ticker": ticker, "run_id": run_id, "status": "completed"}
         except Exception as e:
