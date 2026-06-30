@@ -145,6 +145,7 @@ async def trigger_scan(body: ScanRequest, background_tasks: BackgroundTasks):
                 model=body.model,
                 watchlist=body.watchlist,
                 max_candidates=body.max_candidates,
+                scan_id=scan_id,
             )
             await ws_manager.broadcast(f"scan:{scan_id}", {
                 "type": "scan_completed",

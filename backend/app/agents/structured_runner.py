@@ -207,9 +207,9 @@ def _inline_refs(schema: dict) -> dict:
 # ── DISCIPLINE CONSTANTS ──────────────────────────────────────────────────────
 
 MIN_ANALYST_CONFIDENCE   = 0.55   # Individual analyst min confidence
-MIN_TRADE_CONFIDENCE     = 0.62   # Final decision min confidence to trade
-MIN_BULLISH_CONSENSUS    = 2      # At least 2 of 4 analysts bullish for BUY
-MIN_BEARISH_CONSENSUS    = 2      # At least 2 of 4 analysts bearish for SELL
+MIN_TRADE_CONFIDENCE     = 0.52   # Final decision min confidence to trade
+MIN_BULLISH_CONSENSUS    = 1      # At least 1 of 4 analysts bullish for BUY
+MIN_BEARISH_CONSENSUS    = 1      # At least 1 of 4 analysts bearish for SELL
 MAX_POSITION_SIZE_PCT    = 5.0    # Hard cap per position
 MANDATORY_STOP_LOSS_PCT  = 7.0    # Always set stop-loss
 MAX_RISK_LEVEL_TO_TRADE  = "MEDIUM"
@@ -240,35 +240,28 @@ DISCIPLINE RULES — NON-NEGOTIABLE:
 
 RISK_DISCIPLINE = """
 DISCIPLINE RULES — NON-NEGOTIABLE:
-1. You have VETO POWER. Use it without hesitation when risk is unacceptable.
+1. You have VETO POWER. Use it when risk is clearly unacceptable.
 2. Set approved=False if ANY of the following are true:
-   - Risk level is HIGH
-   - Confidence from debate is below 0.70
-   - Fewer than 3 analysts agree on direction
-   - There is an unresolved material risk event (earnings, regulatory, macro)
-   - The trade would push portfolio concentration in one sector above 30%
-3. ALWAYS set a stop_loss_pct. A trade with no stop-loss is not a trade — it is gambling.
+   - Confidence from debate is below 0.50 (not just uncertain — genuinely low signal)
+   - There is a binary risk event in the next 24h (earnings release, FDA decision, etc.)
+   - The stock has no clear directional thesis from the debate
+3. HIGH risk level alone does NOT auto-reject — factor it into position sizing instead.
+   Reduce position to 1% if HIGH risk but thesis is clear. Reject only if thesis is absent.
+4. ALWAYS set a stop_loss_pct. A trade with no stop-loss is not a trade — it is gambling.
    Minimum stop-loss: 5%. Maximum: 12%. Default: 7%.
-4. Recommended position size: 2-5% of portfolio. Never above 5%. Ever.
-5. If you feel even slightly uncertain about approving — REJECT. You can always trade later.
-   You cannot un-lose money.
-6. Your performance is measured by DRAWDOWN PREVENTION, not by trades approved.
+5. Recommended position size: 1-3% of portfolio for normal trades, 0.5-1% for HIGH risk.
+6. Your performance is measured by RISK-ADJUSTED returns, not trades blocked.
 """
 
 PM_DISCIPLINE = """
 DISCIPLINE RULES — NON-NEGOTIABLE:
 1. If risk.approved is False → decision is HOLD. No exceptions. No overrides.
-2. If confidence is below 0.70 → decision is HOLD. Do not rationalize a trade.
-3. If fewer than 3 analysts agree → decision is HOLD.
-4. NEVER chase momentum. If the move has already happened, the trade is too late.
-5. NEVER average down on a losing position via agent recommendation.
-6. The best trade is often NO trade. HOLD is a valid and often correct decision.
-7. Before approving any BUY or SELL: ask yourself — "What is the specific, quantified
-   scenario where this trade loses 20%? Am I comfortable with that outcome?"
-   If no clear answer → HOLD.
-8. Position sizing follows Risk Manager exactly. Do not size up because you feel confident.
-9. Document every key risk you are accepting in key_risks_acknowledged.
-   If you cannot name at least one real risk — you have not thought hard enough.
+2. If confidence is below 0.50 → decision is HOLD. Do not rationalize a trade.
+3. NEVER chase momentum. If the move has already happened, the trade is too late.
+4. NEVER average down on a losing position via agent recommendation.
+5. The best trade is often NO trade. HOLD is a valid and often correct decision.
+6. Position sizing follows Risk Manager exactly. Do not size up because you feel confident.
+7. Document every key risk you are accepting in key_risks_acknowledged.
 """
 
 
@@ -560,13 +553,10 @@ Every dollar lost due to a trade you approved is on you personally."""
     if debate.suggested_signal in (Signal.SELL, Signal.STRONG_SELL) and bundle.bearish_count() < MIN_BEARISH_CONSENSUS:
         rejection_reasons.append(f"only {bundle.bearish_count()}/4 analysts bearish (need {MIN_BEARISH_CONSENSUS})")
 
-    if assessment.risk_level == RiskLevel.HIGH:
-        rejection_reasons.append("risk level is HIGH — automatic rejection")
-
-    # Catalyst upcoming is flagged as a risk but not an auto-veto
-    # Risk manager will factor it into risk_level assessment
-    if bundle.news.catalyst_upcoming and assessment.risk_level == RiskLevel.HIGH:
-        rejection_reasons.append("material catalyst upcoming with HIGH risk — too risky to hold through")
+    # HIGH risk alone no longer auto-vetoes — risk manager already set approved=False if needed.
+    # Only hard-block if risk manager explicitly rejected AND confidence is also very low.
+    if assessment.risk_level == RiskLevel.HIGH and not assessment.approved and debate.confidence < 0.45:
+        rejection_reasons.append("very low confidence with HIGH risk — blocking")
 
     if rejection_reasons:
         assessment.approved = False

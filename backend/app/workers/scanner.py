@@ -208,6 +208,7 @@ async def run_market_scan(
     watchlist: list[str] | None = None,
     max_candidates: int = MAX_AI_CANDIDATES,
     vix_override: float | None = None,
+    scan_id: str | None = None,
 ) -> dict:
     """
     Full market scan:
@@ -294,10 +295,22 @@ async def run_market_scan(
         log.info("scanner.queued", ticker=ticker, score=candidate["score"],
                  direction=candidate["direction"])
 
-    # Run pipelines sequentially (avoid overwhelming Claude API)
-    trades_placed = 0
+    # Run pipelines in batches of 3 (parallel within batch, sequential between)
+    # Balances speed vs. Claude API rate limits
+    from app.core.websocket_manager import ws_manager
+
+    BATCH_SIZE = 3
     results = []
-    for run_id, ticker, expected_direction in run_ids:
+
+    async def _run_one(run_id: str, ticker: str, scan_id: str | None = None):
+        if scan_id:
+            await ws_manager.broadcast(f"scan:{scan_id}", {
+                "type": "scan_progress",
+                "ticker": ticker,
+                "stage": "starting",
+                "completed": len(results),
+                "total": len(run_ids),
+            })
         try:
             await run_structured_agent_analysis(
                 run_id=run_id,
@@ -306,10 +319,26 @@ async def run_market_scan(
                 debate_rounds=1,
                 model=model,
             )
-            results.append({"ticker": ticker, "run_id": run_id, "status": "completed"})
+            r = {"ticker": ticker, "run_id": run_id, "status": "completed"}
         except Exception as e:
             log.error("scanner.pipeline_failed", ticker=ticker, error=str(e))
-            results.append({"ticker": ticker, "run_id": run_id, "status": "failed", "error": str(e)})
+            r = {"ticker": ticker, "run_id": run_id, "status": "failed", "error": str(e)}
+
+        results.append(r)
+        if scan_id:
+            await ws_manager.broadcast(f"scan:{scan_id}", {
+                "type": "scan_progress",
+                "ticker": ticker,
+                "stage": "done",
+                "status": r["status"],
+                "completed": len(results),
+                "total": len(run_ids),
+            })
+        return r
+
+    for i in range(0, len(run_ids), BATCH_SIZE):
+        batch = run_ids[i:i + BATCH_SIZE]
+        await asyncio.gather(*[_run_one(rid, tkr, scan_id) for rid, tkr, _ in batch])
 
     duration = (datetime.now(UTC) - scan_start).total_seconds()
 

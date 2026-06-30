@@ -82,6 +82,7 @@ export default function Scanner() {
   const [prescreen, setPrescreen] = useState<ScreenedStock[]>([]);
   const [scanSummary, setScanSummary] = useState<ScanSummary | null>(null);
   const [progress, setProgress] = useState({ current: 0, total: 0 });
+  const [activeTicker, setActiveTicker] = useState<string | null>(null);
   const [scanLog, setScanLog] = useState<string[]>([]);
   const [maxCandidates, setMaxCandidates] = useState(8);
 
@@ -125,8 +126,18 @@ export default function Scanner() {
 
       ws.onmessage = (e) => {
         const msg = JSON.parse(e.data);
-        if (msg.type === "scan_completed") {
+        if (msg.type === "scan_progress") {
+          setProgress({ current: msg.completed, total: msg.total });
+          if (msg.stage === "starting") {
+            setActiveTicker(msg.ticker);
+            addLog(`[${msg.completed + 1}/${msg.total}] Running AI on ${msg.ticker}...`);
+          } else if (msg.stage === "done") {
+            setActiveTicker(null);
+            addLog(`  ✓ ${msg.ticker} — ${msg.status}`);
+          }
+        } else if (msg.type === "scan_completed") {
           scanCompleted = true;
+          setActiveTicker(null);
           setScanSummary(msg as ScanSummary);
           if (msg.pre_screen) setPrescreen(msg.pre_screen);
           setScanStatus("done");
@@ -134,6 +145,7 @@ export default function Scanner() {
           ws.close();
         } else if (msg.type === "scan_error") {
           scanCompleted = true;
+          setActiveTicker(null);
           setScanStatus("error");
           addLog(`Error: ${msg.error}`);
           ws.close();
@@ -167,6 +179,7 @@ export default function Scanner() {
     setScanSummary(null);
     setScanLog([]);
     setProgress({ current: 0, total: 0 });
+    setActiveTicker(null);
   };
 
   const buys = prescreen.filter(s => s.direction === "BUY");
@@ -419,6 +432,11 @@ export default function Scanner() {
               {(scanStatus === "prescreening" || scanStatus === "scanning") && (
                 <Loader2 size={12} className="animate-spin text-accent ml-auto" />
               )}
+              {scanStatus === "scanning" && progress.total > 0 && (
+                <span className="text-2xs text-accent font-mono ml-1">
+                  {progress.current}/{progress.total}
+                </span>
+              )}
               {scanStatus === "done" && (
                 <CheckCircle2 size={12} className="text-gain ml-auto" />
               )}
@@ -426,6 +444,22 @@ export default function Scanner() {
                 <XCircle size={12} className="text-loss ml-auto" />
               )}
             </div>
+            {/* Progress bar */}
+            {scanStatus === "scanning" && progress.total > 0 && (
+              <div className="mb-2">
+                <div className="flex justify-between text-2xs text-text-muted mb-1">
+                  <span>{activeTicker ? `Analyzing ${activeTicker}...` : "Waiting..."}</span>
+                  <span>{progress.current}/{progress.total} stocks</span>
+                </div>
+                <div className="h-1 bg-bg-elevated rounded-full overflow-hidden">
+                  <motion.div
+                    animate={{ width: `${(progress.current / progress.total) * 100}%` }}
+                    transition={{ duration: 0.4 }}
+                    className="h-full bg-accent rounded-full"
+                  />
+                </div>
+              </div>
+            )}
             <div className="flex-1 overflow-y-auto space-y-1 font-mono text-xs text-text-muted">
               {scanLog.length === 0 ? (
                 <p className="text-text-muted/50">Waiting for scan...</p>
