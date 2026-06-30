@@ -188,6 +188,242 @@ async def prescreen_only():
     return results
 
 
+class OptionsRequest(BaseModel):
+    ticker: str
+    strategy: str = "directional"       # "directional", "earnings", "hedge"
+    expiry_preference: str = "2weeks"   # "1week", "2weeks", "1month", "3months"
+
+
+@router.post("/options/analyze")
+async def analyze_options(body: OptionsRequest, background_tasks: BackgroundTasks):
+    """
+    Options analysis endpoint.
+    Fetches market data (yfinance), then runs a structured AI analysis via NIM/DeepSeek
+    to recommend CALL, PUT, or NO_PLAY with full risk/greek details.
+    """
+    import json as _json
+    import math
+    from concurrent.futures import ThreadPoolExecutor
+    from app.config import get_settings
+
+    ticker = body.ticker.strip().upper()
+    if not ticker:
+        raise HTTPException(400, "ticker is required")
+
+    settings = get_settings()
+
+    # ── Fetch market data synchronously in thread executor ─────────────────────
+    def _fetch_market_data():
+        import yfinance as yf
+        import numpy as np
+
+        t = yf.Ticker(ticker)
+        hist = t.history(period="3mo")
+        if hist.empty:
+            raise ValueError(f"No price data for {ticker}")
+
+        current_price = float(hist["Close"].iloc[-1])
+
+        # RSI-14
+        closes = hist["Close"]
+        delta = closes.diff().dropna()
+        gain = delta.clip(lower=0).rolling(14).mean()
+        loss = (-delta.clip(upper=0)).rolling(14).mean()
+        rs = gain / loss.replace(0, float("nan"))
+        rsi = float((100 - 100 / (1 + rs)).iloc[-1])
+
+        # MACD
+        ema12 = closes.ewm(span=12).mean()
+        ema26 = closes.ewm(span=26).mean()
+        macd_line = ema12 - ema26
+        signal_line = macd_line.ewm(span=9).mean()
+        macd_val = float(macd_line.iloc[-1])
+        macd_sig = float(signal_line.iloc[-1])
+        macd_bullish = macd_val > macd_sig
+
+        # Momentum
+        week1_return = float((closes.iloc[-1] / closes.iloc[-5] - 1) * 100) if len(closes) >= 5 else 0.0
+        month1_return = float((closes.iloc[-1] / closes.iloc[-21] - 1) * 100) if len(closes) >= 21 else 0.0
+
+        # Historical vol → IV estimate
+        log_returns = np.log(closes / closes.shift(1)).dropna()
+        hist_vol = float(log_returns.rolling(20).std().iloc[-1] * math.sqrt(252) * 100)
+
+        # Options chain IV
+        iv_estimate = hist_vol  # fallback
+        expiries = []
+        try:
+            expiries = list(t.options)
+            if expiries:
+                chain = t.option_chain(expiries[0])
+                atm_calls = chain.calls.copy()
+                atm_calls["dist"] = (atm_calls["strike"] - current_price).abs()
+                atm_row = atm_calls.sort_values("dist").iloc[0]
+                if atm_row.get("impliedVolatility", 0) > 0:
+                    iv_estimate = float(atm_row["impliedVolatility"]) * 100
+        except Exception:
+            pass
+
+        return {
+            "current_price": current_price,
+            "rsi_14": round(rsi, 1),
+            "macd_bullish": macd_bullish,
+            "macd_value": round(macd_val, 4),
+            "macd_signal": round(macd_sig, 4),
+            "week1_return_pct": round(week1_return, 2),
+            "month1_return_pct": round(month1_return, 2),
+            "hist_vol_pct": round(hist_vol, 1),
+            "iv_estimate_pct": round(iv_estimate, 1),
+            "nearest_expiries": expiries[:5],
+        }
+
+    loop = __import__("asyncio").get_running_loop()
+    try:
+        with ThreadPoolExecutor(max_workers=1) as ex:
+            mkt = await loop.run_in_executor(ex, _fetch_market_data)
+    except ValueError as e:
+        raise HTTPException(400, str(e))
+    except Exception as e:
+        raise HTTPException(502, f"Market data fetch failed: {e}")
+
+    # ── Build AI prompt ────────────────────────────────────────────────────────
+    strategy_desc = {
+        "directional": "directional momentum (bet on the trend continuing)",
+        "earnings": "earnings play (position around upcoming earnings event)",
+        "hedge": "hedge an existing long position (buy protective puts or collar)",
+    }.get(body.strategy, "directional momentum")
+
+    expiry_map = {"1week": "~7 days", "2weeks": "~14 days", "1month": "~30 days", "3months": "~90 days"}
+    expiry_desc = expiry_map.get(body.expiry_preference, "~14 days")
+
+    system_prompt = (
+        "You are an expert options trader with 20 years of experience. "
+        "Analyze whether to buy a CALL, PUT, or avoid options entirely (NO_PLAY). "
+        "Base your recommendation on technical momentum, implied volatility, and risk/reward. "
+        "Always prefer defined-risk strategies (buying options only — never naked selling). "
+        "Be specific: give a real strike price and expiry date. "
+        "If IV is elevated (>40%), reduce position sizing and widen strikes. "
+        "If the setup is unclear or risk/reward is poor, recommend NO_PLAY."
+    )
+
+    user_content = (
+        f"Analyze options for {ticker}.\n\n"
+        f"Strategy requested: {strategy_desc}\n"
+        f"Preferred expiry: {expiry_desc}\n\n"
+        f"Market data:\n"
+        f"- Current price: ${mkt['current_price']:.2f}\n"
+        f"- RSI-14: {mkt['rsi_14']}\n"
+        f"- MACD: {'Bullish crossover' if mkt['macd_bullish'] else 'Bearish crossover'} "
+        f"(MACD={mkt['macd_value']}, Signal={mkt['macd_signal']})\n"
+        f"- 1-week return: {mkt['week1_return_pct']:+.2f}%\n"
+        f"- 1-month return: {mkt['month1_return_pct']:+.2f}%\n"
+        f"- Historical volatility (20d annualized): {mkt['hist_vol_pct']:.1f}%\n"
+        f"- Implied volatility estimate: {mkt['iv_estimate_pct']:.1f}%\n"
+        f"- Available expiries: {', '.join(mkt['nearest_expiries'][:3]) if mkt['nearest_expiries'] else 'unknown'}\n\n"
+        "Provide your structured recommendation."
+    )
+
+    # ── Tool schema ────────────────────────────────────────────────────────────
+    tool_schema = {
+        "name": "options_recommendation",
+        "description": "Structured options trading recommendation",
+        "input_schema": {
+            "type": "object",
+            "required": [
+                "recommendation", "strike_price", "expiry_date",
+                "max_risk_pct", "target_return_pct", "reasoning",
+                "delta_estimate", "iv_estimate", "risk_warnings"
+            ],
+            "properties": {
+                "recommendation": {
+                    "type": "string",
+                    "enum": ["CALL", "PUT", "NO_PLAY"],
+                    "description": "Whether to buy a CALL, PUT, or avoid options entirely"
+                },
+                "strike_price": {
+                    "type": "number",
+                    "description": "Recommended strike price (use current price if NO_PLAY)"
+                },
+                "expiry_date": {
+                    "type": "string",
+                    "description": "Recommended expiry date as YYYY-MM-DD string"
+                },
+                "max_risk_pct": {
+                    "type": "number",
+                    "description": "Option premium as % of stock price (the max you can lose)"
+                },
+                "target_return_pct": {
+                    "type": "number",
+                    "description": "Expected % return on the option premium if thesis plays out"
+                },
+                "reasoning": {
+                    "type": "string",
+                    "description": "Detailed AI reasoning for the recommendation (3-5 sentences)"
+                },
+                "delta_estimate": {
+                    "type": "number",
+                    "description": "Estimated delta for the recommended option (0-1 for calls, -1-0 for puts)"
+                },
+                "gamma_estimate": {
+                    "type": "number",
+                    "description": "Estimated gamma (optional)"
+                },
+                "theta_estimate": {
+                    "type": "number",
+                    "description": "Estimated daily theta decay in $ per contract (optional, negative)"
+                },
+                "iv_estimate": {
+                    "type": "number",
+                    "description": "Implied volatility estimate as a decimal (e.g. 0.35 = 35%)"
+                },
+                "risk_warnings": {
+                    "type": "array",
+                    "items": {"type": "string"},
+                    "description": "List of 2-5 specific risk warnings for this trade"
+                },
+            },
+        },
+    }
+
+    # ── Call NIM/DeepSeek ──────────────────────────────────────────────────────
+    try:
+        from openai import OpenAI
+        api_key = settings.nvidia_api_key or settings.anthropic_api_key
+        base_url = settings.nvidia_base_url if settings.nvidia_api_key else None
+        client = OpenAI(api_key=api_key, base_url=base_url)
+        model_id = settings.llm_model or "deepseek-ai/deepseek-v4-flash"
+
+        response = client.chat.completions.create(
+            model=model_id,
+            messages=[
+                {"role": "system", "content": system_prompt},
+                {"role": "user", "content": user_content},
+            ],
+            tools=[{"type": "function", "function": {
+                "name": tool_schema["name"],
+                "description": tool_schema["description"],
+                "parameters": tool_schema["input_schema"],
+            }}],
+            tool_choice={"type": "function", "function": {"name": "options_recommendation"}},
+            max_tokens=1024,
+            temperature=0.3,
+        )
+
+        tool_call = response.choices[0].message.tool_calls[0]
+        result = _json.loads(tool_call.function.arguments)
+
+    except Exception as e:
+        raise HTTPException(502, f"AI analysis failed: {e}")
+
+    # Normalise iv_estimate — ensure it's a decimal fraction (not %)
+    iv_raw = float(result.get("iv_estimate", mkt["iv_estimate_pct"] / 100))
+    if iv_raw > 5:  # was passed as % like 35.0 instead of 0.35
+        iv_raw = iv_raw / 100
+    result["iv_estimate"] = round(iv_raw, 4)
+
+    return result
+
+
 @router.delete("/runs/{run_id}")
 async def cancel_run(run_id: str, db: AsyncSession = Depends(get_db)):
     run = await db.get(AgentRun, run_id)

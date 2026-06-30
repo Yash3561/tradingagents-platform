@@ -1,6 +1,7 @@
 import { useState, useRef, useCallback, useEffect } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { Play, RefreshCw, Loader2 } from "lucide-react";
+import { useSearchParams } from "react-router-dom";
 import { api, WS_BASE } from "../../lib/api";
 import AgentFlow, { type FlowState, type AgentStatus } from "../../components/agent/AgentFlow";
 import DebateTimeline, { type DebateEntry } from "../../components/agent/DebateTimeline";
@@ -43,7 +44,8 @@ function debateLogToEntries(log: any[], completedAt?: string | null): DebateEntr
 }
 
 export default function AgentHub() {
-  const [ticker, setTicker] = useState("AAPL");
+  const [searchParams] = useSearchParams();
+  const [ticker, setTicker] = useState(searchParams.get("ticker")?.toUpperCase() || "AAPL");
   const [debateRounds, setDebateRounds] = useState(2);
   const [status, setStatus] = useState<"idle" | "running" | "done" | "error">("idle");
   const [flowState, setFlowState] = useState<FlowState>(DEFAULT_FLOW);

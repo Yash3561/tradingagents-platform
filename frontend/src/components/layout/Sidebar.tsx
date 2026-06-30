@@ -10,12 +10,14 @@ import {
   Settings,
   Radar,
   Zap,
+  TrendingUp,
 } from "lucide-react";
 import { cn } from "../../lib/cn";
 
 const NAV = [
   { to: "/dashboard", icon: LayoutDashboard, label: "Dashboard" },
   { to: "/agents", icon: BrainCircuit, label: "Agent Hub" },
+  { to: "/options", icon: TrendingUp, label: "Options Desk" },
   { to: "/scanner", icon: Radar, label: "Scanner" },
   { to: "/portfolio", icon: PieChart, label: "Portfolio" },
   { to: "/trades", icon: ScrollText, label: "Trade History" },

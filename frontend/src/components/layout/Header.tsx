@@ -1,8 +1,89 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, useCallback } from "react";
 import { Bell, Search, X, CheckCheck, TrendingUp, TrendingDown, AlertTriangle, Zap, Calendar, BarChart2 } from "lucide-react";
+import { useNavigate } from "react-router-dom";
 import { fmt } from "../../lib/formatters";
 import { api } from "../../lib/api";
 import { cn } from "../../lib/cn";
+
+// ── Ticker Search ─────────────────────────────────────────────────────────────
+
+const COMMON_TICKERS = [
+  "AAPL","MSFT","NVDA","AMZN","META","GOOGL","TSLA","AMD","ASML","TSM",
+  "AVGO","ORCL","CRM","ADBE","NFLX","NOW","PANW","SNOW","COIN","PLTR",
+  "UNH","LLY","JPM","GS","V","MA","WMT","COST","HD","SPY","QQQ",
+];
+
+function TickerSearch() {
+  const navigate = useNavigate();
+  const [query, setQuery] = useState("");
+  const [open, setOpen] = useState(false);
+  const containerRef = useRef<HTMLDivElement>(null);
+
+  const suggestions = query.length >= 1
+    ? COMMON_TICKERS.filter(t => t.startsWith(query.toUpperCase())).slice(0, 6)
+    : [];
+
+  const go = useCallback((ticker: string) => {
+    navigate(`/agents?ticker=${ticker.toUpperCase()}`);
+    setQuery("");
+    setOpen(false);
+  }, [navigate]);
+
+  // Close on outside click
+  useEffect(() => {
+    if (!open) return;
+    const handler = (e: MouseEvent) => {
+      if (containerRef.current && !containerRef.current.contains(e.target as Node)) {
+        setOpen(false);
+      }
+    };
+    document.addEventListener("mousedown", handler);
+    return () => document.removeEventListener("mousedown", handler);
+  }, [open]);
+
+  const handleKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
+    if (e.key === "Enter" && query.trim().length >= 2) {
+      go(query.trim());
+    }
+    if (e.key === "Escape") {
+      setOpen(false);
+      setQuery("");
+    }
+  };
+
+  return (
+    <div ref={containerRef} className="relative">
+      <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-text-muted pointer-events-none" />
+      <input
+        value={query}
+        onChange={e => { setQuery(e.target.value); setOpen(true); }}
+        onKeyDown={handleKeyDown}
+        onFocus={() => setOpen(true)}
+        placeholder="Search ticker..."
+        className="w-48 pl-8 pr-3 py-1.5 text-xs bg-bg-elevated border border-border rounded-lg
+                   text-text-primary placeholder:text-text-muted uppercase
+                   focus:outline-none focus:border-accent focus:ring-1 focus:ring-accent/30
+                   transition-colors font-mono"
+      />
+
+      {open && suggestions.length > 0 && (
+        <div className="absolute left-0 top-full mt-1.5 w-48 bg-bg-surface border border-border rounded-xl
+                        shadow-2xl z-50 overflow-hidden">
+          {suggestions.map(ticker => (
+            <button
+              key={ticker}
+              onMouseDown={() => go(ticker)}
+              className="w-full text-left px-4 py-2 text-xs font-mono font-semibold text-text-primary
+                         hover:bg-bg-elevated hover:text-accent transition-colors"
+            >
+              {ticker}
+            </button>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
 
 // ── Notification helpers ──────────────────────────────────────────────────────
 
@@ -276,16 +357,7 @@ export default function Header() {
       <LiveIndices />
 
       {/* Search */}
-      <div className="relative">
-        <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-text-muted" />
-        <input
-          placeholder="Search ticker..."
-          className="w-48 pl-8 pr-3 py-1.5 text-xs bg-bg-elevated border border-border rounded-lg
-                     text-text-primary placeholder:text-text-muted
-                     focus:outline-none focus:border-accent focus:ring-1 focus:ring-accent/30
-                     transition-colors"
-        />
-      </div>
+      <TickerSearch />
 
       <MarketClock />
 

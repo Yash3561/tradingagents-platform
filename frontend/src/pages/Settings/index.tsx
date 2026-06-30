@@ -1,6 +1,10 @@
-import { motion } from "framer-motion";
-import { useState } from "react";
-import { Eye, EyeOff, Save } from "lucide-react";
+import { motion, AnimatePresence } from "framer-motion";
+import { useState, useEffect, useRef, useCallback } from "react";
+import { CheckCircle, Loader2, ShieldAlert, ShieldCheck, ShieldX } from "lucide-react";
+import { api } from "../../lib/api";
+import { cn } from "../../lib/cn";
+
+// ── Helpers ───────────────────────────────────────────────────────────────────
 
 function Section({ title, children }: { title: string; children: React.ReactNode }) {
   return (
@@ -13,8 +17,8 @@ function Section({ title, children }: { title: string; children: React.ReactNode
 
 function Field({ label, description, children }: { label: string; description?: string; children: React.ReactNode }) {
   return (
-    <div className="flex items-start justify-between gap-6">
-      <div>
+    <div className="flex items-center justify-between gap-6">
+      <div className="min-w-0">
         <p className="text-sm font-medium text-text-primary">{label}</p>
         {description && <p className="text-xs text-text-muted mt-0.5">{description}</p>}
       </div>
@@ -23,38 +27,255 @@ function Field({ label, description, children }: { label: string; description?: 
   );
 }
 
-function ApiKeyField({ label, placeholder }: { label: string; placeholder: string }) {
-  const [show, setShow] = useState(false);
-  const [val, setVal] = useState("");
+function Toggle({ enabled, onChange }: { enabled: boolean; onChange: (v: boolean) => void }) {
   return (
-    <div className="space-y-1.5">
-      <label className="text-xs text-text-secondary">{label}</label>
-      <div className="relative">
+    <button
+      onClick={() => onChange(!enabled)}
+      className={cn(
+        "relative w-11 h-6 rounded-full transition-colors duration-200 focus:outline-none",
+        enabled ? "bg-accent" : "bg-bg-elevated border border-border"
+      )}
+    >
+      <span
+        className={cn(
+          "absolute top-1 w-4 h-4 bg-white rounded-full shadow transition-transform duration-200",
+          enabled ? "translate-x-5" : "translate-x-1"
+        )}
+      />
+    </button>
+  );
+}
+
+function SliderField({
+  label,
+  description,
+  value,
+  min,
+  max,
+  step,
+  format,
+  onChange,
+}: {
+  label: string;
+  description?: string;
+  value: number;
+  min: number;
+  max: number;
+  step: number;
+  format: (v: number) => string;
+  onChange: (v: number) => void;
+}) {
+  return (
+    <Field label={label} description={description}>
+      <div className="flex items-center gap-3">
         <input
-          type={show ? "text" : "password"}
-          value={val}
-          onChange={e => setVal(e.target.value)}
-          placeholder={placeholder}
-          className="w-full pr-9 pl-3 py-2 bg-bg-elevated border border-border rounded-lg text-sm text-text-primary
-                     placeholder:text-text-muted font-mono focus:outline-none focus:border-accent transition-colors"
+          type="range"
+          min={min}
+          max={max}
+          step={step}
+          value={value}
+          onChange={e => onChange(parseFloat(e.target.value))}
+          className="w-36 accent-accent cursor-pointer"
         />
-        <button
-          onClick={() => setShow(s => !s)}
-          className="absolute right-2.5 top-1/2 -translate-y-1/2 text-text-muted hover:text-text-primary transition-colors"
-        >
-          {show ? <EyeOff size={14} /> : <Eye size={14} />}
-        </button>
+        <span className="text-sm font-mono font-semibold text-text-primary w-20 text-right">
+          {format(value)}
+        </span>
       </div>
+    </Field>
+  );
+}
+
+// ── Default settings ───────────────────────────────────────────────────────────
+
+const DEFAULTS = {
+  // Risk Management
+  position_size_default: 3,
+  position_size_high_conf: 5,
+  stop_loss_pct: 7,
+  take_profit_pct: 20,
+  max_single_position: 15,
+  daily_loss_limit: 3,
+  // AI Model
+  llm_model: "deepseek-ai/deepseek-v4-flash",
+  debate_rounds: 2,
+  min_confidence: 0.60,
+  // Scanner
+  ai_candidates: 8,
+  auto_morning_scan: true,
+  long_only_mode: true,
+  // Autonomous Agents
+  intraday_monitor: false,
+  overnight_research: false,
+  earnings_blackout_days: 3,
+};
+
+type Settings = typeof DEFAULTS;
+
+// ── Circuit Breaker Display ────────────────────────────────────────────────────
+
+interface SystemStatus {
+  circuit_breakers: {
+    blocked: boolean;
+    reasons: string[];
+    warnings: string[];
+  };
+  market_open: boolean;
+  today_pnl_pct: number;
+  positions_count: number;
+}
+
+function CBIndicator({ state }: { state: "green" | "amber" | "red" }) {
+  if (state === "green") return <ShieldCheck size={16} className="text-gain" />;
+  if (state === "amber") return <ShieldAlert size={16} className="text-warn" />;
+  return <ShieldX size={16} className="text-loss" />;
+}
+
+function CircuitBreakers() {
+  const [status, setStatus] = useState<SystemStatus | null>(null);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    api.get("/system/status")
+      .then(({ data }) => setStatus(data))
+      .catch(() => {})
+      .finally(() => setLoading(false));
+  }, []);
+
+  if (loading) {
+    return (
+      <div className="flex items-center gap-2 text-xs text-text-muted">
+        <Loader2 size={14} className="animate-spin" /> Loading circuit breakers...
+      </div>
+    );
+  }
+
+  if (!status) {
+    return <p className="text-xs text-text-muted">Could not load circuit breaker status.</p>;
+  }
+
+  const cb = status.circuit_breakers;
+  const overallState = cb.blocked ? "red" : cb.warnings.length > 0 ? "amber" : "green";
+  const marketState: "green" | "amber" | "red" = status.market_open ? "green" : "amber";
+  const pnlState: "green" | "amber" | "red" =
+    status.today_pnl_pct < -2 ? "red" : status.today_pnl_pct < -1 ? "amber" : "green";
+
+  return (
+    <div className="space-y-3">
+      <p className="text-xs text-text-muted">Read-only — circuit breakers fire automatically based on portfolio rules.</p>
+
+      <div className="space-y-2">
+        {/* Main breaker */}
+        <div className="flex items-center justify-between py-2 px-3 bg-bg-elevated rounded-lg">
+          <div className="flex items-center gap-2">
+            <CBIndicator state={overallState} />
+            <span className="text-sm text-text-primary">Trading Halt</span>
+          </div>
+          <span className={cn(
+            "text-xs font-semibold",
+            overallState === "green" ? "text-gain" : overallState === "amber" ? "text-warn" : "text-loss"
+          )}>
+            {cb.blocked ? "HALTED" : "CLEAR"}
+          </span>
+        </div>
+
+        {/* Market open */}
+        <div className="flex items-center justify-between py-2 px-3 bg-bg-elevated rounded-lg">
+          <div className="flex items-center gap-2">
+            <CBIndicator state={marketState} />
+            <span className="text-sm text-text-primary">Market Status</span>
+          </div>
+          <span className={cn("text-xs font-semibold", status.market_open ? "text-gain" : "text-warn")}>
+            {status.market_open ? "OPEN" : "CLOSED"}
+          </span>
+        </div>
+
+        {/* Daily P&L */}
+        <div className="flex items-center justify-between py-2 px-3 bg-bg-elevated rounded-lg">
+          <div className="flex items-center gap-2">
+            <CBIndicator state={pnlState} />
+            <span className="text-sm text-text-primary">Daily P&L Limit</span>
+          </div>
+          <span className={cn(
+            "text-xs font-mono font-semibold",
+            status.today_pnl_pct >= 0 ? "text-gain" : "text-loss"
+          )}>
+            {status.today_pnl_pct >= 0 ? "+" : ""}{status.today_pnl_pct.toFixed(2)}%
+          </span>
+        </div>
+
+        {/* Positions */}
+        <div className="flex items-center justify-between py-2 px-3 bg-bg-elevated rounded-lg">
+          <div className="flex items-center gap-2">
+            <CBIndicator state="green" />
+            <span className="text-sm text-text-primary">Open Positions</span>
+          </div>
+          <span className="text-xs font-mono font-semibold text-text-primary">
+            {status.positions_count}
+          </span>
+        </div>
+      </div>
+
+      {/* Warnings / Reasons */}
+      {cb.warnings.length > 0 && (
+        <div className="space-y-1">
+          {cb.warnings.map((w, i) => (
+            <p key={i} className="text-xs text-warn flex items-start gap-1.5">
+              <span className="shrink-0 mt-0.5">⚠</span>{w}
+            </p>
+          ))}
+        </div>
+      )}
+      {cb.reasons.length > 0 && (
+        <div className="space-y-1">
+          {cb.reasons.map((r, i) => (
+            <p key={i} className="text-xs text-loss flex items-start gap-1.5">
+              <span className="shrink-0 mt-0.5">✕</span>{r}
+            </p>
+          ))}
+        </div>
+      )}
     </div>
   );
 }
 
+// ── Main Settings Page ─────────────────────────────────────────────────────────
+
 export default function Settings() {
-  const [debateRounds, setDebateRounds] = useState(2);
-  const [model, setModel] = useState("claude-sonnet-4-6");
-  const [maxPosition, setMaxPosition] = useState(5);
-  const [stopLoss, setStopLoss] = useState(8);
-  const [dailyLoss, setDailyLoss] = useState(3);
+  const [settings, setSettings] = useState<Settings>(DEFAULTS);
+  const [saveState, setSaveState] = useState<"idle" | "saving" | "saved">("idle");
+  const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const saveStateTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  // Load settings on mount
+  useEffect(() => {
+    api.get("/settings/")
+      .then(({ data }) => {
+        setSettings(prev => ({ ...prev, ...data }));
+      })
+      .catch(() => {});
+  }, []);
+
+  const persist = useCallback((patch: Partial<Settings>) => {
+    if (debounceRef.current) clearTimeout(debounceRef.current);
+    if (saveStateTimer.current) clearTimeout(saveStateTimer.current);
+
+    setSaveState("saving");
+
+    debounceRef.current = setTimeout(async () => {
+      try {
+        await api.post("/settings/", patch);
+        setSaveState("saved");
+        saveStateTimer.current = setTimeout(() => setSaveState("idle"), 2500);
+      } catch {
+        setSaveState("idle");
+      }
+    }, 500);
+  }, []);
+
+  function update<K extends keyof Settings>(key: K, value: Settings[K]) {
+    setSettings(prev => ({ ...prev, [key]: value }));
+    persist({ [key]: value });
+  }
 
   return (
     <motion.div
@@ -65,79 +286,186 @@ export default function Settings() {
       transition={{ duration: 0.25 }}
       className="space-y-6 max-w-2xl"
     >
-      <div>
-        <h1 className="text-xl font-semibold text-text-primary">Settings</h1>
-        <p className="text-sm text-text-muted mt-0.5">Configure agents, risk, and integrations</p>
+      {/* Page title + save indicator */}
+      <div className="flex items-center justify-between">
+        <div>
+          <h1 className="text-xl font-semibold text-text-primary">Settings</h1>
+          <p className="text-sm text-text-muted mt-0.5">Configure risk, AI model, and agent behaviour</p>
+        </div>
+
+        <AnimatePresence>
+          {saveState !== "idle" && (
+            <motion.div
+              initial={{ opacity: 0, y: -6 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: -6 }}
+              transition={{ duration: 0.2 }}
+              className={cn(
+                "flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium",
+                saveState === "saving"
+                  ? "bg-accent/10 text-accent"
+                  : "bg-gain/10 text-gain"
+              )}
+            >
+              {saveState === "saving" ? (
+                <><Loader2 size={12} className="animate-spin" /> Saving...</>
+              ) : (
+                <><CheckCircle size={12} /> Saved</>
+              )}
+            </motion.div>
+          )}
+        </AnimatePresence>
       </div>
 
-      <Section title="Agent Configuration">
-        <Field label="LLM Model" description="Model used for all agent reasoning">
+      {/* ── Risk Management ─────────────────────────────────────────────────── */}
+      <Section title="Risk Management">
+        <SliderField
+          label="Position Size (default)"
+          description="% of portfolio per trade"
+          value={settings.position_size_default}
+          min={1} max={10} step={0.5}
+          format={v => `${v}% of portfolio per trade`}
+          onChange={v => update("position_size_default", v)}
+        />
+        <SliderField
+          label="Position Size (high confidence ≥70%)"
+          description="Larger size when AI conviction is high"
+          value={settings.position_size_high_conf}
+          min={1} max={15} step={0.5}
+          format={v => `${v}% of portfolio per trade`}
+          onChange={v => update("position_size_high_conf", v)}
+        />
+        <SliderField
+          label="Stop Loss %"
+          description="Auto-close position if it falls this far"
+          value={settings.stop_loss_pct}
+          min={3} max={15} step={0.5}
+          format={v => `Auto-close if position down ${v}%`}
+          onChange={v => update("stop_loss_pct", v)}
+        />
+        <SliderField
+          label="Take Profit %"
+          description="Auto-close position at this gain"
+          value={settings.take_profit_pct}
+          min={5} max={50} step={1}
+          format={v => `Auto-close if position up ${v}%`}
+          onChange={v => update("take_profit_pct", v)}
+        />
+        <SliderField
+          label="Max Single Position"
+          description="Hard cap — no single stock can exceed this"
+          value={settings.max_single_position}
+          min={10} max={30} step={1}
+          format={v => `Max ${v}% in any one stock`}
+          onChange={v => update("max_single_position", v)}
+        />
+        <SliderField
+          label="Daily Loss Limit"
+          description="Pause trading if portfolio falls this much today"
+          value={settings.daily_loss_limit}
+          min={1} max={10} step={0.5}
+          format={v => `Pause trading if portfolio down ${v}% today`}
+          onChange={v => update("daily_loss_limit", v)}
+        />
+      </Section>
+
+      {/* ── AI Model ────────────────────────────────────────────────────────── */}
+      <Section title="AI Model">
+        <Field label="Model" description="LLM used for all agent reasoning">
           <select
-            value={model}
-            onChange={e => setModel(e.target.value)}
+            value={settings.llm_model}
+            onChange={e => update("llm_model", e.target.value)}
             className="px-3 py-1.5 bg-bg-elevated border border-border rounded-lg text-sm text-text-primary
                        focus:outline-none focus:border-accent transition-colors"
           >
-            <option value="claude-sonnet-4-6">Claude Sonnet 4.6</option>
-            <option value="claude-opus-4-6">Claude Opus 4.6</option>
-            <option value="claude-haiku-4-5-20251001">Claude Haiku 4.5</option>
+            <option value="deepseek-ai/deepseek-v4-flash">DeepSeek V4 Flash (Free, Fast)</option>
+            <option value="deepseek-ai/deepseek-v4-pro">DeepSeek V4 Pro (Free, Smarter, Slower)</option>
           </select>
         </Field>
 
-        <Field label="Debate Rounds" description="Number of bull/bear debate iterations">
-          <div className="flex items-center gap-3">
-            <input
-              type="range" min={1} max={5} value={debateRounds}
-              onChange={e => setDebateRounds(+e.target.value)}
-              className="w-28 accent-accent"
-            />
-            <span className="text-sm font-mono font-semibold text-text-primary w-4">{debateRounds}</span>
-          </div>
-        </Field>
-
-        <Field label="Online Data Tools" description="Allow agents to fetch live market data">
-          <button className="relative w-11 h-6 bg-accent rounded-full transition-colors">
-            <span className="absolute right-1 top-1 w-4 h-4 bg-white rounded-full shadow" />
-          </button>
-        </Field>
-      </Section>
-
-      <Section title="Risk Limits">
-        {[
-          { label: "Max Position Size", desc: "Maximum % of portfolio per position", val: maxPosition, setter: setMaxPosition, min: 1, max: 20, suffix: "%" },
-          { label: "Stop-Loss Threshold", desc: "Automatic exit at this drawdown per trade", val: stopLoss, setter: setStopLoss, min: 2, max: 25, suffix: "%" },
-          { label: "Daily Loss Limit", desc: "Halt trading if daily P&L drops below", val: dailyLoss, setter: setDailyLoss, min: 1, max: 10, suffix: "%" },
-        ].map(({ label, desc, val, setter, min, max, suffix }) => (
-          <Field key={label} label={label} description={desc}>
-            <div className="flex items-center gap-3">
-              <input
-                type="range" min={min} max={max} value={val}
-                onChange={e => setter(+e.target.value)}
-                className="w-28 accent-accent"
-              />
-              <span className="text-sm font-mono font-semibold text-text-primary w-10">{val}{suffix}</span>
-            </div>
-          </Field>
-        ))}
-      </Section>
-
-      <Section title="API Keys">
-        <ApiKeyField label="Anthropic API Key" placeholder="sk-ant-..." />
-        <ApiKeyField label="Alpaca API Key" placeholder="PK..." />
-        <ApiKeyField label="Alpaca API Secret" placeholder="..." />
-        <div className="pt-2">
-          <label className="text-xs text-text-secondary block mb-1.5">Alpaca Environment</label>
-          <select className="px-3 py-2 bg-bg-elevated border border-border rounded-lg text-sm text-text-primary focus:outline-none focus:border-accent">
-            <option value="paper">Paper Trading (Safe)</option>
-            <option value="live">Live Trading</option>
+        <Field label="Debate Rounds" description="Bull/bear debate iterations per analysis">
+          <select
+            value={settings.debate_rounds}
+            onChange={e => update("debate_rounds", parseInt(e.target.value))}
+            className="px-3 py-1.5 bg-bg-elevated border border-border rounded-lg text-sm text-text-primary
+                       focus:outline-none focus:border-accent transition-colors"
+          >
+            {[1, 2, 3].map(n => (
+              <option key={n} value={n}>{n} round{n > 1 ? "s" : ""}</option>
+            ))}
           </select>
-        </div>
+        </Field>
+
+        <SliderField
+          label="Min Confidence to Trade"
+          description="AI must exceed this confidence to place any order"
+          value={settings.min_confidence}
+          min={0.40} max={0.70} step={0.02}
+          format={v => `${Math.round(v * 100)}% confidence required`}
+          onChange={v => update("min_confidence", v)}
+        />
       </Section>
 
-      <button className="flex items-center gap-2 px-5 py-2.5 bg-accent hover:bg-accent-bright text-white rounded-lg font-semibold text-sm shadow-accent-glow transition-all">
-        <Save size={16} />
-        Save Settings
-      </button>
+      {/* ── Scanner ─────────────────────────────────────────────────────────── */}
+      <Section title="Scanner">
+        <Field label="AI Candidates" description="How many stocks pass through full AI analysis per scan">
+          <select
+            value={settings.ai_candidates}
+            onChange={e => update("ai_candidates", parseInt(e.target.value))}
+            className="px-3 py-1.5 bg-bg-elevated border border-border rounded-lg text-sm text-text-primary
+                       focus:outline-none focus:border-accent transition-colors"
+          >
+            {[4, 6, 8, 10, 12].map(n => (
+              <option key={n} value={n}>{n} stocks</option>
+            ))}
+          </select>
+        </Field>
+
+        <Field label="Auto Morning Scan" description="Run full scan automatically at 9:35 AM ET">
+          <Toggle
+            enabled={settings.auto_morning_scan}
+            onChange={v => update("auto_morning_scan", v)}
+          />
+        </Field>
+
+        <Field label="Long-Only Mode" description="When off, agents may recommend short positions">
+          <Toggle
+            enabled={settings.long_only_mode}
+            onChange={v => update("long_only_mode", v)}
+          />
+        </Field>
+      </Section>
+
+      {/* ── Autonomous Agents ───────────────────────────────────────────────── */}
+      <Section title="Autonomous Agents">
+        <Field label="Intraday Monitor" description="Watch open positions every 15 min during market hours">
+          <Toggle
+            enabled={settings.intraday_monitor}
+            onChange={v => update("intraday_monitor", v)}
+          />
+        </Field>
+
+        <Field label="Overnight Research Agent" description="Run pre-market analysis at 8:30 AM ET on watchlist">
+          <Toggle
+            enabled={settings.overnight_research}
+            onChange={v => update("overnight_research", v)}
+          />
+        </Field>
+
+        <SliderField
+          label="Earnings Blackout Days"
+          description="Avoid opening new positions within N days of earnings"
+          value={settings.earnings_blackout_days}
+          min={2} max={10} step={1}
+          format={v => `${v} day${v !== 1 ? "s" : ""} before earnings`}
+          onChange={v => update("earnings_blackout_days", v)}
+        />
+      </Section>
+
+      {/* ── Circuit Breakers ─────────────────────────────────────────────────── */}
+      <Section title="Circuit Breakers">
+        <CircuitBreakers />
+      </Section>
     </motion.div>
   );
 }
