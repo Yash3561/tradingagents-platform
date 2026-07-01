@@ -1,7 +1,7 @@
 # TradingAgents Platform — Session Checkpoint
 
 > Rally race co-driver notes. Read this before touching anything.
-> Last updated: 2025-06-29
+> Last updated: 2026-07-01
 
 ---
 
@@ -244,81 +244,46 @@ make backend            # uvicorn --reload
 
 ---
 
-## What's Done vs What's Next
+## What's Done ✅
 
-### ✅ Done
-- Full Docker Compose infra (9 services)
-- FastAPI backend with all endpoints
-- Agent contracts (`contracts.py`) — 7 typed Pydantic schemas
-- Structured runner (`structured_runner.py`) — Claude tool_use enforcement
-- WebSocket manager (room-based broadcast)
-- DB models: AgentRun + Trade with JSONB reasoning audit trail
-- TimescaleDB hypertables (OHLCV, ticks, equity curve)
-- React frontend — Shell, Sidebar, Header (live market clock)
-- Dashboard page — KPIs, market pulse, live positions, agent activity feed
-- Agent Hub page — animated 5-node pipeline, live debate timeline, decision card
-- Portfolio page — risk metrics, allocation pie, sector bars, positions table
-- Trade History — virtualized table + slide-out audit drawer
-- Backtesting page — form + equity curve vs benchmark chart
-- Settings page — model selector, risk sliders, masked API keys
-- `/api/v1/agents/contracts` endpoint (self-describing agent schemas)
-
-### 🔜 Next Up (priority order)
-1. **Alpaca broker integration** — `broker/alpaca_client.py` — wire FinalDecision → actual order
-2. **Market data feed** — Alpaca WebSocket → Redis quote cache → WS broadcast to frontend
-3. **TradingView candlestick chart** — `components/charts/CandlestickChart.tsx`
-4. **Position sync** — Alpaca positions → PostgreSQL → live portfolio updates
-5. **Backtest engine** — `backtest/engine.py` — run structured_runner in date loop
-6. **Risk circuit breakers** — daily loss limit, drawdown halt
-7. **Kafka workers** — market_ingestion → TimescaleDB
-8. **QuantStats daily report** — auto-generated PDF/HTML
-
----
+- Full Docker Compose infra + JWT auth (register/login, 30-day tokens)
+- 7 AI agent pipeline (TechnicalReport → FinalDecision) with Pydantic contracts
+- NIM/DeepSeek V4 Flash inference — `tool_choice="required"`, 60s timeout, JSON fallback parser
+- WebSocket live streaming of agent debate to frontend
+- All 7 DB models with JSONB audit trails + Alembic migrations
+- **Dashboard**: KPIs, AI market brief (Redis 15min cache), system status, live position prices (8s flash)
+- **Markets**: any-stock charts (150+ autocomplete), indices strip, sector heatmap, top movers
+- **Agent Hub**: animated pipeline, live debate, ?ticker= URL pre-fill
+- **Options Desk**: AI CALL/PUT/NO_PLAY + live options chain (calls/puts, IV, OI, ITM) — fixed hang
+- **Portfolio**: live positions, equity curve (15min snapshots + Alpaca 30-day backfill), P&L calendar
+- **Trade History**: virtualized table + full reasoning audit drawer + CSV export
+- **Backtesting**: RSI/MACD/MA signal simulation, equity curve vs SPY, trade log
+- **Analytics**: AI performance grade A-F, correlation matrix, sector exposure
+- **Alerts**: 5 smart alert types (concentration, drawdown, take-profit, RSI, stale positions)
+- **Scanner**: pre-screen with live progress, results table
+- **Settings**: model selector, risk sliders, watchlist CRUD, API key fields
+- **Notifications**: bell → slide-in drawer, unread badge, mark-read/all-read
+- Background workers: position monitor, equity tracker, scheduler, price feed (Alpaca WS → Redis)
+- Error boundary, bundle splitting (202KB main)
 
 ## Known Issues / Watch Out
 
-- `structured_runner.py` uses `asyncio.run_coroutine_threadsafe` for WS emit from thread
-  executor — test this carefully if you change event loop handling
-- `_inline_refs` in structured_runner flattens JSON schema `$ref` for Anthropic tool_use —
-  if contracts get nested deeply, verify the inlining is complete
-- Frontend `AgentHub` polls `/agents/runs/{id}` after 15s as fallback if WS events don't fire
-- Recharts bundle is large — if adding more chart pages, add Vite `manualChunks` splitting
-- All prices in frontend are currently **mock data** — wire to `/market/quote/{ticker}` next
+- `structured_runner.py` uses `asyncio.run_coroutine_threadsafe` for WS emit from thread executor
+- `tool_choice="required"` used for NIM/DeepSeek — do NOT change to named function format
+- Alembic not auto-run on startup — run `docker exec tap_backend alembic upgrade head` after schema changes
+- Settings API key fields save to DB settings table but backend reads from `.env` at startup — not hot-reloaded
+- Recharts bundle is large (573KB) — already split via Vite manualChunks
+- bcrypt: NEVER use passlib `pwd_context` — use `import bcrypt; bcrypt.hashpw/checkpw` directly (see core/auth.py)
 
----
+## Agent Discipline Rules (hardcoded — do not soften)
 
-## Agent Discipline Rules (hardcoded — do not soften without user approval)
-
-These are enforced in **both** the agent prompts AND in Python code after the agent responds.
-The agent can try to override them — the code will catch it.
-
-| Rule | Value | Enforced in code? |
+| Rule | Value | Enforced? |
 |---|---|---|
-| Min analyst confidence to signal | 0.60 | Yes — below this → NEUTRAL |
-| Min confidence for any trade | 0.70 | Yes — below this → HOLD |
-| Min analyst consensus for BUY | 3 of 4 | Yes — fewer → Risk rejects |
-| Min analyst consensus for SELL | 3 of 4 | Yes — fewer → Risk rejects |
-| Max position size | 5% of portfolio | Yes — hard cap |
-| Mandatory stop-loss | 7% (default) | Yes — set if missing |
-| HIGH risk level | Auto-reject | Yes |
-| Catalyst upcoming + non-LOW risk | Auto-reject | Yes |
-| Risk approved=False | Force HOLD | Yes |
+| Min confidence to signal | 0.60 | Yes |
+| Min confidence for trade | 0.70 | Yes |
+| Min consensus for BUY/SELL | 3 of 4 analysts | Yes |
+| Max position size | 5% portfolio | Yes |
+| Mandatory stop-loss | 7% default | Yes |
+| HIGH risk → auto-reject | always | Yes |
 
-**Philosophy baked into prompts:**
-- Analysts: "Your job is to find reasons NOT to trade as much as reasons to trade"
-- Researcher: "Being wrong on a HOLD costs opportunity. Being wrong on a BUY costs real money."
-- Risk Manager: "Measured by drawdown prevention, not trades approved"
-- PM: "The market will be open tomorrow. HOLD today is not failure."
-
----
-
-## What's Done vs What's Next
-
-| Decision | Reason |
-|---|---|
-| Structured outputs via tool_use | Forces exact schema compliance — no hallucinated fields |
-| TimescaleDB separate from PostgreSQL | OHLCV append-heavy patterns need hypertable partitioning |
-| Kafka between Alpaca and DB | Decouples ingestion speed from write speed, multi-consumer |
-| Paper trading as immutable default | Safety — live requires explicit `ALPACA_BASE_URL` override |
-| JSONB for reasoning_json | Queryable audit trail — can filter trades by agent signal |
-| `AnalystBundle` helper methods | `bullish_count()`, `avg_confidence()` reduce prompt token usage downstream |
+**Philosophy:** "Being wrong on a HOLD costs opportunity. Being wrong on a BUY costs real money."
