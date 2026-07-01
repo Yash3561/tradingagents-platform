@@ -112,9 +112,51 @@ async def risk_metrics():
 
 @router.get("/equity-curve")
 async def equity_curve(limit: int = 200):
-    """Historical equity curve for charting."""
+    """
+    Historical equity curve for charting.
+    Primary source: local equity_snapshots (taken every 15 min).
+    Fallback/backfill: Alpaca portfolio history API (daily, 30 days) when <10 local points.
+    """
     from app.workers.equity_tracker import get_equity_curve
-    return await get_equity_curve(limit=limit)
+    local = await get_equity_curve(limit=limit)
+
+    # If we have enough local data, return it directly
+    if len(local) >= 10:
+        return local
+
+    # Backfill from Alpaca portfolio history (daily resolution)
+    alpaca_points = []
+    try:
+        async with httpx.AsyncClient(timeout=8.0) as client:
+            r = await client.get(
+                f"{settings.alpaca_base_url}/v2/account/portfolio/history",
+                params={"period": "1M", "timeframe": "1D", "extended_hours": "false"},
+                headers=_alpaca_headers(),
+            )
+            if r.status_code == 200:
+                data = r.json()
+                timestamps = data.get("timestamp", [])
+                equities = data.get("equity", [])
+                profit_loss = data.get("profit_loss", [])
+                for ts, eq, pl in zip(timestamps, equities, profit_loss):
+                    if eq and eq > 0:
+                        alpaca_points.append({
+                            "timestamp": datetime.fromtimestamp(ts, UTC).isoformat(),
+                            "equity": round(float(eq), 2),
+                            "cash": 0.0,
+                            "day_pnl": round(float(pl or 0), 2),
+                        })
+    except Exception:
+        pass
+
+    if not alpaca_points:
+        return local
+
+    # Merge: Alpaca history first, then local snapshots (more granular, more recent)
+    local_ts_set = {p["timestamp"][:10] for p in local}  # date portion
+    filtered_alpaca = [p for p in alpaca_points if p["timestamp"][:10] not in local_ts_set]
+    merged = sorted(filtered_alpaca + local, key=lambda x: x["timestamp"])
+    return merged[-limit:]
 
 
 @router.get("/pnl-calendar")
