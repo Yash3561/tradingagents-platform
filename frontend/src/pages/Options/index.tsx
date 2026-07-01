@@ -1,6 +1,6 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { motion, AnimatePresence } from "framer-motion";
-import { Play, Loader2, AlertTriangle, TrendingUp, TrendingDown, Minus } from "lucide-react";
+import { Play, Loader2, AlertTriangle, TrendingUp, TrendingDown, Minus, ChevronDown } from "lucide-react";
 import { api } from "../../lib/api";
 import { cn } from "../../lib/cn";
 
@@ -63,6 +63,122 @@ function GreekCard({ label, value, format = "dec2" }: { label: string; value: nu
   );
 }
 
+// ── Options Chain Table ────────────────────────────────────────────────────────
+
+interface ChainRow {
+  strike: number; lastPrice: number; bid: number; ask: number;
+  volume: number; openInterest: number; impliedVolatility: number;
+  inTheMoney: boolean; kind: string;
+}
+interface ChainData {
+  expiries: string[]; selected_expiry: string | null;
+  current_price: number | null; calls: ChainRow[]; puts: ChainRow[];
+}
+
+function OptionsChain({ ticker }: { ticker: string }) {
+  const [chain, setChain] = useState<ChainData | null>(null);
+  const [loading, setLoading] = useState(false);
+  const [expiryIdx, setExpiryIdx] = useState(0);
+  const [tab, setTab] = useState<"calls" | "puts">("calls");
+
+  const load = (idx: number) => {
+    setLoading(true);
+    api.get(`/agents/options/chain/${ticker}?expiry_index=${idx}`)
+      .then(r => setChain(r.data))
+      .catch(() => {})
+      .finally(() => setLoading(false));
+  };
+
+  useEffect(() => { if (ticker) { setExpiryIdx(0); load(0); } }, [ticker]);
+
+  if (!chain && !loading) return null;
+
+  const rows = tab === "calls" ? chain?.calls ?? [] : chain?.puts ?? [];
+
+  return (
+    <div className="card p-5">
+      <div className="flex items-center justify-between mb-4 flex-wrap gap-3">
+        <div className="flex items-center gap-3">
+          <h3 className="text-sm font-semibold text-white">Live Options Chain</h3>
+          {chain?.current_price && (
+            <span className="text-xs font-mono text-slate-400">
+              {ticker} @ <span className="text-white font-bold">${chain.current_price.toFixed(2)}</span>
+            </span>
+          )}
+        </div>
+        <div className="flex items-center gap-3">
+          {/* Expiry selector */}
+          {chain && chain.expiries.length > 0 && (
+            <div className="relative">
+              <select
+                value={expiryIdx}
+                onChange={e => { const idx = Number(e.target.value); setExpiryIdx(idx); load(idx); }}
+                className="appearance-none pl-3 pr-7 py-1.5 bg-bg-elevated border border-border rounded-lg text-xs text-white font-mono focus:outline-none focus:border-accent"
+              >
+                {chain.expiries.map((exp, i) => (
+                  <option key={exp} value={i}>{exp}</option>
+                ))}
+              </select>
+              <ChevronDown size={12} className="absolute right-2 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none" />
+            </div>
+          )}
+          {/* Calls / Puts tab */}
+          <div className="flex bg-bg-elevated rounded-lg border border-border p-0.5">
+            {(["calls", "puts"] as const).map(t => (
+              <button
+                key={t}
+                onClick={() => setTab(t)}
+                className={cn(
+                  "px-3 py-1 rounded-md text-xs font-semibold transition-colors capitalize",
+                  tab === t ? (t === "calls" ? "bg-gain/20 text-gain" : "bg-loss/20 text-loss") : "text-slate-400 hover:text-white"
+                )}
+              >{t}</button>
+            ))}
+          </div>
+        </div>
+      </div>
+
+      {loading ? (
+        <div className="flex items-center justify-center h-24"><Loader2 size={18} className="animate-spin text-accent" /></div>
+      ) : rows.length === 0 ? (
+        <p className="text-xs text-slate-500 text-center py-6">No chain data available for this expiry</p>
+      ) : (
+        <div className="overflow-x-auto">
+          <table className="w-full text-xs">
+            <thead>
+              <tr className="text-left border-b border-border">
+                {["Strike", "Last", "Bid", "Ask", "Volume", "OI", "IV"].map(h => (
+                  <th key={h} className="pb-2 pr-4 text-slate-500 font-medium">{h}</th>
+                ))}
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-border/30">
+              {rows.map((row, i) => (
+                <tr key={i} className={cn(
+                  "hover:bg-bg-elevated transition-colors",
+                  row.inTheMoney ? (tab === "calls" ? "text-gain" : "text-loss") : "text-slate-300"
+                )}>
+                  <td className="py-1.5 pr-4 font-mono font-bold">
+                    ${row.strike.toFixed(2)}
+                    {row.inTheMoney && <span className="ml-1 text-2xs opacity-60">ITM</span>}
+                  </td>
+                  <td className="py-1.5 pr-4 font-mono">${row.lastPrice.toFixed(2)}</td>
+                  <td className="py-1.5 pr-4 font-mono text-slate-400">${row.bid.toFixed(2)}</td>
+                  <td className="py-1.5 pr-4 font-mono text-slate-400">${row.ask.toFixed(2)}</td>
+                  <td className="py-1.5 pr-4 font-mono">{row.volume.toLocaleString()}</td>
+                  <td className="py-1.5 pr-4 font-mono">{row.openInterest.toLocaleString()}</td>
+                  <td className="py-1.5 font-mono">{row.impliedVolatility.toFixed(1)}%</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+          <p className="text-2xs text-slate-600 mt-3">Showing ~10 strikes nearest ATM. ITM = in the money.</p>
+        </div>
+      )}
+    </div>
+  );
+}
+
 // ── Main Page ─────────────────────────────────────────────────────────────────
 
 type Strategy = "directional" | "earnings" | "hedge";
@@ -83,6 +199,7 @@ const EXPIRY_LABELS: Record<Expiry, string> = {
 
 export default function OptionsDesk() {
   const [ticker, setTicker] = useState("AAPL");
+  const [activeTicker, setActiveTicker] = useState("AAPL");
   const [strategy, setStrategy] = useState<Strategy>("directional");
   const [expiry, setExpiry] = useState<Expiry>("2weeks");
   const [status, setStatus] = useState<"idle" | "loading" | "done" | "error">("idle");
@@ -105,6 +222,7 @@ export default function OptionsDesk() {
         expiry_preference: expiry,
       }, { timeout: 90000 });
       setResult(data);
+      setActiveTicker(t);
       setStatus("done");
     } catch (err: any) {
       const isTimeout = err?.code === "ECONNABORTED" || err?.message?.includes("timeout");
@@ -124,7 +242,7 @@ export default function OptionsDesk() {
       animate={{ opacity: 1 }}
       exit={{ opacity: 0 }}
       transition={{ duration: 0.25 }}
-      className="space-y-6 max-w-3xl"
+      className="space-y-6 max-w-5xl"
     >
       {/* Page header */}
       <div>
@@ -308,6 +426,9 @@ export default function OptionsDesk() {
           </motion.div>
         )}
       </AnimatePresence>
+
+      {/* Live options chain — always visible once a ticker is set */}
+      <OptionsChain ticker={activeTicker} />
 
       {/* Idle state hint */}
       {status === "idle" && (

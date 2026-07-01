@@ -433,6 +433,74 @@ async def analyze_options(body: OptionsRequest, background_tasks: BackgroundTask
     return result
 
 
+@router.get("/options/chain/{ticker}")
+async def get_options_chain(ticker: str, expiry_index: int = 0):
+    """
+    Fetch the live options chain for a ticker from yfinance.
+    Returns calls + puts for the selected expiry (default: nearest expiry).
+    """
+    import asyncio
+    import yfinance as yf
+
+    def _fetch():
+        t = yf.Ticker(ticker.upper())
+        expiries = list(t.options)
+        if not expiries:
+            return {"expiries": [], "selected_expiry": None, "calls": [], "puts": []}
+
+        idx = min(expiry_index, len(expiries) - 1)
+        selected = expiries[idx]
+        chain = t.option_chain(selected)
+
+        current_price = None
+        try:
+            hist = t.history(period="1d", interval="1m")
+            if not hist.empty:
+                current_price = float(hist["Close"].iloc[-1])
+        except Exception:
+            pass
+
+        def _row(r, kind):
+            return {
+                "contractSymbol": r.get("contractSymbol", ""),
+                "strike": round(float(r.get("strike", 0)), 2),
+                "lastPrice": round(float(r.get("lastPrice", 0)), 2),
+                "bid": round(float(r.get("bid", 0)), 2),
+                "ask": round(float(r.get("ask", 0)), 2),
+                "volume": int(r.get("volume", 0) or 0),
+                "openInterest": int(r.get("openInterest", 0) or 0),
+                "impliedVolatility": round(float(r.get("impliedVolatility", 0)) * 100, 1),
+                "inTheMoney": bool(r.get("inTheMoney", False)),
+                "kind": kind,
+            }
+
+        calls = [_row(r, "call") for r in chain.calls.to_dict("records")]
+        puts = [_row(r, "put") for r in chain.puts.to_dict("records")]
+
+        # Show 5 strikes above and below ATM
+        if current_price:
+            def _near_atm(rows):
+                sorted_rows = sorted(rows, key=lambda x: abs(x["strike"] - current_price))
+                atm_strikes = {r["strike"] for r in sorted_rows[:10]}
+                return [r for r in rows if r["strike"] in atm_strikes]
+            calls = sorted(_near_atm(calls), key=lambda x: x["strike"])
+            puts = sorted(_near_atm(puts), key=lambda x: x["strike"])
+
+        return {
+            "expiries": expiries[:8],
+            "selected_expiry": selected,
+            "current_price": current_price,
+            "calls": calls,
+            "puts": puts,
+        }
+
+    loop = asyncio.get_running_loop()
+    try:
+        return await loop.run_in_executor(None, _fetch)
+    except Exception as e:
+        raise HTTPException(500, f"Failed to fetch options chain: {e}")
+
+
 @router.delete("/runs/{run_id}")
 async def cancel_run(run_id: str, db: AsyncSession = Depends(get_db)):
     run = await db.get(AgentRun, run_id)
