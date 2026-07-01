@@ -1,10 +1,12 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef, useCallback } from "react";
 import { motion } from "framer-motion";
 import { Search, TrendingUp, TrendingDown, Loader2, ExternalLink } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 import CandlestickChart from "../../components/charts/CandlestickChart";
 import { api } from "../../lib/api";
 import { cn } from "../../lib/cn";
+
+interface SearchResult { symbol: string; name: string; sector: string; }
 
 interface IndexData { symbol: string; label: string; price: number; change_pct: number; week_pct: number; }
 interface MoverData { symbol: string; price: number; change_pct: number; volume: number; }
@@ -44,6 +46,39 @@ export default function Markets() {
   const [statsLoading, setStatsLoading] = useState(false);
   const [overviewLoading, setOverviewLoading] = useState(true);
   const [sectors, setSectors] = useState<IndexData[]>([]);
+  const [suggestions, setSuggestions] = useState<SearchResult[]>([]);
+  const [showSuggestions, setShowSuggestions] = useState(false);
+  const searchRef = useRef<HTMLDivElement>(null);
+  const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  // Close dropdown when clicking outside
+  useEffect(() => {
+    const handler = (e: MouseEvent) => {
+      if (searchRef.current && !searchRef.current.contains(e.target as Node)) {
+        setShowSuggestions(false);
+      }
+    };
+    document.addEventListener("mousedown", handler);
+    return () => document.removeEventListener("mousedown", handler);
+  }, []);
+
+  const fetchSuggestions = useCallback((q: string) => {
+    if (q.length < 1) { setSuggestions([]); setShowSuggestions(false); return; }
+    if (debounceRef.current) clearTimeout(debounceRef.current);
+    debounceRef.current = setTimeout(() => {
+      api.get(`/market/search?q=${q}`).then(r => {
+        setSuggestions(r.data);
+        setShowSuggestions(r.data.length > 0);
+      }).catch(() => {});
+    }, 200);
+  }, []);
+
+  const pickTicker = (symbol: string) => {
+    setActiveTicker(symbol);
+    setSearch("");
+    setSuggestions([]);
+    setShowSuggestions(false);
+  };
 
   useEffect(() => {
     // Fetch overview + movers in parallel
@@ -70,7 +105,7 @@ export default function Markets() {
   const handleSearch = (e: React.FormEvent) => {
     e.preventDefault();
     const t = search.trim().toUpperCase();
-    if (t) { setActiveTicker(t); setSearch(""); }
+    if (t) { pickTicker(t); }
   };
 
   return (
@@ -89,14 +124,34 @@ export default function Markets() {
           <p className="text-sm text-slate-400">Charts and data for any stock, ETF, or index</p>
         </div>
         <form onSubmit={handleSearch} className="flex gap-2">
-          <div className="relative">
-            <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
+          <div className="relative" ref={searchRef}>
+            <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 z-10" />
             <input
               value={search}
-              onChange={e => setSearch(e.target.value.toUpperCase())}
-              placeholder="Search ticker..."
-              className="bg-bg-elevated border border-border rounded-lg pl-8 pr-3 py-2 text-sm text-white placeholder-slate-500 focus:outline-none focus:border-accent font-mono w-44 transition-colors"
+              onChange={e => { const v = e.target.value.toUpperCase(); setSearch(v); fetchSuggestions(v); }}
+              onFocus={() => suggestions.length > 0 && setShowSuggestions(true)}
+              placeholder="Search any ticker..."
+              className="bg-bg-elevated border border-border rounded-lg pl-8 pr-3 py-2 text-sm text-white placeholder-slate-500 focus:outline-none focus:border-accent font-mono w-52 transition-colors"
+              autoComplete="off"
             />
+            {showSuggestions && (
+              <div className="absolute top-full left-0 mt-1 w-72 bg-bg-elevated border border-border rounded-lg shadow-xl z-50 overflow-hidden">
+                {suggestions.map(s => (
+                  <button
+                    key={s.symbol}
+                    type="button"
+                    onClick={() => pickTicker(s.symbol)}
+                    className="w-full flex items-center justify-between px-3 py-2.5 hover:bg-bg-card transition-colors text-left"
+                  >
+                    <div>
+                      <span className="font-mono font-bold text-white text-sm">{s.symbol}</span>
+                      <p className="text-xs text-slate-400 truncate max-w-40">{s.name}</p>
+                    </div>
+                    <span className="text-xs text-slate-500 bg-bg-base px-1.5 py-0.5 rounded">{s.sector}</span>
+                  </button>
+                ))}
+              </div>
+            )}
           </div>
           <button type="submit" className="px-4 py-2 bg-accent hover:bg-accent/90 text-white rounded-lg text-sm font-medium transition-colors">
             Go
