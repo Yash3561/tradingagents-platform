@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useState, useRef, useCallback } from "react";
 import { motion } from "framer-motion";
 import { DollarSign, TrendingUp, BarChart2, Activity, Loader2, RefreshCw, ShieldCheck, ShieldAlert, ShieldX, Clock, Radio, Bell, Brain } from "lucide-react";
 import MetricCard from "../../components/data-display/MetricCard";
@@ -308,6 +308,54 @@ function MarketBriefCard({ data, loading }: { data: BriefData | null; loading: b
   );
 }
 
+// ── Live price hook ────────────────────────────────────────────────────────────
+
+interface LivePrice { price: number; prev: number; flash: "up" | "down" | null; }
+
+function useLivePrices(tickers: string[]) {
+  const [prices, setPrices] = useState<Record<string, LivePrice>>({});
+  const prevRef = useRef<Record<string, number>>({});
+
+  const fetchPrices = useCallback(async () => {
+    if (tickers.length === 0) return;
+    const results = await Promise.allSettled(
+      tickers.map(t => api.get(`/market/quote/${t}/live`))
+    );
+    setPrices(prev => {
+      const next = { ...prev };
+      results.forEach((r, i) => {
+        if (r.status === "fulfilled") {
+          const ticker = tickers[i];
+          const newPrice = r.value.data.price as number;
+          const oldPrice = prevRef.current[ticker] ?? newPrice;
+          next[ticker] = {
+            price: newPrice,
+            prev: oldPrice,
+            flash: newPrice > oldPrice ? "up" : newPrice < oldPrice ? "down" : null,
+          };
+          prevRef.current[ticker] = newPrice;
+          // Clear flash after 800ms
+          if (next[ticker].flash) {
+            setTimeout(() => {
+              setPrices(p => ({ ...p, [ticker]: { ...p[ticker], flash: null } }));
+            }, 800);
+          }
+        }
+      });
+      return next;
+    });
+  }, [tickers.join(",")]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  useEffect(() => {
+    if (tickers.length === 0) return;
+    fetchPrices();
+    const t = setInterval(fetchPrices, 8000);
+    return () => clearInterval(t);
+  }, [fetchPrices]);
+
+  return prices;
+}
+
 // ── Main Dashboard ─────────────────────────────────────────────────────────────
 
 export default function Dashboard() {
@@ -321,6 +369,8 @@ export default function Dashboard() {
   const [alertSummary, setAlertSummary] = useState<{total:number,critical:number,warning:number,info:number} | null>(null);
   const [brief, setBrief] = useState<BriefData | null>(null);
   const [briefLoading, setBriefLoading] = useState(false);
+  const positionTickers = positions.map((p: any) => p.ticker);
+  const livePrices = useLivePrices(positionTickers);
 
   const load = async () => {
     setRefreshing(true);
@@ -521,19 +571,36 @@ export default function Dashboard() {
                 </tr>
               </thead>
               <tbody className="divide-y divide-border/50">
-                {positions.slice(0, 5).map((p: any) => (
-                  <tr key={p.ticker} className="hover:bg-bg-elevated/50 transition-colors">
-                    <td className="py-3">
-                      <span className="font-mono font-semibold text-sm text-text-primary">{p.ticker}</span>
-                    </td>
-                    <td className="py-3 font-mono text-sm text-text-secondary">{p.qty.toFixed(2)}</td>
-                    <td className="py-3 font-mono text-sm text-text-primary">{fmt.price(p.current_price)}</td>
-                    <td className="py-3 font-mono text-sm text-text-muted">{fmt.price(p.avg_entry_price)}</td>
-                    <td className="py-3">
-                      <PnLBadge value={p.unrealized_pnl_pct} />
-                    </td>
-                  </tr>
-                ))}
+                {positions.slice(0, 5).map((p: any) => {
+                  const live = livePrices[p.ticker];
+                  const displayPrice = live?.price ?? p.current_price;
+                  const liveUnrealizedPct = live
+                    ? ((displayPrice - p.avg_entry_price) / p.avg_entry_price) * 100
+                    : p.unrealized_pnl_pct;
+                  return (
+                    <tr key={p.ticker} className="hover:bg-bg-elevated/50 transition-colors">
+                      <td className="py-3">
+                        <span className="font-mono font-semibold text-sm text-text-primary">{p.ticker}</span>
+                      </td>
+                      <td className="py-3 font-mono text-sm text-text-secondary">{p.qty.toFixed(2)}</td>
+                      <td className="py-3">
+                        <span className={cn(
+                          "font-mono text-sm font-semibold transition-colors duration-300",
+                          live?.flash === "up" ? "text-gain" : live?.flash === "down" ? "text-loss" : "text-text-primary"
+                        )}>
+                          {fmt.price(displayPrice)}
+                          {live?.flash && (
+                            <span className="ml-1 text-xs">{live.flash === "up" ? "▲" : "▼"}</span>
+                          )}
+                        </span>
+                      </td>
+                      <td className="py-3 font-mono text-sm text-text-muted">{fmt.price(p.avg_entry_price)}</td>
+                      <td className="py-3">
+                        <PnLBadge value={liveUnrealizedPct} />
+                      </td>
+                    </tr>
+                  );
+                })}
               </tbody>
             </table>
           ) : (
