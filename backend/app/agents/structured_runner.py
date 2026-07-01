@@ -1082,7 +1082,7 @@ async def _place_order_if_approved(run_id: str, ticker: str, result: dict):
                 side=side,
                 qty=qty,
                 order_type="market",
-                status=order.get("status", "submitted"),
+                status="submitted",  # normalize — sync worker will update from Alpaca
                 stop_loss_pct=stop_loss_pct,
                 take_profit_pct=take_profit_pct,
                 reasoning_json={

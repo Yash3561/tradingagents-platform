@@ -67,7 +67,7 @@ async def sync_trades_once():
     async with AsyncSessionLocal() as db:
         result = await db.execute(
             select(Trade).where(
-                Trade.status.in_(["pending", "submitted", "partial"]),
+                Trade.status.in_(["pending", "submitted", "partial", "pending_new", "new", "accepted"]),
                 Trade.alpaca_order_id.isnot(None),
             )
         )
