@@ -196,6 +196,43 @@ def _fetch_positions_for_intraday() -> list[dict]:
     return get_positions()
 
 
+async def _take_equity_snapshot():
+    """Take an equity snapshot from Alpaca and save to equity_snapshots table."""
+    try:
+        import httpx
+        from app.config import get_settings
+        from app.core.postgres import AsyncSessionLocal
+        from app.db.models.equity_snapshot import EquitySnapshot
+
+        settings = get_settings()
+        headers = {
+            "APCA-API-KEY-ID": settings.alpaca_api_key,
+            "APCA-API-SECRET-KEY": settings.alpaca_api_secret,
+        }
+        async with httpx.AsyncClient(timeout=5.0) as client:
+            r = await client.get(f"{settings.alpaca_base_url}/v2/account", headers=headers)
+        if r.status_code != 200:
+            return
+
+        acct = r.json()
+        equity = float(acct.get("equity", 0))
+        cash = float(acct.get("cash", 0))
+        last_equity = float(acct.get("last_equity", equity))
+        day_pnl = equity - last_equity
+
+        async with AsyncSessionLocal() as db:
+            snapshot = EquitySnapshot(
+                equity=equity,
+                cash=cash,
+                day_pnl=day_pnl,
+            )
+            db.add(snapshot)
+            await db.commit()
+        log.info("scheduler.equity_snapshot", equity=round(equity, 2))
+    except Exception as e:
+        log.warning("scheduler.snapshot_failed", error=str(e))
+
+
 async def _run_intraday_cb_check():
     """Check circuit breakers and notify on NEW warnings."""
     global _last_cb_warnings
@@ -257,6 +294,11 @@ async def run_intraday_monitor():
 
             # ── Circuit breaker check ──────────────────────────────────────────
             asyncio.create_task(_run_intraday_cb_check())
+
+            # Hourly equity snapshot during market hours
+            is_market_hours = _is_market_hours_et()
+            if is_market_hours and now_et.minute == 0:  # top of each hour
+                await _take_equity_snapshot()
 
             # ── Fetch positions ────────────────────────────────────────────────
             loop = asyncio.get_running_loop()

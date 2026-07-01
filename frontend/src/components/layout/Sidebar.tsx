@@ -14,6 +14,7 @@ import {
   LogOut,
   Brain,
   Bell,
+  BarChart2,
 } from "lucide-react";
 import { cn } from "../../lib/cn";
 import { getUser } from "../../lib/auth";
@@ -22,6 +23,7 @@ const NAV_GROUPS = [
   {
     label: "Trading",
     items: [
+      { to: "/markets", icon: BarChart2, label: "Markets" },
       { to: "/dashboard", icon: LayoutDashboard, label: "Dashboard" },
       { to: "/scanner", icon: Radar, label: "Scanner" },
       { to: "/agents", icon: BrainCircuit, label: "Agent Hub" },

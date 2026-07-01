@@ -125,3 +125,40 @@ Key catalysts: {', '.join(debate.get('key_catalysts', [])[:3])}
         "journal": journal_text,
         "generated_at": datetime.now(UTC).isoformat(),
     }
+
+
+@router.get("/export-csv")
+async def export_trades_csv(db: AsyncSession = Depends(get_db)):
+    """Download all trades as CSV for tax reporting."""
+    from fastapi.responses import StreamingResponse
+    from sqlalchemy import select, asc
+    import csv
+    import io
+
+    result = await db.execute(select(Trade).order_by(asc(Trade.submitted_at)))
+    trades = result.scalars().all()
+
+    output = io.StringIO()
+    writer = csv.writer(output)
+    writer.writerow([
+        "Date", "Ticker", "Side", "Qty", "Order Type",
+        "Entry Price", "Exit Price", "P&L ($)", "Stop Loss %",
+        "Take Profit %", "Status", "Alpaca Order ID",
+    ])
+    for t in trades:
+        writer.writerow([
+            t.submitted_at.date().isoformat() if t.submitted_at else "",
+            t.ticker, t.side, t.qty, t.order_type,
+            t.filled_price or "", "",
+            round(float(t.pnl), 2) if t.pnl else "",
+            t.stop_loss_pct or "", t.take_profit_pct or "",
+            t.status, t.alpaca_order_id or "",
+        ])
+
+    output.seek(0)
+    filename = f"trades_{datetime.now(UTC).strftime('%Y%m%d')}.csv"
+    return StreamingResponse(
+        iter([output.getvalue()]),
+        media_type="text/csv",
+        headers={"Content-Disposition": f"attachment; filename={filename}"},
+    )

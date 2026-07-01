@@ -49,8 +49,12 @@ interface BacktestResult {
 
 export default function Backtesting() {
   const [ticker, setTicker] = useState("AAPL");
-  const [from, setFrom] = useState("2024-01-01");
-  const [to, setTo] = useState("2025-01-01");
+  const [from, setFrom] = useState(() => {
+    const d = new Date();
+    d.setFullYear(d.getFullYear() - 1);
+    return d.toISOString().split("T")[0];
+  });
+  const [to, setTo] = useState(() => new Date().toISOString().split("T")[0]);
   const [running, setRunning] = useState(false);
   const [result, setResult] = useState<BacktestResult | null>(null);
   const [error, setError] = useState<string | null>(null);

@@ -1,6 +1,9 @@
-from fastapi import APIRouter
+from fastapi import APIRouter, Depends
 import httpx
 import structlog
+from datetime import datetime, UTC
+from sqlalchemy.ext.asyncio import AsyncSession
+from app.core.postgres import get_db
 from app.config import get_settings
 
 router = APIRouter()
@@ -112,3 +115,72 @@ async def equity_curve(limit: int = 200):
     """Historical equity curve for charting."""
     from app.workers.equity_tracker import get_equity_curve
     return await get_equity_curve(limit=limit)
+
+
+@router.get("/pnl-calendar")
+async def get_pnl_calendar(db: AsyncSession = Depends(get_db)):
+    """
+    Daily P&L for the last 90 days.
+    Returns list of {date, pnl, trades} for calendar heatmap.
+    """
+    from sqlalchemy import select, desc, func
+    from app.db.models.trade import Trade
+    from datetime import timedelta
+    import httpx
+    from app.config import get_settings
+
+    settings = get_settings()
+    cutoff = datetime.now(UTC) - timedelta(days=90)
+
+    # Get closed trades with P&L grouped by date
+    result = await db.execute(
+        select(Trade)
+        .where(Trade.submitted_at >= cutoff)
+        .where(Trade.pnl.isnot(None))
+        .order_by(Trade.submitted_at)
+    )
+    trades = result.scalars().all()
+
+    # Group by date
+    by_date: dict = {}
+    for t in trades:
+        if t.submitted_at:
+            date_str = t.submitted_at.date().isoformat()
+            if date_str not in by_date:
+                by_date[date_str] = {"date": date_str, "pnl": 0.0, "trades": 0}
+            by_date[date_str]["pnl"] += float(t.pnl or 0)
+            by_date[date_str]["trades"] += 1
+
+    # Also try to get daily P&L from Alpaca account history
+    try:
+        headers = {
+            "APCA-API-KEY-ID": settings.alpaca_api_key,
+            "APCA-API-SECRET-KEY": settings.alpaca_api_secret,
+        }
+        async with httpx.AsyncClient(timeout=8.0) as client:
+            r = await client.get(
+                f"{settings.alpaca_base_url}/v2/account/portfolio/history",
+                headers=headers,
+                params={"period": "3M", "timeframe": "1D"},
+            )
+        if r.status_code == 200:
+            hist = r.json()
+            timestamps = hist.get("timestamp", [])
+            profit_loss = hist.get("profit_loss", [])
+            for ts, pl in zip(timestamps, profit_loss):
+                if pl is not None:
+                    from datetime import datetime, timezone
+                    date_str = datetime.fromtimestamp(ts, tz=timezone.utc).date().isoformat()
+                    if date_str not in by_date:
+                        by_date[date_str] = {"date": date_str, "pnl": 0.0, "trades": 0}
+                    # Use Alpaca P&L if we don't have trade-level data for that day
+                    if by_date[date_str]["trades"] == 0:
+                        by_date[date_str]["pnl"] = round(float(pl), 2)
+    except Exception:
+        pass
+
+    calendar = sorted(by_date.values(), key=lambda x: x["date"])
+    for c in calendar:
+        c["pnl"] = round(c["pnl"], 2)
+
+    return calendar

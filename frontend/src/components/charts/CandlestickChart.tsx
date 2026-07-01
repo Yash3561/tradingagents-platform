@@ -41,6 +41,8 @@ export default function CandlestickChart({
   const chartRef = useRef<ReturnType<typeof createChart> | null>(null);
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const seriesRef = useRef<any>(null);
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const volumeSeriesRef = useRef<any>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [selectedPeriod, setSelectedPeriod] = useState(initialPeriod);
@@ -84,8 +86,18 @@ export default function CandlestickChart({
       wickDownColor: "#FF3D57",
     });
 
+    const volumeSeries = chart.addHistogramSeries({
+      color: "#2D7DD2",
+      priceFormat: { type: "volume" },
+      priceScaleId: "volume",
+    });
+    chart.priceScale("volume").applyOptions({
+      scaleMargins: { top: 0.8, bottom: 0 },
+    });
+
     chartRef.current = chart;
     seriesRef.current = candleSeries;
+    volumeSeriesRef.current = volumeSeries;
 
     // Responsive resize
     const ro = new ResizeObserver((entries) => {
@@ -100,6 +112,7 @@ export default function CandlestickChart({
       chart.remove();
       chartRef.current = null;
       seriesRef.current = null;
+      volumeSeriesRef.current = null;
     };
   }, [height]);
 
@@ -120,6 +133,12 @@ export default function CandlestickChart({
         // lightweight-charts needs data sorted ascending by time
         const sorted = [...bars].sort((a, b) => a.time - b.time);
         seriesRef.current?.setData(sorted);
+        const volumeData = sorted.map(b => ({
+          time: b.time,
+          value: b.volume,
+          color: b.close >= b.open ? "#00E67640" : "#FF3D5740",
+        }));
+        volumeSeriesRef.current?.setData(volumeData);
         chartRef.current?.timeScale().fitContent();
         setLastBar(sorted[sorted.length - 1] ?? null);
       })

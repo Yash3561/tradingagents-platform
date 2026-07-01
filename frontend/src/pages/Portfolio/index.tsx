@@ -10,6 +10,7 @@ import { api } from "../../lib/api";
 import { cn } from "../../lib/cn";
 import { RefreshCw, Loader2, ChevronDown, ChevronRight } from "lucide-react";
 import CandlestickChart from "../../components/charts/CandlestickChart";
+import PnLCalendar from "../../components/data-display/PnLCalendar";
 
 const PIE_COLORS = ["#2D7DD2", "#4A9AEF", "#00E676", "#FFB740", "#FF3D57", "#7C5CBF", "#4D6080"];
 
@@ -171,6 +172,9 @@ export default function Portfolio() {
           />
         </div>
       )}
+
+      {/* P&L Calendar */}
+      <PnLCalendar />
 
       {/* Equity curve */}
       {curve.length > 1 && (

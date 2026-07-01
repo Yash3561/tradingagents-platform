@@ -1,5 +1,10 @@
 from fastapi import APIRouter, HTTPException
 import httpx
+from datetime import datetime
+from datetime import timezone as _tz
+
+UTC = _tz.utc
+
 from app.config import get_settings
 
 router = APIRouter()
@@ -164,3 +169,133 @@ async def search_ticker(q: str):
 
     matches = [t for t in TICKERS if t["symbol"].startswith(q) or q in t["name"].upper()]
     return matches[:8]
+
+
+@router.get("/overview")
+async def get_market_overview():
+    """
+    Market overview: major indices + 11 SPDR sector ETFs performance.
+    Used by the Markets page header.
+    """
+    import asyncio
+    import yfinance as yf
+
+    INDICES = [
+        ("SPY", "S&P 500"), ("QQQ", "NASDAQ"), ("DIA", "DOW"),
+        ("IWM", "Russell"), ("^VIX", "VIX"), ("^TNX", "10Y"),
+    ]
+    SECTORS = [
+        ("XLK", "Tech"), ("XLF", "Financials"), ("XLE", "Energy"),
+        ("XLV", "Health"), ("XLI", "Industrials"), ("XLP", "Staples"),
+        ("XLY", "Discretionary"), ("XLU", "Utilities"), ("XLB", "Materials"),
+        ("XLRE", "Real Estate"), ("XLC", "Comms"),
+    ]
+
+    def _fetch(symbols_labels):
+        results = []
+        for sym, label in symbols_labels:
+            try:
+                hist = yf.Ticker(sym).history(period="5d", interval="1d")
+                if len(hist) >= 2:
+                    prev = float(hist["Close"].iloc[-2])
+                    curr = float(hist["Close"].iloc[-1])
+                    chg = (curr - prev) / prev * 100
+                    week = (curr / float(hist["Close"].iloc[0]) - 1) * 100
+                    results.append({
+                        "symbol": sym, "label": label,
+                        "price": round(curr, 2),
+                        "change_pct": round(chg, 2),
+                        "week_pct": round(week, 2),
+                    })
+            except Exception:
+                pass
+        return results
+
+    loop = asyncio.get_running_loop()
+    indices, sectors = await asyncio.gather(
+        loop.run_in_executor(None, _fetch, INDICES),
+        loop.run_in_executor(None, _fetch, SECTORS),
+    )
+    return {"indices": indices, "sectors": sectors, "as_of": datetime.now(UTC).isoformat()}
+
+
+@router.get("/movers")
+async def get_market_movers():
+    """
+    Top gainers and losers from the scanner watchlist (today's 1d change).
+    No AI — pure price data. Returns top 5 gainers + top 5 losers.
+    """
+    import asyncio
+    import yfinance as yf
+    from app.workers.scanner import WATCHLIST
+
+    def _fetch_changes():
+        results = []
+        # Sample 20 tickers for speed
+        import random
+        sample = random.sample(WATCHLIST, min(20, len(WATCHLIST)))
+        for ticker in sample:
+            try:
+                hist = yf.Ticker(ticker).history(period="2d", interval="1d")
+                if len(hist) >= 2:
+                    prev = float(hist["Close"].iloc[-2])
+                    curr = float(hist["Close"].iloc[-1])
+                    chg = (curr - prev) / prev * 100
+                    vol = int(hist["Volume"].iloc[-1])
+                    results.append({
+                        "symbol": ticker,
+                        "price": round(curr, 2),
+                        "change_pct": round(chg, 2),
+                        "volume": vol,
+                    })
+            except Exception:
+                pass
+        return results
+
+    loop = asyncio.get_running_loop()
+    all_stocks = await loop.run_in_executor(None, _fetch_changes)
+    sorted_stocks = sorted(all_stocks, key=lambda x: x["change_pct"], reverse=True)
+    return {
+        "gainers": sorted_stocks[:5],
+        "losers": sorted_stocks[-5:][::-1],
+        "as_of": datetime.now(UTC).isoformat(),
+    }
+
+
+@router.get("/stats/{ticker}")
+async def get_ticker_stats(ticker: str):
+    """
+    Key stats for a ticker: 52w high/low, avg volume, market cap, P/E, beta.
+    Used by the Markets page detail panel.
+    """
+    import asyncio
+    import yfinance as yf
+
+    def _fetch():
+        t = yf.Ticker(ticker.upper())
+        info = t.info or {}
+        hist = t.history(period="1y", interval="1d")
+        stats = {
+            "symbol": ticker.upper(),
+            "name": info.get("longName") or info.get("shortName", ticker.upper()),
+            "sector": info.get("sector", "Unknown"),
+            "industry": info.get("industry", ""),
+            "market_cap": info.get("marketCap"),
+            "pe_ratio": info.get("trailingPE"),
+            "forward_pe": info.get("forwardPE"),
+            "beta": info.get("beta"),
+            "dividend_yield": info.get("dividendYield"),
+            "avg_volume": info.get("averageVolume"),
+            "shares_outstanding": info.get("sharesOutstanding"),
+        }
+        if not hist.empty:
+            stats["week_52_high"] = round(float(hist["High"].max()), 2)
+            stats["week_52_low"] = round(float(hist["Low"].min()), 2)
+            stats["current_price"] = round(float(hist["Close"].iloc[-1]), 2)
+        return stats
+
+    loop = asyncio.get_running_loop()
+    try:
+        return await loop.run_in_executor(None, _fetch)
+    except Exception as e:
+        raise HTTPException(500, f"Failed to fetch stats: {e}")

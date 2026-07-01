@@ -1,6 +1,6 @@
 import { useState, useEffect } from "react";
 import { motion, AnimatePresence } from "framer-motion";
-import { ChevronRight, X, Loader2, RefreshCw, BookOpen } from "lucide-react";
+import { ChevronRight, X, Loader2, RefreshCw, BookOpen, Download } from "lucide-react";
 import PnLBadge from "../../components/data-display/PnLBadge";
 import { fmt } from "../../lib/formatters";
 import { api } from "../../lib/api";
@@ -208,14 +208,23 @@ export default function TradeHistory() {
           <h1 className="text-xl font-semibold text-text-primary">Trade History</h1>
           <p className="text-sm text-text-muted mt-0.5">Full audit trail with agent reasoning</p>
         </div>
-        <button
-          onClick={load}
-          disabled={refreshing}
-          className="flex items-center gap-1.5 px-3 py-1.5 text-xs text-text-muted hover:text-text-primary border border-border rounded-lg hover:bg-bg-elevated transition-colors"
-        >
-          <RefreshCw size={13} className={refreshing ? "animate-spin" : ""} />
-          Refresh
-        </button>
+        <div className="flex items-center gap-2">
+          <a
+            href="/api/v1/trades/export-csv"
+            className="flex items-center gap-2 px-4 py-2 bg-bg-elevated border border-border hover:border-accent text-slate-300 hover:text-white rounded-lg text-sm transition-colors"
+          >
+            <Download size={14} />
+            Export CSV
+          </a>
+          <button
+            onClick={load}
+            disabled={refreshing}
+            className="flex items-center gap-1.5 px-3 py-1.5 text-xs text-text-muted hover:text-text-primary border border-border rounded-lg hover:bg-bg-elevated transition-colors"
+          >
+            <RefreshCw size={13} className={refreshing ? "animate-spin" : ""} />
+            Refresh
+          </button>
+        </div>
       </div>
 
       {loading ? (
