@@ -15,7 +15,7 @@ export default function StatusBar() {
         <Activity size={10} className="text-warn" />
         <span>Latency: 12ms</span>
       </div>
-      <div className="ml-auto">TradingAgents Platform · Claude Sonnet 4.6</div>
+      <div className="ml-auto">TradingAgents Platform · v1.0</div>
     </footer>
   );
 }
