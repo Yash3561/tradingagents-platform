@@ -23,11 +23,14 @@ ACCESS_TOKEN_EXPIRE_DAYS = 30
 
 
 def hash_password(password: str) -> str:
-    return pwd_context.hash(password)
+    # Use bcrypt directly — passlib 1.7.4 is incompatible with bcrypt 4+/5+
+    import bcrypt
+    return bcrypt.hashpw(password.encode("utf-8"), bcrypt.gensalt(rounds=12)).decode("utf-8")
 
 
 def verify_password(plain: str, hashed: str) -> bool:
-    return pwd_context.verify(plain, hashed)
+    import bcrypt
+    return bcrypt.checkpw(plain.encode("utf-8"), hashed.encode("utf-8"))
 
 
 def create_access_token(user_id: int, email: str) -> str:
