@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef } from "react";
 import { motion, AnimatePresence } from "framer-motion";
-import { Radar, Play, RefreshCw, Loader2, TrendingUp, TrendingDown, Minus, Zap, CheckCircle2, XCircle, Clock } from "lucide-react";
+import { Radar, Play, RefreshCw, Loader2, TrendingUp, TrendingDown, Minus, Zap, CheckCircle2, XCircle, Clock, BarChart2, Brain } from "lucide-react";
+import { useNavigate } from "react-router-dom";
 import { api, WS_BASE } from "../../lib/api";
 import { cn } from "../../lib/cn";
 
@@ -87,6 +88,7 @@ function MomBadge({ value }: { value: number }) {
 
 // ── Main component ────────────────────────────────────────────────────────────
 export default function Scanner() {
+  const navigate = useNavigate();
   const cache = loadCache();
 
   const [scanStatus, setScanStatus] = useState<ScannerCache["scanStatus"]>(cache.scanStatus);
@@ -442,12 +444,13 @@ export default function Scanner() {
                 <table className="w-full text-xs">
                   <thead>
                     <tr className="border-b border-border">
-                      {["Ticker","Dir","Score","Price","RSI","1W","1M","3M","MACD","Vol×"].map(h => (
+                      {["Ticker","Dir","Score","Price","RSI","1W","1M","3M","MACD","Vol×",""].map(h => (
                         <th key={h} className={cn("px-4 py-2 text-text-muted font-medium",
                           ["Score"].includes(h) ? "text-left w-28" : "text-right",
                           h === "Ticker" ? "text-left" : "",
                           h === "Dir" ? "text-left" : "",
-                          h === "MACD" ? "text-center" : ""
+                          h === "MACD" ? "text-center" : "",
+                          h === "" ? "text-right w-20" : ""
                         )}>{h}</th>
                       ))}
                     </tr>
@@ -460,7 +463,13 @@ export default function Scanner() {
                           <motion.tr key={s.ticker} initial={{ opacity: 0, x: -10 }}
                             animate={{ opacity: 1, x: 0 }} transition={{ delay: i * 0.02 }}
                             className="border-b border-border/50 hover:bg-bg-elevated/50 transition-colors">
-                            <td className="px-4 py-2.5 font-mono font-bold text-text-primary text-left">{s.ticker}</td>
+                            <td className="px-4 py-2.5 text-left">
+                              <button
+                                onClick={() => navigate(`/markets?ticker=${s.ticker}`)}
+                                className="font-mono font-bold text-text-primary hover:text-accent transition-colors"
+                                title="View chart"
+                              >{s.ticker}</button>
+                            </td>
                             <td className="px-4 py-2.5 text-left">
                               <span className={cn("inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-2xs font-semibold border", DIR_STYLE[s.direction])}>
                                 <DirIcon size={9} />{s.direction}
@@ -481,6 +490,24 @@ export default function Scanner() {
                             <td className={cn("px-4 py-2.5 text-right font-mono",
                               s.vol_ratio > 1.5 ? "text-gain" : s.vol_ratio < 0.7 ? "text-text-muted" : "text-text-secondary")}>
                               {s.vol_ratio}x
+                            </td>
+                            <td className="px-4 py-2.5 text-right">
+                              <div className="flex items-center justify-end gap-1">
+                                <button
+                                  onClick={() => navigate(`/markets?ticker=${s.ticker}`)}
+                                  title="View chart"
+                                  className="p-1 rounded text-slate-500 hover:text-accent hover:bg-accent/10 transition-colors"
+                                >
+                                  <BarChart2 size={12} />
+                                </button>
+                                <button
+                                  onClick={() => navigate(`/agents?ticker=${s.ticker}`)}
+                                  title="Analyze with AI"
+                                  className="p-1 rounded text-slate-500 hover:text-gain hover:bg-gain/10 transition-colors"
+                                >
+                                  <Brain size={12} />
+                                </button>
+                              </div>
                             </td>
                           </motion.tr>
                         );
