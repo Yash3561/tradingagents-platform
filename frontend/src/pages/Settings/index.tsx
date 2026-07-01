@@ -246,6 +246,12 @@ export default function Settings() {
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const saveStateTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
+  // Watchlist state
+  const [watchlist, setWatchlist] = useState<string[]>([]);
+  const [watchlistCustom, setWatchlistCustom] = useState(false);
+  const [newTicker, setNewTicker] = useState("");
+  const [watchlistSaving, setWatchlistSaving] = useState(false);
+
   // Load settings on mount
   useEffect(() => {
     api.get("/settings/")
@@ -253,6 +259,11 @@ export default function Settings() {
         setSettings(prev => ({ ...prev, ...data }));
       })
       .catch(() => {});
+
+    api.get("/settings/watchlist").then(r => {
+      setWatchlist(r.data.tickers);
+      setWatchlistCustom(r.data.is_custom);
+    }).catch(() => {});
   }, []);
 
   const persist = useCallback((patch: Partial<Settings>) => {
@@ -276,6 +287,32 @@ export default function Settings() {
     setSettings(prev => ({ ...prev, [key]: value }));
     persist({ [key]: value });
   }
+
+  const addTicker = async () => {
+    const t = newTicker.trim().toUpperCase();
+    if (!t) return;
+    try {
+      const { data } = await api.post("/settings/watchlist/add", { ticker: t });
+      setWatchlist(data.tickers);
+      setWatchlistCustom(true);
+      setNewTicker("");
+    } catch {}
+  };
+
+  const removeTicker = async (ticker: string) => {
+    try {
+      const { data } = await api.delete(`/settings/watchlist/${ticker}`);
+      setWatchlist(data.tickers);
+    } catch {}
+  };
+
+  const resetWatchlist = async () => {
+    try {
+      const { data } = await api.post("/settings/watchlist/reset");
+      setWatchlist(data.tickers);
+      setWatchlistCustom(false);
+    } catch {}
+  };
 
   return (
     <motion.div

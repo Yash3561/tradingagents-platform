@@ -2,6 +2,7 @@ import { useState } from "react";
 import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
 import { AnimatePresence } from "framer-motion";
 import Shell from "./components/layout/Shell";
+import ErrorBoundary from "./components/ErrorBoundary";
 import Dashboard from "./pages/Dashboard";
 import AgentHub from "./pages/AgentHub";
 import Portfolio from "./pages/Portfolio";
@@ -34,25 +35,27 @@ export default function App() {
   }
 
   return (
-    <BrowserRouter>
-      <Shell onLogout={handleLogout}>
-        <AnimatePresence mode="wait">
-          <Routes>
-            <Route path="/" element={<Navigate to="/dashboard" replace />} />
-            <Route path="/dashboard" element={<Dashboard />} />
-            <Route path="/agents" element={<AgentHub />} />
-            <Route path="/options" element={<OptionsDesk />} />
-            <Route path="/scanner" element={<Scanner />} />
-            <Route path="/portfolio" element={<Portfolio />} />
-            <Route path="/trades" element={<TradeHistory />} />
-            <Route path="/backtest" element={<Backtesting />} />
-            <Route path="/analytics" element={<Analytics />} />
-            <Route path="/alerts" element={<Alerts />} />
-            <Route path="/settings" element={<Settings />} />
-            <Route path="*" element={<Navigate to="/dashboard" replace />} />
-          </Routes>
-        </AnimatePresence>
-      </Shell>
-    </BrowserRouter>
+    <ErrorBoundary>
+      <BrowserRouter>
+        <Shell onLogout={handleLogout}>
+          <AnimatePresence mode="wait">
+            <Routes>
+              <Route path="/" element={<Navigate to="/dashboard" replace />} />
+              <Route path="/dashboard" element={<Dashboard />} />
+              <Route path="/agents" element={<AgentHub />} />
+              <Route path="/options" element={<OptionsDesk />} />
+              <Route path="/scanner" element={<Scanner />} />
+              <Route path="/portfolio" element={<Portfolio />} />
+              <Route path="/trades" element={<TradeHistory />} />
+              <Route path="/backtest" element={<Backtesting />} />
+              <Route path="/analytics" element={<Analytics />} />
+              <Route path="/alerts" element={<Alerts />} />
+              <Route path="/settings" element={<Settings />} />
+              <Route path="*" element={<Navigate to="/dashboard" replace />} />
+            </Routes>
+          </AnimatePresence>
+        </Shell>
+      </BrowserRouter>
+    </ErrorBoundary>
   );
 }

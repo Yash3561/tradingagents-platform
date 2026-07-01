@@ -61,3 +61,135 @@ async def get_setting_by_key(key: str, db: AsyncSession = Depends(get_db)):
     if row is None:
         raise HTTPException(status_code=404, detail=f"Setting '{key}' not found")
     return {"key": key, "value": _decode(row), "updated_at": row.updated_at.isoformat() if row.updated_at else None}
+
+
+# ── Watchlist management ────────────────────────────────────────────────────────
+
+DEFAULT_WATCHLIST = [
+    "AAPL", "MSFT", "GOOGL", "AMZN", "NVDA", "META", "TSLA", "AMD",
+    "AVGO", "ORCL", "ASML", "TSM", "NFLX", "ADBE", "CRM", "COIN",
+    "PLTR", "SNOW", "UBER", "SHOP", "JPM", "GS", "BAC", "V", "MA",
+    "UNH", "LLY", "JNJ", "XOM", "CVX", "SMCI", "ARM", "QCOM", "TXN",
+    "INTC", "PYPL", "SQ", "ADBE", "MSTR", "HOOD",
+]
+
+
+@router.get("/watchlist")
+async def get_watchlist(db: AsyncSession = Depends(get_db)):
+    """Return current watchlist. Falls back to default if not customized."""
+    from app.db.models.settings import get_setting
+    custom = await get_setting(db, "custom_watchlist")
+    if custom:
+        import json
+        try:
+            tickers = json.loads(custom) if isinstance(custom, str) else custom
+            return {"tickers": tickers, "is_custom": True, "count": len(tickers)}
+        except Exception:
+            pass
+    return {"tickers": DEFAULT_WATCHLIST, "is_custom": False, "count": len(DEFAULT_WATCHLIST)}
+
+
+@router.post("/watchlist")
+async def update_watchlist(body: dict, db: AsyncSession = Depends(get_db)):
+    """
+    Replace entire watchlist.
+    Body: {"tickers": ["AAPL", "MSFT", ...]}
+    """
+    import json
+    from app.db.models.settings import PlatformSettings
+    from sqlalchemy import select
+    from datetime import datetime, UTC
+
+    tickers = body.get("tickers", [])
+    # Validate: uppercase, strip, deduplicate, max 100
+    clean = list(dict.fromkeys(t.strip().upper() for t in tickers if t.strip()))[:100]
+
+    result = await db.execute(select(PlatformSettings).where(PlatformSettings.key == "custom_watchlist"))
+    setting = result.scalar_one_or_none()
+    if setting:
+        setting.value = json.dumps(clean)
+        setting.updated_at = datetime.now(UTC)
+    else:
+        db.add(PlatformSettings(key="custom_watchlist", value=json.dumps(clean)))
+    await db.commit()
+    return {"tickers": clean, "count": len(clean)}
+
+
+@router.post("/watchlist/add")
+async def add_to_watchlist(body: dict, db: AsyncSession = Depends(get_db)):
+    """Add a single ticker to watchlist. Body: {"ticker": "HOOD"}"""
+    import json
+    from app.db.models.settings import get_setting, PlatformSettings
+    from sqlalchemy import select
+    from datetime import datetime, UTC
+
+    ticker = body.get("ticker", "").strip().upper()
+    if not ticker or len(ticker) > 10:
+        raise HTTPException(400, "Invalid ticker")
+
+    custom_raw = await get_setting(db, "custom_watchlist")
+    if custom_raw:
+        try:
+            current = json.loads(custom_raw) if isinstance(custom_raw, str) else custom_raw
+        except Exception:
+            current = list(DEFAULT_WATCHLIST)
+    else:
+        current = list(DEFAULT_WATCHLIST)
+
+    if ticker not in current:
+        current.append(ticker)
+
+    result = await db.execute(select(PlatformSettings).where(PlatformSettings.key == "custom_watchlist"))
+    setting = result.scalar_one_or_none()
+    if setting:
+        setting.value = json.dumps(current)
+        setting.updated_at = datetime.now(UTC)
+    else:
+        db.add(PlatformSettings(key="custom_watchlist", value=json.dumps(current)))
+    await db.commit()
+    return {"tickers": current, "count": len(current), "added": ticker}
+
+
+@router.delete("/watchlist/{ticker}")
+async def remove_from_watchlist(ticker: str, db: AsyncSession = Depends(get_db)):
+    """Remove a ticker from watchlist."""
+    import json
+    from app.db.models.settings import get_setting, PlatformSettings
+    from sqlalchemy import select
+    from datetime import datetime, UTC
+
+    ticker = ticker.strip().upper()
+    custom_raw = await get_setting(db, "custom_watchlist")
+    if custom_raw:
+        try:
+            current = json.loads(custom_raw) if isinstance(custom_raw, str) else custom_raw
+        except Exception:
+            current = list(DEFAULT_WATCHLIST)
+    else:
+        current = list(DEFAULT_WATCHLIST)
+
+    current = [t for t in current if t != ticker]
+
+    result = await db.execute(select(PlatformSettings).where(PlatformSettings.key == "custom_watchlist"))
+    setting = result.scalar_one_or_none()
+    if setting:
+        setting.value = json.dumps(current)
+        setting.updated_at = datetime.now(UTC)
+    else:
+        db.add(PlatformSettings(key="custom_watchlist", value=json.dumps(current)))
+    await db.commit()
+    return {"tickers": current, "count": len(current), "removed": ticker}
+
+
+@router.post("/watchlist/reset")
+async def reset_watchlist(db: AsyncSession = Depends(get_db)):
+    """Reset to default watchlist by clearing custom setting."""
+    from app.db.models.settings import PlatformSettings
+    from sqlalchemy import select
+
+    result = await db.execute(select(PlatformSettings).where(PlatformSettings.key == "custom_watchlist"))
+    setting = result.scalar_one_or_none()
+    if setting:
+        await db.delete(setting)
+        await db.commit()
+    return {"tickers": DEFAULT_WATCHLIST, "count": len(DEFAULT_WATCHLIST), "reset": True}

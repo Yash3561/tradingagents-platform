@@ -42,6 +42,23 @@ WATCHLIST = [
 MAX_AI_CANDIDATES = 8
 
 
+async def get_active_watchlist() -> list[str]:
+    """Returns custom watchlist from DB if set, else the default WATCHLIST."""
+    try:
+        from app.core.postgres import AsyncSessionLocal
+        from app.db.models.settings import get_setting
+        import json
+        async with AsyncSessionLocal() as db:
+            custom = await get_setting(db, "custom_watchlist")
+            if custom:
+                tickers = json.loads(custom) if isinstance(custom, str) else custom
+                if tickers:
+                    return tickers
+    except Exception:
+        pass
+    return WATCHLIST
+
+
 def _screen_ticker(ticker: str) -> dict | None:
     """
     Pre-screen a ticker using yfinance. No Claude calls — just math.
@@ -245,7 +262,7 @@ async def run_market_scan(
             "duration_s": 0,
         }
 
-    scan_watchlist = watchlist or WATCHLIST
+    scan_watchlist = watchlist or await get_active_watchlist()
     scan_start = datetime.now(UTC)
     debate_rounds_setting = int(await _get_setting("debate_rounds", 2))
 

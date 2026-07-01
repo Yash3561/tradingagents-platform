@@ -416,6 +416,18 @@ async def get_market_brief():
 
     s = _gs()
 
+    # Check Redis cache first (15 min TTL)
+    CACHE_KEY = "market_brief_cache"
+    try:
+        import redis as _redis
+        _r = _redis.from_url(s.redis_url)
+        cached = _r.get(CACHE_KEY)
+        if cached:
+            import json as _json
+            return _json.loads(cached)
+    except Exception:
+        pass
+
     def _fetch_market_data():
         symbols = {
             "SPY": "S&P 500",
@@ -556,6 +568,21 @@ async def get_market_brief():
             "portfolio_impact": "Unable to generate AI analysis",
             "watch_today": [],
         }
+
+    # Cache result for 15 minutes
+    try:
+        import redis as _redis
+        import json as _json
+        _r = _redis.from_url(s.redis_url)
+        result = {
+            "generated_at": datetime.now(UTC).isoformat(),
+            "market_data": market_data,
+            "brief": brief,
+        }
+        _r.setex(CACHE_KEY, 900, _json.dumps(result))
+        return result
+    except Exception:
+        pass
 
     return {
         "generated_at": datetime.now(UTC).isoformat(),
