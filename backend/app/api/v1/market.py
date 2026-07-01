@@ -622,3 +622,82 @@ async def get_economic_calendar(tickers: str = ""):
     # Sort by date
     events.sort(key=lambda x: x["date"])
     return events
+
+
+@router.get("/names")
+async def get_ticker_names(tickers: str = ""):
+    """
+    Batch name + sector lookup for a list of tickers.
+    tickers: comma-separated e.g. "AAPL,MSFT,NVDA"
+    Returns: { "AAPL": { "name": "Apple Inc.", "sector": "Technology" }, ... }
+    """
+    ticker_list = [t.strip().upper() for t in tickers.split(",") if t.strip()]
+    if not ticker_list:
+        return {}
+
+    # Known names cache for common tickers (instant, no API call)
+    KNOWN: dict[str, tuple[str, str]] = {
+        "AAPL": ("Apple Inc.", "Technology"), "MSFT": ("Microsoft Corp.", "Technology"),
+        "NVDA": ("NVIDIA Corp.", "Technology"), "GOOGL": ("Alphabet Inc.", "Communication Services"),
+        "GOOG": ("Alphabet Inc.", "Communication Services"), "META": ("Meta Platforms", "Communication Services"),
+        "AMZN": ("Amazon.com Inc.", "Consumer Discretionary"), "TSLA": ("Tesla Inc.", "Consumer Discretionary"),
+        "AMD": ("Advanced Micro Devices", "Technology"), "INTC": ("Intel Corp.", "Technology"),
+        "QCOM": ("Qualcomm Inc.", "Technology"), "AVGO": ("Broadcom Inc.", "Technology"),
+        "CRM": ("Salesforce Inc.", "Technology"), "ORCL": ("Oracle Corp.", "Technology"),
+        "NFLX": ("Netflix Inc.", "Communication Services"), "ADBE": ("Adobe Inc.", "Technology"),
+        "SNOW": ("Snowflake Inc.", "Technology"), "PLTR": ("Palantir Technologies", "Technology"),
+        "UBER": ("Uber Technologies", "Technology"), "MELI": ("MercadoLibre Inc.", "Consumer Discretionary"),
+        "JPM": ("JPMorgan Chase", "Financials"), "GS": ("Goldman Sachs", "Financials"),
+        "V": ("Visa Inc.", "Financials"), "MA": ("Mastercard Inc.", "Financials"),
+        "BAC": ("Bank of America", "Financials"), "COIN": ("Coinbase Global", "Financials"),
+        "UNH": ("UnitedHealth Group", "Healthcare"), "LLY": ("Eli Lilly", "Healthcare"),
+        "ABBV": ("AbbVie Inc.", "Healthcare"), "MRNA": ("Moderna Inc.", "Healthcare"),
+        "JNJ": ("Johnson & Johnson", "Healthcare"), "XOM": ("Exxon Mobil", "Energy"),
+        "CVX": ("Chevron Corp.", "Energy"), "WMT": ("Walmart Inc.", "Consumer Staples"),
+        "COST": ("Costco Wholesale", "Consumer Staples"), "HD": ("Home Depot", "Consumer Discretionary"),
+        "MCD": ("McDonald's Corp.", "Consumer Discretionary"), "NKE": ("Nike Inc.", "Consumer Discretionary"),
+        "MU": ("Micron Technology", "Technology"), "TSM": ("Taiwan Semiconductor", "Technology"),
+        "ASML": ("ASML Holding", "Technology"), "TXN": ("Texas Instruments", "Technology"),
+        "SPY": ("SPDR S&P 500 ETF", "ETF"), "QQQ": ("Invesco QQQ Trust", "ETF"),
+        "IWM": ("iShares Russell 2000 ETF", "ETF"), "DIA": ("SPDR Dow Jones ETF", "ETF"),
+        "GLD": ("SPDR Gold Trust", "ETF"), "SLV": ("iShares Silver Trust", "ETF"),
+        "IBIT": ("iShares Bitcoin Trust", "ETF"), "MSTR": ("MicroStrategy Inc.", "Technology"),
+        "MARA": ("Marathon Digital Holdings", "Technology"), "PYPL": ("PayPal Holdings", "Financials"),
+        "SQ": ("Block Inc.", "Financials"), "SHOP": ("Shopify Inc.", "Technology"),
+        "ARM": ("Arm Holdings", "Technology"), "SMCI": ("Super Micro Computer", "Technology"),
+        "HOOD": ("Robinhood Markets", "Financials"), "SOFI": ("SoFi Technologies", "Financials"),
+        "^GSPC": ("S&P 500 Index", "Index"), "^IXIC": ("NASDAQ Composite", "Index"),
+        "^DJI": ("Dow Jones Industrial", "Index"), "^RUT": ("Russell 2000 Index", "Index"),
+        "^VIX": ("CBOE Volatility Index", "Index"), "^TNX": ("10-Year Treasury Yield", "Index"),
+    }
+
+    result = {}
+    need_fetch = []
+
+    for ticker in ticker_list:
+        if ticker in KNOWN:
+            result[ticker] = {"name": KNOWN[ticker][0], "sector": KNOWN[ticker][1]}
+        else:
+            need_fetch.append(ticker)
+
+    # Fetch unknown tickers from yfinance
+    if need_fetch:
+        def _fetch_names(tickers_to_fetch):
+            import yfinance as yf
+            out = {}
+            for sym in tickers_to_fetch:
+                try:
+                    info = yf.Ticker(sym).info
+                    out[sym] = {
+                        "name": info.get("shortName") or info.get("longName") or sym,
+                        "sector": info.get("sector") or info.get("quoteType") or "—",
+                    }
+                except Exception:
+                    out[sym] = {"name": sym, "sector": "—"}
+            return out
+
+        loop = asyncio.get_running_loop()
+        fetched = await loop.run_in_executor(None, _fetch_names, need_fetch)
+        result.update(fetched)
+
+    return result

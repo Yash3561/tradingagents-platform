@@ -164,6 +164,16 @@ export default function TradeHistory() {
   const [journalTrade, setJournalTrade] = useState<string | null>(null);  // trade_id being journaled
   const [journalText, setJournalText] = useState<string | null>(null);
   const [journalLoading, setJournalLoading] = useState(false);
+  const [names, setNames] = useState<Record<string, { name: string; sector: string }>>({});
+
+  const fetchNames = async (tickers: string[]) => {
+    if (!tickers.length) return;
+    const unique = [...new Set(tickers)].filter(Boolean);
+    try {
+      const { data } = await api.get(`/market/names?tickers=${unique.join(',')}`);
+      setNames(prev => ({ ...prev, ...data }));
+    } catch {}
+  };
 
   const generateJournal = async (tradeId: string) => {
     setJournalTrade(tradeId);
@@ -184,6 +194,7 @@ export default function TradeHistory() {
     try {
       const { data } = await api.get("/trades/?limit=100");
       setTrades(data);
+      fetchNames(data.map((t: Trade) => t.ticker));
     } catch (e) {
       console.error("Trade history load failed", e);
     } finally {
@@ -253,7 +264,10 @@ export default function TradeHistory() {
                   : null;
                 return (
                   <tr key={trade.id} className="hover:bg-bg-elevated/40 transition-colors">
-                    <td className="px-4 py-3 font-mono font-bold text-sm text-text-primary">{trade.ticker}</td>
+                    <td className="px-4 py-3">
+                      <span className="font-mono font-bold text-sm text-text-primary">{trade.ticker}</span>
+                      <p className="text-2xs text-text-muted font-normal mt-0.5">{names[trade.ticker]?.name ?? ''}</p>
+                    </td>
                     <td className="px-4 py-3">
                       <span className={cn("text-xs font-semibold uppercase", trade.side === "buy" ? "text-gain" : "text-loss")}>
                         {trade.side}

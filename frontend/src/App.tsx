@@ -18,6 +18,7 @@ import Orders from "./pages/Orders";
 import Watchlist from "./pages/Watchlist";
 import News from "./pages/News";
 import EconomicCalendar from "./pages/Calendar";
+import Learn from "./pages/Learn";
 import Login from "./pages/Login";
 import Signup from "./pages/Signup";
 import { isAuthenticated, clearAuth } from "./lib/auth";
@@ -60,6 +61,7 @@ export default function App() {
               <Route path="/watchlist" element={<Watchlist />} />
               <Route path="/news" element={<News />} />
               <Route path="/calendar" element={<EconomicCalendar />} />
+              <Route path="/learn" element={<Learn />} />
               <Route path="/settings" element={<Settings />} />
               <Route path="*" element={<Navigate to="/dashboard" replace />} />
             </Routes>

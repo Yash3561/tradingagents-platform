@@ -19,6 +19,7 @@ import {
   Newspaper,
   ClipboardList,
   CalendarDays,
+  BookOpen,
 } from "lucide-react";
 import { cn } from "../../lib/cn";
 import { getUser } from "../../lib/auth";
@@ -51,6 +52,7 @@ const NAV_GROUPS = [
     label: "Intelligence",
     items: [
       { to: "/analytics", icon: Brain, label: "Analytics" },
+      { to: "/learn", icon: BookOpen, label: "Learn" },
       { to: "/settings", icon: Settings, label: "Settings" },
     ],
   },

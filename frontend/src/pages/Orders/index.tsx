@@ -1,4 +1,4 @@
-import { useState, useCallback } from "react";
+import { useState, useCallback, useEffect } from "react";
 import { useSearchParams } from "react-router-dom";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { motion, AnimatePresence } from "framer-motion";
@@ -135,6 +135,7 @@ interface OrderRowProps {
   isLeg?: boolean;
   cancelingId: string | null;
   onCancel: (id: string) => void;
+  names: Record<string, { name: string; sector: string }>;
 }
 
 function OrderRow({
@@ -143,6 +144,7 @@ function OrderRow({
   isLeg = false,
   cancelingId,
   onCancel,
+  names,
 }: OrderRowProps) {
   const isCanceling = cancelingId === order.id;
   const canCancel = !["filled", "canceled", "expired"].includes(order.status);
@@ -172,6 +174,9 @@ function OrderRow({
         >
           {order.ticker}
         </span>
+        {!isLeg && (
+          <p className="text-2xs text-text-muted font-normal mt-0.5">{names[order.ticker]?.name ?? ''}</p>
+        )}
       </td>
 
       {/* Side */}
@@ -254,6 +259,7 @@ interface OrdersTableProps {
   showActions: boolean;
   cancelingId: string | null;
   onCancel: (id: string) => void;
+  names: Record<string, { name: string; sector: string }>;
 }
 
 function OrdersTable({
@@ -261,6 +267,7 @@ function OrdersTable({
   showActions,
   cancelingId,
   onCancel,
+  names,
 }: OrdersTableProps) {
   const headers = [
     "Ticker",
@@ -299,6 +306,7 @@ function OrdersTable({
                   showActions={showActions}
                   cancelingId={cancelingId}
                   onCancel={onCancel}
+                  names={names}
                 />
                 {order.legs &&
                   order.legs.length > 0 &&
@@ -310,6 +318,7 @@ function OrdersTable({
                       isLeg
                       cancelingId={cancelingId}
                       onCancel={onCancel}
+                      names={names}
                     />
                   ))}
               </>
@@ -372,8 +381,18 @@ export default function Orders() {
 
   const [cancelingId, setCancelingId] = useState<string | null>(null);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
+  const [names, setNames] = useState<Record<string, { name: string; sector: string }>>({});
 
   const queryClient = useQueryClient();
+
+  const fetchNames = async (tickers: string[]) => {
+    if (!tickers.length) return;
+    const unique = [...new Set(tickers)].filter(Boolean);
+    try {
+      const { data } = await api.get(`/market/names?tickers=${unique.join(',')}`);
+      setNames(prev => ({ ...prev, ...data }));
+    } catch {}
+  };
 
   // ── Switch tab ────────────────────────────────────────────────────────────
   const switchTab = (tab: TabId) => {
@@ -416,6 +435,15 @@ export default function Orders() {
     },
     staleTime: Infinity,
   });
+
+  // ── Fetch company names when orders load ──────────────────────────────────
+  useEffect(() => {
+    fetchNames(openOrders.map(o => o.ticker));
+  }, [openOrders]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  useEffect(() => {
+    fetchNames(historyOrders.map(o => o.ticker));
+  }, [historyOrders]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // ── Cancel single order ───────────────────────────────────────────────────
   const handleCancel = useCallback(
@@ -609,6 +637,7 @@ export default function Orders() {
                 showActions={isOpen}
                 cancelingId={cancelingId}
                 onCancel={handleCancel}
+                names={names}
               />
             ) : (
               <EmptyState

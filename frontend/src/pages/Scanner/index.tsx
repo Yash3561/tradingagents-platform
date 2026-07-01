@@ -4,6 +4,7 @@ import { Radar, Play, RefreshCw, Loader2, TrendingUp, TrendingDown, Minus, Zap, 
 import { useNavigate } from "react-router-dom";
 import { api, WS_BASE } from "../../lib/api";
 import { cn } from "../../lib/cn";
+import { TermTooltip } from "../../components/ui/Tooltip";
 
 interface ScreenedStock {
   ticker: string; score: number; direction: "BUY" | "SELL" | "NEUTRAL";
@@ -111,6 +112,16 @@ export default function Scanner() {
   const [criteria, setCriteria] = useState<ScanCriteria>(DEFAULT_CRITERIA);
   const [showCriteria, setShowCriteria] = useState(false);
   const [history, setHistory] = useState<{ ticker: string; decision: string | null; confidence: number | null; created_at: string }[]>([]);
+  const [names, setNames] = useState<Record<string, { name: string; sector: string }>>({});
+
+  const fetchNames = async (tickers: string[]) => {
+    if (!tickers.length) return;
+    const unique = [...new Set(tickers)].filter(Boolean);
+    try {
+      const { data } = await api.get(`/market/names?tickers=${unique.join(',')}`);
+      setNames(prev => ({ ...prev, ...data }));
+    } catch {}
+  };
 
   const scanIdRef = useRef<string | null>(cache.scanId);
   const wsRef = useRef<WebSocket | null>(null);
@@ -190,6 +201,7 @@ export default function Scanner() {
       setScanSummary(msg as ScanSummary);
       if (msg.pre_screen) {
         setPrescreen(msg.pre_screen);
+        fetchNames(msg.pre_screen.map((s: ScreenedStock) => s.ticker));
         saveCache({ prescreen: msg.pre_screen });
       }
       setScanStatus("done");
@@ -244,6 +256,7 @@ export default function Scanner() {
     try {
       const { data } = await api.get("/agents/scan/prescreen");
       setPrescreen(data);
+      fetchNames(data.map((s: ScreenedStock) => s.ticker));
       setScanStatus("idle");
       saveCache({ prescreen: data, scanStatus: "idle" });
       addLog(`Pre-screen complete — ${data.length} stocks scored`);
@@ -577,15 +590,25 @@ export default function Scanner() {
                 <table className="w-full text-xs">
                   <thead>
                     <tr className="border-b border-border">
-                      {["Ticker","Dir","Score","Price","RSI","1W","1M","3M","MACD","Vol×",""].map(h => (
-                        <th key={h} className={cn("px-4 py-2 text-text-muted font-medium",
-                          ["Score"].includes(h) ? "text-left w-28" : "text-right",
-                          h === "Ticker" ? "text-left" : "",
-                          h === "Dir" ? "text-left" : "",
-                          h === "MACD" ? "text-center" : "",
-                          h === "" ? "text-right w-20" : ""
-                        )}>{h}</th>
-                      ))}
+                          <th className="px-4 py-2 text-text-muted font-medium text-left">Ticker</th>
+                      <th className="px-4 py-2 text-text-muted font-medium text-left">Dir</th>
+                      <th className="px-4 py-2 text-text-muted font-medium text-left w-28">
+                        Score <TermTooltip term="score" />
+                      </th>
+                      <th className="px-4 py-2 text-text-muted font-medium text-right">Price</th>
+                      <th className="px-4 py-2 text-text-muted font-medium text-right">
+                        RSI <TermTooltip term="rsi" />
+                      </th>
+                      <th className="px-4 py-2 text-text-muted font-medium text-right">
+                        1W <TermTooltip term="momentum" />
+                      </th>
+                      <th className="px-4 py-2 text-text-muted font-medium text-right">1M</th>
+                      <th className="px-4 py-2 text-text-muted font-medium text-right">3M</th>
+                      <th className="px-4 py-2 text-text-muted font-medium text-center">MACD</th>
+                      <th className="px-4 py-2 text-text-muted font-medium text-right">
+                        Vol× <TermTooltip term="vol_ratio" />
+                      </th>
+                      <th className="px-4 py-2 text-text-muted font-medium text-right w-20"></th>
                     </tr>
                   </thead>
                   <tbody>
@@ -602,6 +625,7 @@ export default function Scanner() {
                                 className="font-mono font-bold text-text-primary hover:text-accent transition-colors"
                                 title="View chart"
                               >{s.ticker}</button>
+                              <p className="text-2xs text-text-muted font-normal mt-0.5">{names[s.ticker]?.name ?? ''}</p>
                             </td>
                             <td className="px-4 py-2.5 text-left">
                               <span className={cn("inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-2xs font-semibold border", DIR_STYLE[s.direction])}>
