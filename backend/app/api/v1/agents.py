@@ -390,7 +390,7 @@ async def analyze_options(body: OptionsRequest, background_tasks: BackgroundTask
         from openai import OpenAI
         api_key = settings.nvidia_api_key or settings.anthropic_api_key
         base_url = settings.nvidia_base_url if settings.nvidia_api_key else None
-        client = OpenAI(api_key=api_key, base_url=base_url)
+        client = OpenAI(api_key=api_key, base_url=base_url, timeout=60.0)
         model_id = settings.llm_model or "deepseek-ai/deepseek-v4-flash"
 
         response = client.chat.completions.create(
@@ -404,13 +404,22 @@ async def analyze_options(body: OptionsRequest, background_tasks: BackgroundTask
                 "description": tool_schema["description"],
                 "parameters": tool_schema["input_schema"],
             }}],
-            tool_choice={"type": "function", "function": {"name": "options_recommendation"}},
+            tool_choice="required",
             max_tokens=1024,
             temperature=0.3,
         )
 
-        tool_call = response.choices[0].message.tool_calls[0]
-        result = _json.loads(tool_call.function.arguments)
+        msg = response.choices[0].message
+        if msg.tool_calls:
+            result = _json.loads(msg.tool_calls[0].function.arguments)
+        else:
+            # Fallback: parse JSON from content if tool_calls is empty
+            import re
+            raw = msg.content or ""
+            m = re.search(r'\{.*\}', raw, re.DOTALL)
+            if not m:
+                raise ValueError("No structured output from model")
+            result = _json.loads(m.group())
 
     except Exception as e:
         raise HTTPException(502, f"AI analysis failed: {e}")

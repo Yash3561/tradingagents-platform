@@ -103,11 +103,16 @@ export default function OptionsDesk() {
         ticker: t,
         strategy,
         expiry_preference: expiry,
-      });
+      }, { timeout: 90000 });
       setResult(data);
       setStatus("done");
     } catch (err: any) {
-      setErrorMsg(err?.response?.data?.detail ?? "Analysis failed. Check that the backend is running.");
+      const isTimeout = err?.code === "ECONNABORTED" || err?.message?.includes("timeout");
+      setErrorMsg(
+        isTimeout
+          ? "Request timed out — the AI model is busy. Try again in a moment."
+          : (err?.response?.data?.detail ?? "Analysis failed. Check that the backend is running.")
+      );
       setStatus("error");
     }
   };
