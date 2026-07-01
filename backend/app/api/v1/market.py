@@ -508,3 +508,117 @@ async def get_news(ticker: str, limit: int = 20):
         return await loop.run_in_executor(None, _yf_news)
     except Exception as e:
         raise HTTPException(500, f"News fetch failed: {e}")
+
+
+@router.get("/calendar")
+async def get_economic_calendar(tickers: str = ""):
+    """
+    Upcoming earnings for watchlist tickers + hardcoded macro events (FOMC, CPI, etc.)
+    tickers: comma-separated list e.g. "AAPL,MSFT,NVDA"
+    """
+    import asyncio
+    import datetime as dt
+
+    events = []
+
+    # ── Hardcoded macro calendar (upcoming 2026 dates) ─────────────────────
+    today = dt.date.today()
+    macro_events = [
+        # FOMC meetings 2026
+        {"date": "2026-01-29", "type": "FOMC", "title": "FOMC Rate Decision", "impact": "HIGH", "description": "Federal Reserve interest rate decision and press conference"},
+        {"date": "2026-03-19", "type": "FOMC", "title": "FOMC Rate Decision", "impact": "HIGH", "description": "Federal Reserve interest rate decision and press conference"},
+        {"date": "2026-05-07", "type": "FOMC", "title": "FOMC Rate Decision", "impact": "HIGH", "description": "Federal Reserve interest rate decision and press conference"},
+        {"date": "2026-06-18", "type": "FOMC", "title": "FOMC Rate Decision", "impact": "HIGH", "description": "Federal Reserve interest rate decision and press conference"},
+        {"date": "2026-07-30", "type": "FOMC", "title": "FOMC Rate Decision", "impact": "HIGH", "description": "Federal Reserve interest rate decision and press conference"},
+        {"date": "2026-09-17", "type": "FOMC", "title": "FOMC Rate Decision", "impact": "HIGH", "description": "Federal Reserve interest rate decision and press conference"},
+        {"date": "2026-11-05", "type": "FOMC", "title": "FOMC Rate Decision", "impact": "HIGH", "description": "Federal Reserve interest rate decision and press conference"},
+        {"date": "2026-12-17", "type": "FOMC", "title": "FOMC Rate Decision", "impact": "HIGH", "description": "Federal Reserve interest rate decision and press conference"},
+        # CPI releases 2026 (approximate — 2nd or 3rd week each month)
+        {"date": "2026-01-15", "type": "CPI", "title": "CPI Inflation Report", "impact": "HIGH", "description": "Consumer Price Index — monthly inflation reading"},
+        {"date": "2026-02-12", "type": "CPI", "title": "CPI Inflation Report", "impact": "HIGH", "description": "Consumer Price Index — monthly inflation reading"},
+        {"date": "2026-03-12", "type": "CPI", "title": "CPI Inflation Report", "impact": "HIGH", "description": "Consumer Price Index — monthly inflation reading"},
+        {"date": "2026-04-14", "type": "CPI", "title": "CPI Inflation Report", "impact": "HIGH", "description": "Consumer Price Index — monthly inflation reading"},
+        {"date": "2026-05-13", "type": "CPI", "title": "CPI Inflation Report", "impact": "HIGH", "description": "Consumer Price Index — monthly inflation reading"},
+        {"date": "2026-06-11", "type": "CPI", "title": "CPI Inflation Report", "impact": "HIGH", "description": "Consumer Price Index — monthly inflation reading"},
+        {"date": "2026-07-15", "type": "CPI", "title": "CPI Inflation Report", "impact": "HIGH", "description": "Consumer Price Index — monthly inflation reading"},
+        {"date": "2026-08-13", "type": "CPI", "title": "CPI Inflation Report", "impact": "HIGH", "description": "Consumer Price Index — monthly inflation reading"},
+        {"date": "2026-09-11", "type": "CPI", "title": "CPI Inflation Report", "impact": "HIGH", "description": "Consumer Price Index — monthly inflation reading"},
+        {"date": "2026-10-14", "type": "CPI", "title": "CPI Inflation Report", "impact": "HIGH", "description": "Consumer Price Index — monthly inflation reading"},
+        {"date": "2026-11-13", "type": "CPI", "title": "CPI Inflation Report", "impact": "HIGH", "description": "Consumer Price Index — monthly inflation reading"},
+        {"date": "2026-12-11", "type": "CPI", "title": "CPI Inflation Report", "impact": "HIGH", "description": "Consumer Price Index — monthly inflation reading"},
+        # NFP (Non-Farm Payrolls) — first Friday each month
+        {"date": "2026-01-09", "type": "NFP", "title": "Non-Farm Payrolls", "impact": "HIGH", "description": "Monthly jobs report — most market-moving macro event"},
+        {"date": "2026-02-06", "type": "NFP", "title": "Non-Farm Payrolls", "impact": "HIGH", "description": "Monthly jobs report — most market-moving macro event"},
+        {"date": "2026-03-06", "type": "NFP", "title": "Non-Farm Payrolls", "impact": "HIGH", "description": "Monthly jobs report — most market-moving macro event"},
+        {"date": "2026-04-03", "type": "NFP", "title": "Non-Farm Payrolls", "impact": "HIGH", "description": "Monthly jobs report — most market-moving macro event"},
+        {"date": "2026-05-01", "type": "NFP", "title": "Non-Farm Payrolls", "impact": "HIGH", "description": "Monthly jobs report — most market-moving macro event"},
+        {"date": "2026-06-05", "type": "NFP", "title": "Non-Farm Payrolls", "impact": "HIGH", "description": "Monthly jobs report — most market-moving macro event"},
+        {"date": "2026-07-10", "type": "NFP", "title": "Non-Farm Payrolls", "impact": "HIGH", "description": "Monthly jobs report — most market-moving macro event"},
+        {"date": "2026-08-07", "type": "NFP", "title": "Non-Farm Payrolls", "impact": "HIGH", "description": "Monthly jobs report — most market-moving macro event"},
+        {"date": "2026-09-04", "type": "NFP", "title": "Non-Farm Payrolls", "impact": "HIGH", "description": "Monthly jobs report — most market-moving macro event"},
+        {"date": "2026-10-02", "type": "NFP", "title": "Non-Farm Payrolls", "impact": "HIGH", "description": "Monthly jobs report — most market-moving macro event"},
+        {"date": "2026-11-06", "type": "NFP", "title": "Non-Farm Payrolls", "impact": "HIGH", "description": "Monthly jobs report — most market-moving macro event"},
+        {"date": "2026-12-04", "type": "NFP", "title": "Non-Farm Payrolls", "impact": "HIGH", "description": "Monthly jobs report — most market-moving macro event"},
+    ]
+
+    # Only include events from today onwards (next 90 days)
+    cutoff = today + dt.timedelta(days=90)
+    for e in macro_events:
+        event_date = dt.date.fromisoformat(e["date"])
+        if today <= event_date <= cutoff:
+            events.append({**e, "ticker": None})
+
+    # ── Earnings dates from yfinance ───────────────────────────────────────
+    ticker_list = [t.strip().upper() for t in tickers.split(",") if t.strip()] if tickers else []
+
+    if ticker_list:
+        def _fetch_earnings(ticker_list):
+            import yfinance as yf
+            results = []
+            for sym in ticker_list:
+                try:
+                    tk = yf.Ticker(sym)
+                    cal = tk.calendar
+                    if cal is None:
+                        continue
+                    # yfinance returns a dict or DataFrame depending on version
+                    if hasattr(cal, 'to_dict'):
+                        cal = cal.to_dict()
+                    # Earnings Date can be a list or single value
+                    earnings_dates = cal.get("Earnings Date", [])
+                    if not isinstance(earnings_dates, list):
+                        earnings_dates = [earnings_dates]
+                    for ed in earnings_dates:
+                        if ed is None:
+                            continue
+                        if hasattr(ed, 'date'):
+                            ed = ed.date()
+                        elif isinstance(ed, str):
+                            ed = dt.date.fromisoformat(ed[:10])
+                        if today <= ed <= cutoff:
+                            # Get EPS estimate
+                            eps_est = cal.get("EPS Estimate")
+                            if isinstance(eps_est, (list, )):
+                                eps_est = eps_est[0] if eps_est else None
+                            results.append({
+                                "date": ed.isoformat(),
+                                "type": "EARNINGS",
+                                "title": f"{sym} Earnings",
+                                "ticker": sym,
+                                "impact": "MEDIUM",
+                                "description": f"Quarterly earnings report. EPS estimate: {f'${eps_est:.2f}' if eps_est else 'N/A'}",
+                            })
+                except Exception:
+                    pass
+            return results
+
+        loop = asyncio.get_running_loop()
+        try:
+            earnings = await loop.run_in_executor(None, _fetch_earnings, ticker_list)
+            events.extend(earnings)
+        except Exception:
+            pass
+
+    # Sort by date
+    events.sort(key=lambda x: x["date"])
+    return events

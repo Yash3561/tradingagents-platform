@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef } from "react";
 import { motion, AnimatePresence } from "framer-motion";
-import { Radar, Play, RefreshCw, Loader2, TrendingUp, TrendingDown, Minus, Zap, CheckCircle2, XCircle, Clock, BarChart2, Brain } from "lucide-react";
+import { Radar, Play, RefreshCw, Loader2, TrendingUp, TrendingDown, Minus, Zap, CheckCircle2, XCircle, Clock, BarChart2, Brain, SlidersHorizontal, ChevronDown } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 import { api, WS_BASE } from "../../lib/api";
 import { cn } from "../../lib/cn";
@@ -17,6 +17,16 @@ interface ScanSummary {
   status: string; screened: number; candidates_analyzed: number;
   trades_placed: number; duration_s: number; results: ScanResult[]; pre_screen: ScreenedStock[];
 }
+
+// ── Scan criteria ─────────────────────────────────────────────────────────────
+interface ScanCriteria {
+  rsi_min?: number; rsi_max?: number;
+  min_volume_ratio?: number; min_score?: number;
+  directions?: string[];
+  above_ma50?: boolean; above_ma200?: boolean; macd_bullish?: boolean;
+}
+
+const DEFAULT_CRITERIA: ScanCriteria = {};
 
 // ── LocalStorage persistence ──────────────────────────────────────────────────
 const CACHE_KEY = "scanner_state_v2";
@@ -98,6 +108,8 @@ export default function Scanner() {
   const [activeTicker, setActiveTicker] = useState<string | null>(null);
   const [scanLog, setScanLog] = useState<string[]>(cache.scanLog);
   const [maxCandidates, setMaxCandidates] = useState(cache.maxCandidates);
+  const [criteria, setCriteria] = useState<ScanCriteria>(DEFAULT_CRITERIA);
+  const [showCriteria, setShowCriteria] = useState(false);
   const [history, setHistory] = useState<{ ticker: string; decision: string | null; confidence: number | null; created_at: string }[]>([]);
 
   const scanIdRef = useRef<string | null>(cache.scanId);
@@ -254,7 +266,10 @@ export default function Scanner() {
     addLog("Step 1: Technical pre-screen (free, ~10s)");
 
     try {
-      const { data } = await api.post("/agents/scan", { max_candidates: maxCandidates });
+      const { data } = await api.post("/agents/scan", {
+        max_candidates: maxCandidates,
+        criteria: Object.keys(criteria).length > 0 ? criteria : undefined,
+      });
       const scanId = data.scan_id;
       scanIdRef.current = scanId;
 
@@ -363,6 +378,30 @@ export default function Scanner() {
             : <><Zap size={16} /> Full Scan + Trade</>}
         </button>
 
+          <button onClick={() => setShowCriteria(v => !v)}
+          className={cn(
+            "flex items-center gap-2 px-3 py-2 rounded-lg text-sm border transition-all",
+            showCriteria || Object.keys(criteria).length > 0
+              ? "border-accent/50 text-accent bg-accent/10"
+              : "border-border text-text-muted hover:text-text-primary bg-bg-elevated"
+          )}>
+          <SlidersHorizontal size={14} />
+          Filters
+          {Object.keys(criteria).length > 0 && (
+            <span className="ml-1 px-1.5 py-0.5 rounded-full text-2xs bg-accent text-white font-bold">
+              {Object.keys(criteria).length}
+            </span>
+          )}
+          <ChevronDown size={12} className={cn("transition-transform", showCriteria && "rotate-180")} />
+        </button>
+
+        {showCriteria && (
+          <button onClick={() => setCriteria(DEFAULT_CRITERIA)}
+            className="text-xs text-text-muted hover:text-loss transition-colors">
+            Clear filters
+          </button>
+        )}
+
         {scanStatus !== "idle" && (
           <button onClick={handleReset}
             className="p-2 rounded-lg border border-border hover:bg-bg-elevated text-text-muted hover:text-text-primary transition-colors"
@@ -371,6 +410,100 @@ export default function Scanner() {
           </button>
         )}
       </div>
+
+      {/* Advanced Filters Panel */}
+      <AnimatePresence>
+        {showCriteria && (
+          <motion.div initial={{ opacity: 0, height: 0 }} animate={{ opacity: 1, height: "auto" }}
+            exit={{ opacity: 0, height: 0 }} transition={{ duration: 0.2 }}
+            className="card p-5 overflow-hidden">
+            <p className="text-xs font-semibold text-text-muted uppercase tracking-wide mb-4">
+              Scan Criteria — only stocks matching ALL selected filters pass pre-screen
+            </p>
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+              {/* RSI Range */}
+              <div>
+                <label className="metric-label block mb-1.5">RSI Min</label>
+                <input type="number" min={0} max={100} placeholder="e.g. 20"
+                  value={criteria.rsi_min ?? ""}
+                  onChange={e => setCriteria(c => ({ ...c, rsi_min: e.target.value ? +e.target.value : undefined }))}
+                  className="w-full px-3 py-2 bg-bg-elevated border border-border rounded-lg text-sm text-text-primary
+                             focus:outline-none focus:border-accent transition-colors font-mono" />
+              </div>
+              <div>
+                <label className="metric-label block mb-1.5">RSI Max</label>
+                <input type="number" min={0} max={100} placeholder="e.g. 35"
+                  value={criteria.rsi_max ?? ""}
+                  onChange={e => setCriteria(c => ({ ...c, rsi_max: e.target.value ? +e.target.value : undefined }))}
+                  className="w-full px-3 py-2 bg-bg-elevated border border-border rounded-lg text-sm text-text-primary
+                             focus:outline-none focus:border-accent transition-colors font-mono" />
+              </div>
+              {/* Volume ratio */}
+              <div>
+                <label className="metric-label block mb-1.5">Min Volume ×</label>
+                <input type="number" min={0} step={0.1} placeholder="e.g. 1.5"
+                  value={criteria.min_volume_ratio ?? ""}
+                  onChange={e => setCriteria(c => ({ ...c, min_volume_ratio: e.target.value ? +e.target.value : undefined }))}
+                  className="w-full px-3 py-2 bg-bg-elevated border border-border rounded-lg text-sm text-text-primary
+                             focus:outline-none focus:border-accent transition-colors font-mono" />
+              </div>
+              {/* Min score */}
+              <div>
+                <label className="metric-label block mb-1.5">Min Score</label>
+                <input type="number" min={0} max={100} placeholder="e.g. 60"
+                  value={criteria.min_score ?? ""}
+                  onChange={e => setCriteria(c => ({ ...c, min_score: e.target.value ? +e.target.value : undefined }))}
+                  className="w-full px-3 py-2 bg-bg-elevated border border-border rounded-lg text-sm text-text-primary
+                             focus:outline-none focus:border-accent transition-colors font-mono" />
+              </div>
+            </div>
+            <div className="flex flex-wrap gap-3 mt-4">
+              {/* Direction */}
+              <div>
+                <label className="metric-label block mb-1.5">Direction</label>
+                <div className="flex gap-2">
+                  {["BUY","SELL"].map(dir => (
+                    <button key={dir} onClick={() => setCriteria(c => {
+                      const cur = c.directions ?? [];
+                      const next = cur.includes(dir) ? cur.filter(d => d !== dir) : [...cur, dir];
+                      return { ...c, directions: next.length ? next : undefined };
+                    })} className={cn(
+                      "px-3 py-1.5 rounded-lg text-xs font-semibold border transition-all",
+                      (criteria.directions ?? []).includes(dir)
+                        ? dir === "BUY" ? "bg-gain/20 border-gain/50 text-gain" : "bg-loss/20 border-loss/50 text-loss"
+                        : "bg-bg-elevated border-border text-text-muted hover:border-accent/50"
+                    )}>{dir}</button>
+                  ))}
+                </div>
+              </div>
+              {/* Boolean filters */}
+              {([
+                ["above_ma50", "Above MA50"],
+                ["above_ma200", "Above MA200"],
+                ["macd_bullish", "MACD Bullish"],
+              ] as const).map(([key, label]) => (
+                <div key={key}>
+                  <label className="metric-label block mb-1.5">{label}</label>
+                  <div className="flex gap-2">
+                    {["Yes","No","Any"].map(v => (
+                      <button key={v} onClick={() => setCriteria(c => ({
+                        ...c, [key]: v === "Any" ? undefined : v === "Yes"
+                      }))} className={cn(
+                        "px-2.5 py-1.5 rounded-lg text-xs border transition-all",
+                        (v === "Any" && criteria[key] === undefined) ||
+                        (v === "Yes" && criteria[key] === true) ||
+                        (v === "No" && criteria[key] === false)
+                          ? "bg-accent/20 border-accent/50 text-accent font-semibold"
+                          : "bg-bg-elevated border-border text-text-muted hover:border-accent/30"
+                      )}>{v}</button>
+                    ))}
+                  </div>
+                </div>
+              ))}
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
 
       <div className="grid grid-cols-3 gap-4">
         {/* Pre-screen results */}

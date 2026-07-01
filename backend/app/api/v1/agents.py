@@ -121,11 +121,26 @@ async def get_agent_contract(agent_name: str):
         raise HTTPException(404, f"No contract for agent: '{agent_name}'")
 
 
+class ScanCriteria(BaseModel):
+    """Custom filter criteria applied during pre-screen. None = no filter."""
+    rsi_min: float | None = None          # e.g. 20 — only RSI above this
+    rsi_max: float | None = None          # e.g. 35 — only oversold stocks
+    min_volume_ratio: float | None = None # e.g. 1.5 — volume spike minimum
+    min_score: float | None = None        # e.g. 60 — minimum opportunity score
+    directions: list[str] | None = None  # ["BUY"] or ["SELL"] or ["BUY","SELL"]
+    above_ma50: bool | None = None        # True = only stocks above 50d MA
+    above_ma200: bool | None = None       # True = only stocks above 200d MA
+    macd_bullish: bool | None = None      # True = only MACD bullish crossover
+    min_mom_1w: float | None = None       # e.g. 2.0 — min 1-week momentum %
+    max_mom_1w: float | None = None       # e.g. -2.0 — max (for oversold scans)
+
+
 class ScanRequest(BaseModel):
     model: str = "deepseek-ai/deepseek-v4-flash"
     senior_model: str | None = "deepseek-ai/deepseek-v4-flash"
     max_candidates: int = 8
     watchlist: list[str] | None = None
+    criteria: ScanCriteria | None = None
 
 
 @router.post("/scan")
@@ -149,6 +164,7 @@ async def trigger_scan(body: ScanRequest, background_tasks: BackgroundTasks):
                 watchlist=body.watchlist,
                 max_candidates=body.max_candidates,
                 scan_id=scan_id,
+                criteria=body.criteria.model_dump(exclude_none=True) if body.criteria else None,
             )
             await ws_manager.broadcast(f"scan:{scan_id}", {
                 "type": "scan_completed",

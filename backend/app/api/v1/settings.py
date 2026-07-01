@@ -51,7 +51,28 @@ async def upsert_settings(body: dict, db: AsyncSession = Depends(get_db)):
         updated.append(key)
 
     await db.commit()
-    return {"ok": True, "updated": updated}
+
+    # Hot-reload: if API keys were updated, apply to env + bust settings cache
+    import os
+    from app.config import get_settings
+    API_KEY_ENV_MAP = {
+        "alpaca_api_key": "ALPACA_API_KEY",
+        "alpaca_api_secret": "ALPACA_API_SECRET",
+        "alpaca_base_url": "ALPACA_BASE_URL",
+        "anthropic_api_key": "ANTHROPIC_API_KEY",
+        "nvidia_api_key": "NVIDIA_API_KEY",
+        "llm_model": "LLM_MODEL",
+    }
+    cache_busted = False
+    for key, val in body.items():
+        env_var = API_KEY_ENV_MAP.get(key)
+        if env_var and isinstance(val, str) and val.strip():
+            os.environ[env_var] = val.strip()
+            cache_busted = True
+    if cache_busted:
+        get_settings.cache_clear()
+
+    return {"ok": True, "updated": updated, "hot_reloaded": cache_busted}
 
 
 @router.get("/{key}")

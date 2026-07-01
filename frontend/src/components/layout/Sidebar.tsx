@@ -18,6 +18,7 @@ import {
   BookMarked,
   Newspaper,
   ClipboardList,
+  CalendarDays,
 } from "lucide-react";
 import { cn } from "../../lib/cn";
 import { getUser } from "../../lib/auth";
@@ -30,6 +31,7 @@ const NAV_GROUPS = [
       { to: "/dashboard", icon: LayoutDashboard, label: "Dashboard" },
       { to: "/watchlist", icon: BookMarked, label: "Watchlist" },
       { to: "/news", icon: Newspaper, label: "News" },
+      { to: "/calendar", icon: CalendarDays, label: "Calendar" },
       { to: "/scanner", icon: Radar, label: "Scanner" },
       { to: "/agents", icon: BrainCircuit, label: "Agent Hub" },
       { to: "/options", icon: TrendingUp, label: "Options Desk" },

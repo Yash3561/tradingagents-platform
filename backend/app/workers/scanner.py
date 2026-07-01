@@ -194,13 +194,46 @@ def _screen_ticker(ticker: str) -> dict | None:
         return None
 
 
-def _run_pre_screen(watchlist: list[str]) -> list[dict]:
-    """Screen all tickers, return sorted by opportunity score."""
+def _apply_criteria(results: list[dict], criteria: dict | None) -> list[dict]:
+    """Filter screened results by user-defined criteria."""
+    if not criteria:
+        return results
+    filtered = []
+    for r in results:
+        if criteria.get("rsi_min") is not None and r["rsi"] < criteria["rsi_min"]:
+            continue
+        if criteria.get("rsi_max") is not None and r["rsi"] > criteria["rsi_max"]:
+            continue
+        if criteria.get("min_volume_ratio") is not None and r["vol_ratio"] < criteria["min_volume_ratio"]:
+            continue
+        if criteria.get("min_score") is not None and r["score"] < criteria["min_score"]:
+            continue
+        if criteria.get("directions") and r["direction"] not in criteria["directions"]:
+            continue
+        if criteria.get("above_ma50") is not None and r["above_ma50"] != criteria["above_ma50"]:
+            continue
+        if criteria.get("above_ma200") is not None and r["above_ma200"] != criteria["above_ma200"]:
+            continue
+        if criteria.get("macd_bullish") is not None and r["macd_bullish"] != criteria["macd_bullish"]:
+            continue
+        if criteria.get("min_mom_1w") is not None and r["mom_1w_pct"] < criteria["min_mom_1w"]:
+            continue
+        if criteria.get("max_mom_1w") is not None and r["mom_1w_pct"] > criteria["max_mom_1w"]:
+            continue
+        filtered.append(r)
+    return filtered
+
+
+def _run_pre_screen(watchlist: list[str], criteria: dict | None = None) -> list[dict]:
+    """Screen all tickers, apply optional criteria, return sorted by opportunity score."""
     results = []
     for ticker in watchlist:
         r = _screen_ticker(ticker)
         if r and r["direction"] != "NEUTRAL":
             results.append(r)
+
+    # Apply custom criteria before scoring sort
+    results = _apply_criteria(results, criteria)
 
     # Sort: BUYs by highest score, SELLs by lowest score
     buys = sorted([r for r in results if r["direction"] == "BUY"],
@@ -227,6 +260,7 @@ async def run_market_scan(
     max_candidates: int | None = None,
     vix_override: float | None = None,
     scan_id: str | None = None,
+    criteria: dict | None = None,
 ) -> dict:
     """
     Full market scan:
@@ -311,7 +345,7 @@ async def run_market_scan(
 
     # Step 1: Pre-screen (fast, free)
     loop = asyncio.get_running_loop()
-    candidates = await loop.run_in_executor(None, _run_pre_screen, scan_watchlist)
+    candidates = await loop.run_in_executor(None, _run_pre_screen, scan_watchlist, criteria)
 
     # Apply VIX gate — drop all BUY candidates when volatility is extreme
     if vix_gate:
