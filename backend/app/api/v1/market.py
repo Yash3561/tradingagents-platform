@@ -441,3 +441,70 @@ async def get_ticker_stats(ticker: str):
         return await loop.run_in_executor(None, _fetch)
     except Exception as e:
         raise HTTPException(500, f"Failed to fetch stats: {e}")
+
+
+@router.get("/news/{ticker}")
+async def get_news(ticker: str, limit: int = 20):
+    """
+    Recent news for a ticker via Alpaca News API.
+    Falls back to yfinance news if Alpaca not configured.
+    """
+    import json
+
+    ticker = ticker.upper()
+
+    # Try Alpaca News API first (better quality, more structured)
+    if settings.alpaca_api_key:
+        try:
+            async with httpx.AsyncClient(timeout=8.0) as client:
+                r = await client.get(
+                    "https://data.alpaca.markets/v1beta1/news",
+                    headers={
+                        "APCA-API-KEY-ID": settings.alpaca_api_key,
+                        "APCA-API-SECRET-KEY": settings.alpaca_api_secret,
+                    },
+                    params={"symbols": ticker, "limit": limit, "sort": "desc"},
+                )
+            if r.status_code == 200:
+                items = r.json().get("news", [])
+                return [
+                    {
+                        "id": str(n.get("id", "")),
+                        "headline": n.get("headline", ""),
+                        "summary": n.get("summary", ""),
+                        "source": n.get("source", ""),
+                        "url": n.get("url", ""),
+                        "published_at": n.get("created_at", ""),
+                        "tickers": n.get("symbols", []),
+                        "images": n.get("images", []),
+                    }
+                    for n in items
+                ]
+        except Exception:
+            pass
+
+    # Fallback: yfinance news
+    def _yf_news():
+        import yfinance as yf
+        tk = yf.Ticker(ticker)
+        raw = tk.news or []
+        out = []
+        for n in raw[:limit]:
+            content = n.get("content", {})
+            out.append({
+                "id": n.get("id", ""),
+                "headline": content.get("title", n.get("title", "")),
+                "summary": content.get("summary", ""),
+                "source": content.get("provider", {}).get("displayName", ""),
+                "url": content.get("canonicalUrl", {}).get("url", ""),
+                "published_at": content.get("pubDate", ""),
+                "tickers": [ticker],
+                "images": [],
+            })
+        return out
+
+    loop = asyncio.get_running_loop()
+    try:
+        return await loop.run_in_executor(None, _yf_news)
+    except Exception as e:
+        raise HTTPException(500, f"News fetch failed: {e}")

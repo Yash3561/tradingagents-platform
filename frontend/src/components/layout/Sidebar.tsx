@@ -15,6 +15,9 @@ import {
   Brain,
   Bell,
   BarChart2,
+  BookMarked,
+  Newspaper,
+  ClipboardList,
 } from "lucide-react";
 import { cn } from "../../lib/cn";
 import { getUser } from "../../lib/auth";
@@ -25,6 +28,8 @@ const NAV_GROUPS = [
     items: [
       { to: "/markets", icon: BarChart2, label: "Markets" },
       { to: "/dashboard", icon: LayoutDashboard, label: "Dashboard" },
+      { to: "/watchlist", icon: BookMarked, label: "Watchlist" },
+      { to: "/news", icon: Newspaper, label: "News" },
       { to: "/scanner", icon: Radar, label: "Scanner" },
       { to: "/agents", icon: BrainCircuit, label: "Agent Hub" },
       { to: "/options", icon: TrendingUp, label: "Options Desk" },
@@ -35,6 +40,7 @@ const NAV_GROUPS = [
     items: [
       { to: "/portfolio", icon: PieChart, label: "Portfolio" },
       { to: "/trades", icon: ScrollText, label: "Trade History" },
+      { to: "/orders", icon: ClipboardList, label: "Orders" },
       { to: "/alerts", icon: Bell, label: "Alerts" },
       { to: "/backtest", icon: FlaskConical, label: "Backtesting" },
     ],

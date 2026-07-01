@@ -4,6 +4,7 @@ from app.api.v1 import notifications, activity
 from app.api.v1 import auth
 from app.api.v1 import analytics
 from app.api.v1 import alerts
+from app.api.v1 import orders
 
 api_router = APIRouter()
 
@@ -12,6 +13,7 @@ api_router.include_router(dashboard.router, prefix="/dashboard", tags=["dashboar
 api_router.include_router(agents.router, prefix="/agents", tags=["agents"])
 api_router.include_router(portfolio.router, prefix="/portfolio", tags=["portfolio"])
 api_router.include_router(trades.router, prefix="/trades", tags=["trades"])
+api_router.include_router(orders.router, prefix="/orders", tags=["orders"])
 api_router.include_router(market.router, prefix="/market", tags=["market"])
 api_router.include_router(backtest.router, prefix="/backtest", tags=["backtest"])
 api_router.include_router(settings.router, prefix="/settings", tags=["settings"])

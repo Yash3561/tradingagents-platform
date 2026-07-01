@@ -14,6 +14,9 @@ import OptionsDesk from "./pages/Options";
 import Analytics from "./pages/Analytics";
 import Alerts from "./pages/Alerts";
 import Markets from "./pages/Markets";
+import Orders from "./pages/Orders";
+import Watchlist from "./pages/Watchlist";
+import News from "./pages/News";
 import Login from "./pages/Login";
 import Signup from "./pages/Signup";
 import { isAuthenticated, clearAuth } from "./lib/auth";
@@ -52,6 +55,9 @@ export default function App() {
               <Route path="/analytics" element={<Analytics />} />
               <Route path="/alerts" element={<Alerts />} />
               <Route path="/markets" element={<Markets />} />
+              <Route path="/orders" element={<Orders />} />
+              <Route path="/watchlist" element={<Watchlist />} />
+              <Route path="/news" element={<News />} />
               <Route path="/settings" element={<Settings />} />
               <Route path="*" element={<Navigate to="/dashboard" replace />} />
             </Routes>
