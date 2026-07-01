@@ -46,8 +46,14 @@ function debateLogToEntries(log: any[], completedAt?: string | null): DebateEntr
 
 export default function AgentHub() {
   const [searchParams] = useSearchParams();
-  const [ticker, setTicker] = useState(searchParams.get("ticker")?.toUpperCase() || "AAPL");
+  const urlTicker = searchParams.get("ticker")?.toUpperCase() || "";
+  const [ticker, setTicker] = useState(urlTicker || "AAPL");
   const [debateRounds, setDebateRounds] = useState(2);
+
+  // Sync ticker input when navigating here from Markets with a different ticker
+  useEffect(() => {
+    if (urlTicker && urlTicker !== ticker) setTicker(urlTicker);
+  }, [urlTicker]); // eslint-disable-line react-hooks/exhaustive-deps
   const [status, setStatus] = useState<"idle" | "running" | "done" | "error">("idle");
   const [flowState, setFlowState] = useState<FlowState>(DEFAULT_FLOW);
   const [entries, setEntries] = useState<DebateEntry[]>([]);
