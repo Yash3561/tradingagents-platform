@@ -54,7 +54,10 @@ function useScanRunning() {
         const raw = localStorage.getItem("scanner_state_v2");
         if (!raw) { setRunning(false); return; }
         const s = JSON.parse(raw);
-        setRunning(s.scanStatus === "scanning" || s.scanStatus === "prescreening");
+        const isActive = s.scanStatus === "scanning" || s.scanStatus === "prescreening";
+        // Treat as stale if started more than 30 min ago
+        const stale = s.startedAt && (Date.now() - new Date(s.startedAt).getTime()) > 30 * 60 * 1000;
+        setRunning(isActive && !stale);
       } catch { setRunning(false); }
     };
     check();

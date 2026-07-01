@@ -77,7 +77,7 @@ function SliderField({
           onChange={e => onChange(parseFloat(e.target.value))}
           className="w-36 accent-accent cursor-pointer"
         />
-        <span className="text-sm font-mono font-semibold text-text-primary w-20 text-right">
+        <span className="text-sm font-mono font-semibold text-text-primary w-36 text-right whitespace-nowrap">
           {format(value)}
         </span>
       </div>
@@ -361,7 +361,7 @@ export default function Settings() {
           description="% of portfolio per trade"
           value={settings.position_size_default}
           min={1} max={10} step={0.5}
-          format={v => `${v}% of portfolio per trade`}
+          format={v => `${v}% per trade`}
           onChange={v => update("position_size_default", v)}
         />
         <SliderField
@@ -369,7 +369,7 @@ export default function Settings() {
           description="Larger size when AI conviction is high"
           value={settings.position_size_high_conf}
           min={1} max={15} step={0.5}
-          format={v => `${v}% of portfolio per trade`}
+          format={v => `${v}% per trade`}
           onChange={v => update("position_size_high_conf", v)}
         />
         <SliderField
@@ -377,7 +377,7 @@ export default function Settings() {
           description="Auto-close position if it falls this far"
           value={settings.stop_loss_pct}
           min={3} max={15} step={0.5}
-          format={v => `Auto-close if position down ${v}%`}
+          format={v => `−${v}% stop`}
           onChange={v => update("stop_loss_pct", v)}
         />
         <SliderField
@@ -385,7 +385,7 @@ export default function Settings() {
           description="Auto-close position at this gain"
           value={settings.take_profit_pct}
           min={5} max={50} step={1}
-          format={v => `Auto-close if position up ${v}%`}
+          format={v => `+${v}% target`}
           onChange={v => update("take_profit_pct", v)}
         />
         <SliderField
@@ -393,7 +393,7 @@ export default function Settings() {
           description="Hard cap — no single stock can exceed this"
           value={settings.max_single_position}
           min={10} max={30} step={1}
-          format={v => `Max ${v}% in any one stock`}
+          format={v => `${v}% max`}
           onChange={v => update("max_single_position", v)}
         />
         <SliderField
@@ -401,7 +401,7 @@ export default function Settings() {
           description="Pause trading if portfolio falls this much today"
           value={settings.daily_loss_limit}
           min={1} max={10} step={0.5}
-          format={v => `Pause trading if portfolio down ${v}% today`}
+          format={v => `−${v}% halts trading`}
           onChange={v => update("daily_loss_limit", v)}
         />
       </Section>
