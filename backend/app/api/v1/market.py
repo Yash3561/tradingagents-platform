@@ -624,6 +624,13 @@ async def get_economic_calendar(tickers: str = ""):
     return events
 
 
+@router.get("/regime")
+async def get_regime():
+    """Current market regime — BULL_TRENDING, BEAR_TRENDING, HIGH_VOLATILITY, SIDEWAYS."""
+    from app.workers.regime_detector import get_market_regime
+    return await get_market_regime()
+
+
 @router.get("/names")
 async def get_ticker_names(tickers: str = ""):
     """

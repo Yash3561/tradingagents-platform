@@ -52,6 +52,7 @@ const NAV_GROUPS = [
     label: "Intelligence",
     items: [
       { to: "/analytics", icon: Brain, label: "Analytics" },
+      { to: "/strategy", icon: Zap, label: "Strategy" },
       { to: "/learn", icon: BookOpen, label: "Learn" },
       { to: "/settings", icon: Settings, label: "Settings" },
     ],

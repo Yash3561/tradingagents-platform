@@ -107,6 +107,45 @@ def _screen_ticker(ticker: str) -> dict | None:
         signal = float(close.ewm(span=9, adjust=False).mean().iloc[-1])
         macd_bullish = macd > signal
 
+        # ── Multi-factor model (world-class additions) ─────────────────
+
+        # ATR-14 for dynamic stop sizing (Average True Range)
+        high_s = hist["High"]
+        low_s = hist["Low"]
+        atr_14 = float((high_s.tail(14) - low_s.tail(14)).mean())
+        atr_pct = atr_14 / current * 100  # ATR as % of price
+
+        # Bollinger Bands (20-day, 2 std)
+        ma20_std = float(close.tail(20).std())
+        bb_upper = ma20 + 2 * ma20_std
+        bb_lower = ma20 - 2 * ma20_std
+        bb_position = (current - bb_lower) / (bb_upper - bb_lower) if (bb_upper - bb_lower) > 0 else 0.5
+        # 0 = at lower band (oversold), 1 = at upper band (overbought)
+
+        # Stochastic %K (14-day)
+        lowest_14 = float(low_s.tail(14).min())
+        highest_14 = float(high_s.tail(14).max())
+        stoch_k = (current - lowest_14) / (highest_14 - lowest_14) * 100 if (highest_14 - lowest_14) > 0 else 50
+
+        # Rate of Change (ROC-10)
+        roc_10 = (current / float(close.iloc[-11]) - 1) * 100 if len(close) >= 11 else 0
+
+        # Volume trend (is volume increasing over last 5 days vs prior 5 days?)
+        vol_recent = float(volume.tail(5).mean())
+        vol_prior = float(volume.iloc[-10:-5].mean()) if len(volume) >= 10 else vol_recent
+        vol_trend_up = vol_recent > vol_prior * 1.1
+
+        # Mean reversion signal: RSI < 35 AND near lower Bollinger Band
+        mean_reversion_setup = rsi < 35 and bb_position < 0.2
+        # Momentum breakout signal: price near 52W high AND strong volume
+        high_52w = float(close.max())
+        near_52w_high = current > high_52w * 0.95
+
+        # PEAD proxy: check if there was a large single-day move recently (earnings surprise proxy)
+        recent_returns = close.pct_change().tail(5)
+        big_move = float(recent_returns.abs().max()) * 100  # biggest 1-day move in last 5 days
+        pead_signal = big_move > 5  # >5% single-day move = likely earnings/catalyst
+
         # ── Scoring (0-100) ──────────────────────────────────────────────────
         score = 50.0
         direction = "NEUTRAL"
@@ -173,6 +212,48 @@ def _screen_ticker(ticker: str) -> dict | None:
         else:
             direction = "NEUTRAL"
 
+        # ── Additional factor scoring ──────────────────────────────────
+        # Mean reversion bonus (RSI oversold + BB lower band)
+        if mean_reversion_setup:
+            score += 12
+            direction = "BUY"
+
+        # Momentum breakout (near 52W high + volume)
+        if near_52w_high and vol_ratio > 1.3:
+            score += 8
+
+        # PEAD signal (post-earnings continuation)
+        if pead_signal and mom_1w > 3:
+            score += 10  # big move + continuing = PEAD buy
+        elif pead_signal and mom_1w < -3:
+            score -= 10  # big drop continuing = PEAD sell
+
+        # Stochastic oversold/overbought
+        if stoch_k < 20:
+            score += 6
+        elif stoch_k > 80:
+            score -= 6
+
+        # Volume trend confirmation
+        if vol_trend_up and direction == "BUY":
+            score += 5
+        elif not vol_trend_up and direction == "SELL":
+            score += 5  # confirms sell
+
+        # ROC momentum
+        if roc_10 > 5:
+            score += 5
+        elif roc_10 < -5:
+            score -= 5
+
+        # Recalculate direction after all factors
+        if score > 62:
+            direction = "BUY"
+        elif score < 38:
+            direction = "SELL"
+        else:
+            direction = "NEUTRAL"
+
         return {
             "ticker": ticker,
             "score": round(score, 1),
@@ -188,6 +269,15 @@ def _screen_ticker(ticker: str) -> dict | None:
             "mom_1m_pct": round(mom_1m, 2),
             "mom_3m_pct": round(mom_3m, 2),
             "vol_ratio": round(vol_ratio, 2),
+            "atr_pct": round(atr_pct, 2),
+            "bb_position": round(bb_position, 3),
+            "stoch_k": round(stoch_k, 1),
+            "roc_10": round(roc_10, 2),
+            "vol_trend_up": vol_trend_up,
+            "mean_reversion_setup": mean_reversion_setup,
+            "near_52w_high": near_52w_high,
+            "pead_signal": pead_signal,
+            "big_move_pct": round(big_move, 2),
         }
     except Exception as e:
         log.warning("scanner.screen_failed", ticker=ticker, error=str(e))
@@ -322,6 +412,24 @@ async def run_market_scan(
             }
     except Exception as e:
         log.warning("scanner.circuit_breaker_check_failed", error=str(e))
+
+    # ── Regime detection — adjusts strategy ───────────────────────────────────
+    try:
+        from app.workers.regime_detector import get_market_regime
+        regime_data = await get_market_regime()
+        regime = regime_data.get("regime", "UNKNOWN")
+        strategy = regime_data.get("strategy", {})
+        regime_min_confidence = strategy.get("min_confidence", 0.70)
+        regime_max_position = strategy.get("max_position_pct", 5.0)
+        log.info("scanner.regime", regime=regime, bias=strategy.get("bias"))
+
+        # In HIGH_VOLATILITY or BEAR_TRENDING, suppress BUY signals unless very strong
+        if regime == "HIGH_VOLATILITY":
+            log.warning("scanner.regime.high_vol", action="suppressing_all_buys")
+    except Exception as e:
+        log.warning("scanner.regime_failed", error=str(e))
+        regime = "UNKNOWN"
+        regime_min_confidence = 0.70
 
     # ── VIX regime gate ────────────────────────────────────────────────────────
     vix = vix_override
