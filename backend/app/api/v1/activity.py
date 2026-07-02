@@ -5,6 +5,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, desc
 
 from app.core.postgres import get_db
+from app.core.auth import require_user
 from app.db.models.activity_log import ActivityLog
 
 router = APIRouter()
@@ -15,9 +16,15 @@ async def list_activity(
     limit: int = 50,
     feature: str | None = Query(default=None),
     db: AsyncSession = Depends(get_db),
+    user=Depends(require_user),
 ):
-    """Return recent activity logs, filterable by feature."""
-    q = select(ActivityLog).order_by(desc(ActivityLog.created_at)).limit(limit)
+    """Return the user's recent activity logs, filterable by feature."""
+    q = (
+        select(ActivityLog)
+        .where(ActivityLog.user_id == user.id)
+        .order_by(desc(ActivityLog.created_at))
+        .limit(limit)
+    )
     if feature:
         q = q.where(ActivityLog.feature == feature)
     result = await db.execute(q)
@@ -45,6 +52,7 @@ async def log_activity(
     details: dict | None = None,
     result: str | None = None,
     duration_s: float | None = None,
+    user_id: int | None = None,
 ) -> None:
     """Helper for writing activity log entries from anywhere in the backend."""
     from app.core.postgres import AsyncSessionLocal
@@ -52,6 +60,7 @@ async def log_activity(
     async with AsyncSessionLocal() as db:
         entry = ActivityLog(
             id=str(uuid.uuid4()),
+            user_id=user_id,
             feature=feature,
             action=action,
             ticker=ticker,

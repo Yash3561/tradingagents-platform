@@ -1,9 +1,12 @@
-from fastapi import APIRouter
+import asyncio
+from fastapi import APIRouter, Depends
 from datetime import datetime, UTC
-import httpx
 import structlog
 
 from app.config import get_settings
+from app.core.auth import require_user
+from app.broker.alpaca_client import AlpacaClient
+from app.broker.credentials import optional_broker
 
 router = APIRouter()
 log = structlog.get_logger()
@@ -11,42 +14,38 @@ settings = get_settings()
 
 
 @router.get("/summary")
-async def get_summary():
-    """Portfolio summary — real data from Alpaca, fallback to mock."""
-    if settings.alpaca_api_key and settings.alpaca_api_key != "your_alpaca_key":
+async def get_summary(broker: AlpacaClient | None = Depends(optional_broker)):
+    """Portfolio summary from the user's Alpaca paper account."""
+    if broker is not None:
         try:
-            headers = {
-                "APCA-API-KEY-ID": settings.alpaca_api_key,
-                "APCA-API-SECRET-KEY": settings.alpaca_api_secret,
+            loop = asyncio.get_running_loop()
+            acct = await loop.run_in_executor(None, broker.get_account)
+            equity = float(acct.get("equity", 0))
+            last_equity = float(acct.get("last_equity", equity))
+            day_pnl = equity - last_equity
+            day_pnl_pct = (day_pnl / last_equity * 100) if last_equity else 0
+            return {
+                "equity": round(equity, 2),
+                "day_pnl": round(day_pnl, 2),
+                "day_pnl_pct": round(day_pnl_pct, 2),
+                "unrealized_pnl": round(float(acct.get("unrealized_pl", 0)), 2),
+                "realized_pnl": round(float(acct.get("realized_pl", 0)), 2),
+                "buying_power": round(float(acct.get("buying_power", 0)), 2),
+                "broker_connected": True,
+                "as_of": datetime.now(UTC).isoformat(),
             }
-            async with httpx.AsyncClient(timeout=5.0) as client:
-                r = await client.get(f"{settings.alpaca_base_url}/v2/account", headers=headers)
-            if r.status_code == 200:
-                acct = r.json()
-                equity = float(acct.get("equity", 0))
-                last_equity = float(acct.get("last_equity", equity))
-                day_pnl = equity - last_equity
-                day_pnl_pct = (day_pnl / last_equity * 100) if last_equity else 0
-                return {
-                    "equity": round(equity, 2),
-                    "day_pnl": round(day_pnl, 2),
-                    "day_pnl_pct": round(day_pnl_pct, 2),
-                    "unrealized_pnl": round(float(acct.get("unrealized_pl", 0)), 2),
-                    "realized_pnl": round(float(acct.get("realized_pl", 0)), 2),
-                    "buying_power": round(float(acct.get("buying_power", 0)), 2),
-                    "as_of": datetime.now(UTC).isoformat(),
-                }
         except Exception as e:
             log.warning("alpaca.account_fetch_failed", error=str(e))
 
-    # Mock fallback (no Alpaca keys or fetch failed)
+    # No broker connected — zeroed summary; frontend shows the connect banner
     return {
-        "equity": 100000.00,
+        "equity": 0.0,
         "day_pnl": 0.0,
         "day_pnl_pct": 0.0,
         "unrealized_pnl": 0.0,
         "realized_pnl": 0.0,
-        "buying_power": 100000.00,
+        "buying_power": 0.0,
+        "broker_connected": False,
         "as_of": datetime.now(UTC).isoformat(),
     }
 
@@ -101,8 +100,8 @@ async def get_market_brief_dashboard():
 
 
 @router.get("/agent-activity")
-async def agent_activity():
-    """Recent agent runs from DB."""
+async def agent_activity(user=Depends(require_user)):
+    """Recent agent runs from DB — scoped to the requesting user."""
     try:
         from sqlalchemy import select, desc
         from app.core.postgres import AsyncSessionLocal
@@ -112,6 +111,7 @@ async def agent_activity():
             result = await db.execute(
                 select(AgentRun)
                 .where(AgentRun.status == "completed")
+                .where(AgentRun.user_id == user.id)
                 .order_by(desc(AgentRun.created_at))
                 .limit(10)
             )

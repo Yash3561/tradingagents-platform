@@ -1,4 +1,5 @@
 import { useEffect, useState, useRef, useCallback } from "react";
+import { Link } from "react-router-dom";
 import { motion } from "framer-motion";
 import { DollarSign, TrendingUp, BarChart2, Activity, Loader2, RefreshCw, ShieldCheck, ShieldAlert, ShieldX, Clock, Radio, Bell, Brain } from "lucide-react";
 import MetricCard from "../../components/data-display/MetricCard";
@@ -444,6 +445,30 @@ export default function Dashboard() {
           Refresh
         </button>
       </div>
+
+      {/* Broker not connected banner */}
+      {summary && summary.broker_connected === false && (
+        <motion.div
+          {...FADE_UP}
+          className="flex items-center justify-between gap-4 px-4 py-3 rounded-xl border border-accent/40 bg-accent/10"
+        >
+          <div className="flex items-center gap-3">
+            <ShieldAlert size={18} className="text-accent shrink-0" />
+            <div>
+              <p className="text-sm font-medium text-text-primary">Connect your Alpaca paper account to start trading</p>
+              <p className="text-xs text-text-muted mt-0.5">
+                Free paper account — the AI agents will trade in it with virtual money. Takes 2 minutes.
+              </p>
+            </div>
+          </div>
+          <Link
+            to="/settings"
+            className="shrink-0 px-3 py-1.5 text-xs font-medium text-white bg-accent hover:bg-accent/90 rounded-lg transition-colors"
+          >
+            Connect Broker
+          </Link>
+        </motion.div>
+      )}
 
       {/* KPI Row */}
       <div className="grid grid-cols-4 gap-4">

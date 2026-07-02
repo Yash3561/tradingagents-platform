@@ -1,5 +1,5 @@
 from datetime import datetime, UTC
-from sqlalchemy import String, DateTime, JSON, Float, Text
+from sqlalchemy import String, DateTime, JSON, Float, Text, Integer
 from sqlalchemy.orm import Mapped, mapped_column
 from app.core.postgres import Base
 
@@ -8,6 +8,7 @@ class ActivityLog(Base):
     __tablename__ = "activity_logs"
 
     id: Mapped[str] = mapped_column(String(36), primary_key=True)
+    user_id: Mapped[int | None] = mapped_column(Integer, index=True)  # NULL = legacy/platform-wide
     feature: Mapped[str] = mapped_column(String(40), index=True)
     # "scanner" | "agent_hub" | "backtest" | "manual_trade"
     action: Mapped[str] = mapped_column(String(60))

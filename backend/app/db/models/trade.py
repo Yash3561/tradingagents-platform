@@ -8,6 +8,7 @@ class Trade(Base):
     __tablename__ = "trades"
 
     id: Mapped[str] = mapped_column(String(36), primary_key=True)
+    user_id: Mapped[int | None] = mapped_column(Integer, index=True)  # NULL = legacy single-tenant rows
     agent_run_id: Mapped[str | None] = mapped_column(String(36), index=True)
     alpaca_order_id: Mapped[str | None] = mapped_column(String(36), index=True)
     ticker: Mapped[str] = mapped_column(String(20), index=True)

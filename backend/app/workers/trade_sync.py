@@ -1,11 +1,9 @@
 """
 Trade Sync — reconciles Alpaca order fills back to the DB.
 
-Runs every 2 minutes.
-For each Trade in DB with status != filled/closed/cancelled:
-  - Fetch the order from Alpaca by alpaca_order_id
-  - Update filled_price, filled_qty, filled_at, status
-  - For SELL-side or closed positions, compute realized PnL
+Runs every 2 minutes. Multi-tenant: pending trades are grouped by user and
+each group is checked against that user's Alpaca account. Legacy trades
+without a user_id fall back to the env-configured account.
 """
 from __future__ import annotations
 import asyncio
@@ -14,63 +12,49 @@ import structlog
 
 log = structlog.get_logger()
 
+# Alpaca status → our status
+_STATUS_MAP = {
+    "filled": "filled",
+    "partially_filled": "partial",
+    "cancelled": "cancelled",
+    "expired": "cancelled",
+    "rejected": "rejected",
+    "accepted": "submitted",
+    "pending_new": "submitted",
+    "new": "submitted",
+}
 
-def _fetch_alpaca_order(order_id: str) -> dict | None:
-    from app.broker.alpaca_client import _headers
-    from app.config import get_settings
-    import httpx
-    settings = get_settings()
-    try:
-        with httpx.Client(timeout=8.0) as client:
-            r = client.get(
-                f"{settings.alpaca_base_url}/v2/orders/{order_id}",
-                headers=_headers(),
-            )
-            if r.status_code == 404:
-                return None
-            r.raise_for_status()
-            return r.json()
-    except Exception as e:
-        log.warning("trade_sync.fetch_order_failed", order_id=order_id, error=str(e))
-        return None
+_PENDING_STATUSES = ["pending", "submitted", "partial", "pending_new", "new", "accepted"]
 
 
-def _fetch_all_alpaca_orders(status: str = "all", limit: int = 100) -> list[dict]:
-    """Fetch recent orders from Alpaca."""
-    from app.broker.alpaca_client import _headers
-    from app.config import get_settings
-    import httpx
-    settings = get_settings()
-    try:
-        with httpx.Client(timeout=10.0) as client:
-            r = client.get(
-                f"{settings.alpaca_base_url}/v2/orders",
-                headers=_headers(),
-                params={"status": status, "limit": limit, "direction": "desc"},
-            )
-            r.raise_for_status()
-            return r.json()
-    except Exception as e:
-        log.warning("trade_sync.fetch_orders_failed", error=str(e))
-        return []
+async def _broker_for(user_id: int | None):
+    """Per-user client, or the env-configured default for legacy rows."""
+    from app.broker.credentials import get_client_for_user
+    from app.broker.alpaca_client import default_client
+
+    if user_id is not None:
+        return await get_client_for_user(user_id)
+    client = default_client()
+    return client if client.configured else None
 
 
-async def sync_trades_once():
+async def sync_trades_once(user_id: int | None = None) -> int:
     """
-    Single sync cycle. Returns count of updated trades.
+    Single sync cycle. When user_id is given, only that user's trades are synced.
+    Returns count of updated trades.
     """
     from sqlalchemy import select
     from app.db.models.trade import Trade
     from app.core.postgres import AsyncSessionLocal
 
-    # Load all non-terminal trades from DB
     async with AsyncSessionLocal() as db:
-        result = await db.execute(
-            select(Trade).where(
-                Trade.status.in_(["pending", "submitted", "partial", "pending_new", "new", "accepted"]),
-                Trade.alpaca_order_id.isnot(None),
-            )
+        q = select(Trade).where(
+            Trade.status.in_(_PENDING_STATUSES),
+            Trade.alpaca_order_id.isnot(None),
         )
+        if user_id is not None:
+            q = q.where(Trade.user_id == user_id)
+        result = await db.execute(q)
         pending_trades = result.scalars().all()
 
     if not pending_trades:
@@ -78,33 +62,26 @@ async def sync_trades_once():
 
     loop = asyncio.get_running_loop()
     updated = 0
+    brokers: dict[int | None, object] = {}
 
     for trade in pending_trades:
         try:
-            order = await loop.run_in_executor(
-                None, _fetch_alpaca_order, trade.alpaca_order_id
-            )
+            uid = trade.user_id
+            if uid not in brokers:
+                brokers[uid] = await _broker_for(uid)
+            broker = brokers[uid]
+            if broker is None:
+                continue
+
+            order = await loop.run_in_executor(None, broker.get_order, trade.alpaca_order_id)
             if not order:
                 continue
 
             alpaca_status = order.get("status", "")
             filled_qty = float(order.get("filled_qty") or 0)
             filled_avg_price = float(order.get("filled_avg_price") or 0)
+            new_status = _STATUS_MAP.get(alpaca_status, trade.status)
 
-            # Map Alpaca status to our status
-            status_map = {
-                "filled": "filled",
-                "partially_filled": "partial",
-                "cancelled": "cancelled",
-                "expired": "cancelled",
-                "rejected": "rejected",
-                "accepted": "submitted",
-                "pending_new": "submitted",
-                "new": "submitted",
-            }
-            new_status = status_map.get(alpaca_status, trade.status)
-
-            # Parse filled_at
             filled_at = None
             if order.get("filled_at"):
                 try:

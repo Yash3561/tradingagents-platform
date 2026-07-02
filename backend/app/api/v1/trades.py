@@ -4,22 +4,27 @@ from sqlalchemy import select, desc
 from datetime import datetime, UTC
 
 from app.core.postgres import get_db
+from app.core.auth import require_user
 from app.db.models.trade import Trade
 
 router = APIRouter()
 
 
 @router.post("/sync")
-async def force_sync():
-    """Manually trigger a trade fill sync from Alpaca."""
+async def force_sync(user=Depends(require_user)):
+    """Manually trigger a trade fill sync from Alpaca for this user."""
     from app.workers.trade_sync import sync_trades_once
-    updated = await sync_trades_once()
+    updated = await sync_trades_once(user_id=user.id)
     return {"updated": updated}
 
 
 @router.get("/")
-async def list_trades(limit: int = 50, offset: int = 0, db: AsyncSession = Depends(get_db)):
-    result = await db.execute(select(Trade).order_by(desc(Trade.submitted_at)).limit(limit).offset(offset))
+async def list_trades(limit: int = 50, offset: int = 0,
+                      db: AsyncSession = Depends(get_db), user=Depends(require_user)):
+    result = await db.execute(
+        select(Trade).where(Trade.user_id == user.id)
+        .order_by(desc(Trade.submitted_at)).limit(limit).offset(offset)
+    )
     trades = result.scalars().all()
     return [
         {
@@ -43,9 +48,9 @@ async def list_trades(limit: int = 50, offset: int = 0, db: AsyncSession = Depen
 
 
 @router.get("/{trade_id}")
-async def get_trade(trade_id: str, db: AsyncSession = Depends(get_db)):
+async def get_trade(trade_id: str, db: AsyncSession = Depends(get_db), user=Depends(require_user)):
     trade = await db.get(Trade, trade_id)
-    if not trade:
+    if not trade or trade.user_id != user.id:
         raise HTTPException(404, "Trade not found")
     return {
         "id": trade.id,
@@ -62,7 +67,8 @@ async def get_trade(trade_id: str, db: AsyncSession = Depends(get_db)):
 
 
 @router.post("/{trade_id}/journal")
-async def generate_trade_journal(trade_id: str, db: AsyncSession = Depends(get_db)):
+async def generate_trade_journal(trade_id: str, db: AsyncSession = Depends(get_db),
+                                 user=Depends(require_user)):
     """
     Generate an AI-written journal entry for a specific trade.
     Pulls the trade's reasoning_json (full agent audit trail) and summarizes it
@@ -74,7 +80,7 @@ async def generate_trade_journal(trade_id: str, db: AsyncSession = Depends(get_d
     from app.config import get_settings
 
     trade = await db.get(Trade, trade_id)
-    if not trade:
+    if not trade or trade.user_id != user.id:
         raise HTTPException(404, "Trade not found")
 
     settings = get_settings()
@@ -128,14 +134,16 @@ Key catalysts: {', '.join(debate.get('key_catalysts', [])[:3])}
 
 
 @router.get("/export-csv")
-async def export_trades_csv(db: AsyncSession = Depends(get_db)):
-    """Download all trades as CSV for tax reporting."""
+async def export_trades_csv(db: AsyncSession = Depends(get_db), user=Depends(require_user)):
+    """Download the user's trades as CSV for tax reporting."""
     from fastapi.responses import StreamingResponse
     from sqlalchemy import select, asc
     import csv
     import io
 
-    result = await db.execute(select(Trade).order_by(asc(Trade.submitted_at)))
+    result = await db.execute(
+        select(Trade).where(Trade.user_id == user.id).order_by(asc(Trade.submitted_at))
+    )
     trades = result.scalars().all()
 
     output = io.StringIO()

@@ -1,5 +1,5 @@
 from datetime import datetime, UTC
-from sqlalchemy import String, DateTime, Float, Boolean, Text
+from sqlalchemy import String, DateTime, Float, Boolean, Text, Integer
 from sqlalchemy.orm import Mapped, mapped_column
 from app.core.postgres import Base
 
@@ -8,6 +8,7 @@ class Notification(Base):
     __tablename__ = "notifications"
 
     id: Mapped[str] = mapped_column(String(36), primary_key=True)
+    user_id: Mapped[int | None] = mapped_column(Integer, index=True)  # NULL = legacy/platform-wide
     type: Mapped[str] = mapped_column(String(40))
     # "trade_placed" | "position_closed" | "scan_complete" | "stop_loss_hit"
     # "take_profit_hit" | "scheduled_scan"

@@ -3,9 +3,13 @@ AI Performance Analyzer — generates weekly/on-demand portfolio performance sum
 using DeepSeek via NVIDIA NIM. Analyzes closed trades, win rate, best/worst performers,
 and gives actionable recommendations.
 """
-from fastapi import APIRouter
+from fastapi import APIRouter, Depends
 from datetime import datetime, UTC, timedelta
 import structlog
+
+from app.core.auth import require_user
+from app.broker.alpaca_client import AlpacaClient
+from app.broker.credentials import optional_broker
 
 router = APIRouter()
 log = structlog.get_logger()
@@ -55,10 +59,11 @@ def _build_perf_summary(trades: list, positions: list, metrics: dict) -> str:
 
 
 @router.get("/performance-summary")
-async def get_performance_summary():
+async def get_performance_summary(user=Depends(require_user),
+                                  broker: AlpacaClient | None = Depends(optional_broker)):
     """
     Generate an AI-written performance summary for the last 30 days.
-    Uses real trade data from DB + Alpaca positions.
+    Uses the user's trade history + their Alpaca positions.
     Returns structured analysis with insights and recommendations.
     """
     import asyncio
@@ -68,7 +73,6 @@ async def get_performance_summary():
     from app.core.postgres import AsyncSessionLocal
     from app.db.models.trade import Trade
     from sqlalchemy import select, desc
-    import httpx
 
     settings = get_settings()
 
@@ -77,6 +81,7 @@ async def get_performance_summary():
         cutoff = datetime.now(UTC) - timedelta(days=30)
         result = await db.execute(
             select(Trade)
+            .where(Trade.user_id == user.id)
             .where(Trade.submitted_at >= cutoff)
             .order_by(desc(Trade.submitted_at))
             .limit(50)
@@ -96,21 +101,16 @@ async def get_performance_summary():
         for t in trades
     ]
 
-    # Fetch Alpaca positions + account
+    # Fetch the user's Alpaca positions + account
     positions = []
     metrics = {}
-    try:
-        headers = {
-            "APCA-API-KEY-ID": settings.alpaca_api_key,
-            "APCA-API-SECRET-KEY": settings.alpaca_api_secret,
-        }
-        async with httpx.AsyncClient(timeout=5.0) as client:
-            pos_r = await client.get(f"{settings.alpaca_base_url}/v2/positions", headers=headers)
-            acct_r = await client.get(f"{settings.alpaca_base_url}/v2/account", headers=headers)
-        if pos_r.status_code == 200:
-            positions = pos_r.json()
-        if acct_r.status_code == 200:
-            acct = acct_r.json()
+    if broker is not None:
+        try:
+            loop_ = asyncio.get_running_loop()
+            positions, acct = await asyncio.gather(
+                loop_.run_in_executor(None, broker.get_positions),
+                loop_.run_in_executor(None, broker.get_account),
+            )
             equity = float(acct.get("equity", 0))
             last_equity = float(acct.get("last_equity", equity))
             metrics = {
@@ -118,8 +118,8 @@ async def get_performance_summary():
                 "day_pnl": equity - last_equity,
                 "day_pnl_pct": (equity - last_equity) / last_equity * 100 if last_equity else 0,
             }
-    except Exception as e:
-        log.warning("analytics.alpaca_fetch_failed", error=str(e))
+        except Exception as e:
+            log.warning("analytics.alpaca_fetch_failed", error=str(e))
 
     perf_summary = _build_perf_summary(trade_dicts, positions, metrics)
 
@@ -252,33 +252,24 @@ async def get_watchlist_scores():
 
 
 @router.get("/correlation")
-async def get_portfolio_correlation():
+async def get_portfolio_correlation(broker: AlpacaClient | None = Depends(optional_broker)):
     """
-    Compute pairwise return correlation for all open positions.
+    Compute pairwise return correlation for the user's open positions.
     Uses 3 months of daily returns from yfinance.
     Returns a correlation matrix suitable for a heatmap.
     """
     import asyncio
     import yfinance as yf
-    import numpy as np
-    import httpx
-    from app.config import get_settings as _gs
 
-    s = _gs()
-
-    # Fetch current positions from Alpaca
+    # Fetch current positions from the user's Alpaca account
     tickers = []
-    try:
-        headers = {
-            "APCA-API-KEY-ID": s.alpaca_api_key,
-            "APCA-API-SECRET-KEY": s.alpaca_api_secret,
-        }
-        async with httpx.AsyncClient(timeout=5.0) as client:
-            r = await client.get(f"{s.alpaca_base_url}/v2/positions", headers=headers)
-        if r.status_code == 200:
-            tickers = [p["symbol"] for p in r.json()]
-    except Exception as e:
-        log.warning("correlation.positions_failed", error=str(e))
+    if broker is not None:
+        try:
+            loop_ = asyncio.get_running_loop()
+            raw = await loop_.run_in_executor(None, broker.get_positions)
+            tickers = [p["symbol"] for p in raw]
+        except Exception as e:
+            log.warning("correlation.positions_failed", error=str(e))
 
     if len(tickers) < 2:
         return {"tickers": tickers, "matrix": [], "message": "Need at least 2 positions for correlation"}
@@ -326,31 +317,21 @@ async def get_portfolio_correlation():
 
 
 @router.get("/sector-exposure")
-async def get_sector_exposure():
+async def get_sector_exposure(broker: AlpacaClient | None = Depends(optional_broker)):
     """
-    Map current positions to sectors and compute concentration.
+    Map the user's positions to sectors and compute concentration.
     Returns sector breakdown as % of total portfolio value.
     """
-    import httpx
-    import yfinance as yf
     import asyncio
-    from app.config import get_settings as _gs
-
-    s = _gs()
 
     # Fetch positions
     positions = []
-    try:
-        headers = {
-            "APCA-API-KEY-ID": s.alpaca_api_key,
-            "APCA-API-SECRET-KEY": s.alpaca_api_secret,
-        }
-        async with httpx.AsyncClient(timeout=5.0) as client:
-            r = await client.get(f"{s.alpaca_base_url}/v2/positions", headers=headers)
-        if r.status_code == 200:
-            positions = r.json()
-    except Exception:
-        pass
+    if broker is not None:
+        try:
+            loop_ = asyncio.get_running_loop()
+            positions = await loop_.run_in_executor(None, broker.get_positions)
+        except Exception:
+            pass
 
     if not positions:
         return {"sectors": [], "total_value": 0}
@@ -403,8 +384,9 @@ async def get_sector_exposure():
 async def get_market_brief():
     """
     Generate a real-time AI market briefing.
-    Fetches SPY, QQQ, VIX, sector ETFs, and top positions performance.
-    Returns a structured brief: market mood, key themes, what to watch today.
+    Fetches SPY, QQQ, VIX, and sector ETFs. Market-wide only — the result is
+    cached in Redis and shared by all users, so it must not contain any single
+    user's positions.
     Fast — uses yfinance for market data, DeepSeek for synthesis.
     """
     import asyncio
@@ -412,7 +394,6 @@ async def get_market_brief():
     import yfinance as yf
     from openai import OpenAI
     from app.config import get_settings as _gs
-    import httpx
 
     s = _gs()
 
@@ -458,26 +439,8 @@ async def get_market_brief():
                 pass
         return data
 
-    # Fetch positions
-    async def _fetch_positions():
-        try:
-            headers = {
-                "APCA-API-KEY-ID": s.alpaca_api_key,
-                "APCA-API-SECRET-KEY": s.alpaca_api_secret,
-            }
-            async with httpx.AsyncClient(timeout=5.0) as client:
-                r = await client.get(f"{s.alpaca_base_url}/v2/positions", headers=headers)
-            if r.status_code == 200:
-                return r.json()
-        except Exception:
-            pass
-        return []
-
     loop = asyncio.get_running_loop()
-    market_data, positions = await asyncio.gather(
-        loop.run_in_executor(None, _fetch_market_data),
-        _fetch_positions(),
-    )
+    market_data = await loop.run_in_executor(None, _fetch_market_data)
 
     # Build context string
     mkt_lines = []
@@ -485,14 +448,7 @@ async def get_market_brief():
         trend = "↑" if d["change_pct"] > 0 else "↓"
         mkt_lines.append(f"{label}: ${d['price']} ({trend}{abs(d['change_pct']):.2f}% today, {d['trend_5d']:+.2f}% 5d)")
 
-    pos_lines = []
-    for p in positions[:8]:
-        pct = float(p.get("unrealized_plpc", 0)) * 100
-        pos_lines.append(f"{p['symbol']}: {pct:+.2f}% unrealized")
-
     context = "MARKET DATA:\n" + "\n".join(mkt_lines)
-    if pos_lines:
-        context += "\n\nCURRENT POSITIONS:\n" + "\n".join(pos_lines)
 
     def _call_ai():
         client = OpenAI(api_key=s.nvidia_api_key, base_url=s.nvidia_base_url)

@@ -24,22 +24,62 @@ ET = timezone.utc  # we compare UTC times from Alpaca clock
 _last_cb_warnings: set[str] = set()
 
 
-def _get_market_clock() -> dict:
-    from app.broker.alpaca_client import _headers
-    from app.config import get_settings
-    import httpx
-    settings = get_settings()
+def _get_market_clock(broker=None) -> dict:
+    """Market clock via any configured Alpaca client (env default or a user's)."""
+    from app.broker.alpaca_client import default_client
     try:
-        with httpx.Client(timeout=5.0) as client:
-            r = client.get(
-                f"{settings.alpaca_base_url}/v2/clock",
-                headers=_headers(),
-            )
-            r.raise_for_status()
-            return r.json()
+        client = broker or default_client()
+        if not client.configured:
+            return {"is_open": False, "next_open": None}
+        return client.get_clock()
     except Exception as e:
         log.warning("scheduler.clock_failed", error=str(e))
         return {"is_open": False, "next_open": None}
+
+
+async def _any_broker():
+    """First available Alpaca client: env default, else any connected user's."""
+    from app.broker.alpaca_client import default_client
+    from app.broker.credentials import connected_user_ids, get_client_for_user
+
+    client = default_client()
+    if client.configured:
+        return client
+    for uid in await connected_user_ids():
+        c = await get_client_for_user(uid)
+        if c is not None:
+            return c
+    return None
+
+
+async def _autoscan_user_ids() -> list[int]:
+    """Users who explicitly opted in to scheduled auto-scans (scan_enabled user setting)."""
+    import json
+    from sqlalchemy import select
+    from app.core.postgres import AsyncSessionLocal
+    from app.db.models.user_settings import UserSettings
+    from app.broker.credentials import connected_user_ids
+
+    connected = set(await connected_user_ids())
+    if not connected:
+        return []
+    try:
+        async with AsyncSessionLocal() as db:
+            result = await db.execute(
+                select(UserSettings).where(UserSettings.key == "scan_enabled")
+            )
+            rows = result.scalars().all()
+        enabled = set()
+        for r in rows:
+            try:
+                if json.loads(r.value) is True:
+                    enabled.add(r.user_id)
+            except Exception:
+                pass
+        return sorted(enabled & connected)
+    except Exception as e:
+        log.warning("scheduler.autoscan_users_failed", error=str(e))
+        return []
 
 
 def _get_vix() -> float | None:
@@ -70,16 +110,15 @@ class MarketScheduler:
 
     async def _run_scan(self, label: str, vix: float | None):
         """
-        Trigger a market scan. If VIX > 30, passes a sells-only hint to scanner.
-        The scanner itself gates BUY signals when VIX is elevated.
-        Broadcasts WS event and saves a Notification on start and completion.
+        Trigger scheduled scans — one per user who opted in (scan_enabled=true
+        in their settings and a connected broker). Each scan trades in that
+        user's own paper account.
         """
         import uuid as _uuid
         from app.workers.scanner import run_market_scan
         from app.core.websocket_manager import ws_manager
         from app.api.v1.notifications import save_notification
 
-        scan_id = str(_uuid.uuid4())
         now_str = datetime.now(timezone.utc).isoformat()
 
         vix_high = vix is not None and vix > 30
@@ -87,38 +126,45 @@ class MarketScheduler:
             log.warning("scheduler.vix_gate_active", vix=round(vix, 1),
                         note="BUYs suppressed — only SELL candidates will pass AI pipeline")
 
-        log.info(f"scheduler.scan.{label}", vix=vix)
+        user_ids = await _autoscan_user_ids()
+        if not user_ids:
+            log.info(f"scheduler.scan.{label}.no_optin_users")
+            return
 
-        # Broadcast scan started
-        await ws_manager.broadcast("alerts", {
-            "type": "scheduled_scan_started",
-            "label": label,
-            "scan_id": scan_id,
-            "time": now_str,
-        })
-        await save_notification(
-            type="scheduled_scan",
-            title=f"Scheduled {label} scan started",
-            body=f"Auto-scan triggered at {now_str[:16].replace('T', ' ')} UTC. VIX: {round(vix, 1) if vix else 'N/A'}",
-        )
+        log.info(f"scheduler.scan.{label}", vix=vix, users=len(user_ids))
 
-        try:
-            summary = await run_market_scan(vix_override=vix, scan_id=scan_id)
-            trades_placed = summary.get("trades_placed", 0)
-            candidates = summary.get("candidates_analyzed", 0)
-            log.info(f"scheduler.scan.{label}.done",
-                     candidates=candidates,
-                     trades=trades_placed)
+        for uid in user_ids:
+            scan_id = str(_uuid.uuid4())
+            await ws_manager.broadcast("alerts", {
+                "type": "scheduled_scan_started",
+                "label": label,
+                "scan_id": scan_id,
+                "time": now_str,
+            })
             await save_notification(
-                type="scan_complete",
-                title=f"Scheduled {label} scan completed",
-                body=(
-                    f"Analyzed {candidates} candidates, placed {trades_placed} trade(s). "
-                    f"Screened {summary.get('screened', 0)} stocks."
-                ),
+                type="scheduled_scan",
+                title=f"Scheduled {label} scan started",
+                body=f"Auto-scan triggered at {now_str[:16].replace('T', ' ')} UTC. VIX: {round(vix, 1) if vix else 'N/A'}",
+                user_id=uid,
             )
-        except Exception as e:
-            log.error(f"scheduler.scan.{label}.failed", error=str(e))
+
+            try:
+                summary = await run_market_scan(vix_override=vix, scan_id=scan_id, user_id=uid)
+                trades_placed = summary.get("trades_placed", 0)
+                candidates = summary.get("candidates_analyzed", 0)
+                log.info(f"scheduler.scan.{label}.done", user_id=uid,
+                         candidates=candidates, trades=trades_placed)
+                await save_notification(
+                    type="scan_complete",
+                    title=f"Scheduled {label} scan completed",
+                    body=(
+                        f"Analyzed {candidates} candidates, placed {trades_placed} trade(s). "
+                        f"Screened {summary.get('screened', 0)} stocks."
+                    ),
+                    user_id=uid,
+                )
+            except Exception as e:
+                log.error(f"scheduler.scan.{label}.failed", user_id=uid, error=str(e))
 
     async def tick(self):
         """
@@ -126,7 +172,8 @@ class MarketScheduler:
         Decides whether to trigger a scan based on current time.
         """
         loop = asyncio.get_running_loop()
-        clock = await loop.run_in_executor(None, _get_market_clock)
+        broker = await _any_broker()
+        clock = await loop.run_in_executor(None, _get_market_clock, broker)
 
         now_utc = datetime.now(timezone.utc)
         today = now_utc.strftime("%Y-%m-%d")
@@ -191,44 +238,28 @@ def _is_market_hours_et() -> bool:
     return 9.5 <= h < 16.0
 
 
-def _fetch_positions_for_intraday() -> list[dict]:
-    from app.broker.alpaca_client import get_positions
-    return get_positions()
+async def _all_accounts() -> list[tuple[int | None, object]]:
+    """(user_id, broker) pairs for every connected user + the legacy env account."""
+    from app.broker.credentials import connected_user_ids, get_client_for_user
+    from app.broker.alpaca_client import default_client
+
+    accounts: list[tuple[int | None, object]] = []
+    for uid in await connected_user_ids():
+        client = await get_client_for_user(uid)
+        if client is not None:
+            accounts.append((uid, client))
+    legacy = default_client()
+    if legacy.configured:
+        accounts.append((None, legacy))
+    return accounts
 
 
 async def _take_equity_snapshot():
-    """Take an equity snapshot from Alpaca and save to equity_snapshots table."""
+    """Snapshot every account's equity (delegates to the per-user equity tracker)."""
     try:
-        import httpx
-        from app.config import get_settings
-        from app.core.postgres import AsyncSessionLocal
-        from app.db.models.equity_snapshot import EquitySnapshot
-
-        settings = get_settings()
-        headers = {
-            "APCA-API-KEY-ID": settings.alpaca_api_key,
-            "APCA-API-SECRET-KEY": settings.alpaca_api_secret,
-        }
-        async with httpx.AsyncClient(timeout=5.0) as client:
-            r = await client.get(f"{settings.alpaca_base_url}/v2/account", headers=headers)
-        if r.status_code != 200:
-            return
-
-        acct = r.json()
-        equity = float(acct.get("equity", 0))
-        cash = float(acct.get("cash", 0))
-        last_equity = float(acct.get("last_equity", equity))
-        day_pnl = equity - last_equity
-
-        async with AsyncSessionLocal() as db:
-            snapshot = EquitySnapshot(
-                equity=equity,
-                cash=cash,
-                day_pnl=day_pnl,
-            )
-            db.add(snapshot)
-            await db.commit()
-        log.info("scheduler.equity_snapshot", equity=round(equity, 2))
+        from app.workers.equity_tracker import take_snapshot
+        taken = await take_snapshot()
+        log.info("scheduler.equity_snapshot", accounts=taken)
     except Exception as e:
         log.warning("scheduler.snapshot_failed", error=str(e))
 
@@ -300,72 +331,78 @@ async def run_intraday_monitor():
             if is_market_hours and now_et.minute == 0:  # top of each hour
                 await _take_equity_snapshot()
 
-            # ── Fetch positions ────────────────────────────────────────────────
+            # ── Fetch positions per account ────────────────────────────────────
             loop = asyncio.get_running_loop()
-            try:
-                positions = await loop.run_in_executor(None, _fetch_positions_for_intraday)
-            except Exception as e:
-                log.warning("intraday_monitor.positions_fetch_failed", error=str(e))
-                continue
-
-            if not positions:
-                continue
-
-            alerts = []
-            position_summaries = []
-
-            for pos in positions:
-                ticker = pos.get("symbol") or pos.get("ticker", "")
-                if not ticker:
-                    continue
-
-                try:
-                    # unrealized_intraday_plpc is already a string like "0.0234"
-                    intraday_plpc_raw = pos.get("unrealized_intraday_plpc", "0")
-                    intraday_pct = float(intraday_plpc_raw) * 100  # convert to percent
-
-                    unrealized_pnl = float(pos.get("unrealized_pl", 0) or 0)
-                    market_val = float(pos.get("market_value", 0) or 0)
-
-                    position_summaries.append({
-                        "ticker": ticker,
-                        "intraday_pct": round(intraday_pct, 2),
-                        "unrealized_pnl": round(unrealized_pnl, 2),
-                        "market_value": round(market_val, 2),
-                    })
-
-                    # Alert on big intraday moves
-                    if intraday_pct > 8 or intraday_pct < -4:
-                        alerts.append((ticker, intraday_pct))
-                        log.warning("intraday_monitor.big_move",
-                                    ticker=ticker, intraday_pct=round(intraday_pct, 2))
-                        await save_notification(
-                            type="intraday_alert",
-                            title=f"{ticker} moved {intraday_pct:+.1f}% intraday",
-                            body="Position under review — consider action",
-                            ticker=ticker,
-                        )
-                except Exception as e:
-                    log.warning("intraday_monitor.position_parse_failed",
-                                ticker=ticker, error=str(e))
-
-            # ── 3:45 PM ET pre-close review ───────────────────────────────────
+            is_preclose = False
             now_h = now_et.hour + now_et.minute / 60
             if 15.75 <= now_h < 15.92 and f"{today}T15:45_preclose" not in _processed_windows:
                 _processed_windows.add(f"{today}T15:45_preclose")
+                is_preclose = True
 
-                summary_lines = [
-                    f"{s['ticker']}: {s['intraday_pct']:+.1f}% intraday, P&L ${s['unrealized_pnl']:+,.2f}"
-                    for s in position_summaries
-                ]
-                body = "Open positions:\n" + "\n".join(summary_lines) if summary_lines else "No open positions."
+            for uid, account_broker in await _all_accounts():
+                try:
+                    positions = await loop.run_in_executor(None, account_broker.get_positions)
+                except Exception as e:
+                    log.warning("intraday_monitor.positions_fetch_failed",
+                                user_id=uid, error=str(e))
+                    continue
 
-                await save_notification(
-                    type="pre_close_review",
-                    title=f"Pre-close review — {now_et.strftime('%I:%M %p ET')}",
-                    body=body,
-                )
-                log.info("intraday_monitor.preclose_review_sent", positions=len(position_summaries))
+                if not positions:
+                    continue
+
+                position_summaries = []
+
+                for pos in positions:
+                    ticker = pos.get("symbol") or pos.get("ticker", "")
+                    if not ticker:
+                        continue
+
+                    try:
+                        # unrealized_intraday_plpc is already a string like "0.0234"
+                        intraday_plpc_raw = pos.get("unrealized_intraday_plpc", "0")
+                        intraday_pct = float(intraday_plpc_raw) * 100  # convert to percent
+
+                        unrealized_pnl = float(pos.get("unrealized_pl", 0) or 0)
+                        market_val = float(pos.get("market_value", 0) or 0)
+
+                        position_summaries.append({
+                            "ticker": ticker,
+                            "intraday_pct": round(intraday_pct, 2),
+                            "unrealized_pnl": round(unrealized_pnl, 2),
+                            "market_value": round(market_val, 2),
+                        })
+
+                        # Alert on big intraday moves
+                        if intraday_pct > 8 or intraday_pct < -4:
+                            log.warning("intraday_monitor.big_move", user_id=uid,
+                                        ticker=ticker, intraday_pct=round(intraday_pct, 2))
+                            await save_notification(
+                                type="intraday_alert",
+                                title=f"{ticker} moved {intraday_pct:+.1f}% intraday",
+                                body="Position under review — consider action",
+                                ticker=ticker,
+                                user_id=uid,
+                            )
+                    except Exception as e:
+                        log.warning("intraday_monitor.position_parse_failed",
+                                    ticker=ticker, error=str(e))
+
+                # ── 3:45 PM ET pre-close review ───────────────────────────────
+                if is_preclose:
+                    summary_lines = [
+                        f"{s['ticker']}: {s['intraday_pct']:+.1f}% intraday, P&L ${s['unrealized_pnl']:+,.2f}"
+                        for s in position_summaries
+                    ]
+                    body = "Open positions:\n" + "\n".join(summary_lines) if summary_lines else "No open positions."
+
+                    await save_notification(
+                        type="pre_close_review",
+                        title=f"Pre-close review — {now_et.strftime('%I:%M %p ET')}",
+                        body=body,
+                        user_id=uid,
+                    )
+                    log.info("intraday_monitor.preclose_review_sent", user_id=uid,
+                             positions=len(position_summaries))
 
         except Exception as e:
             log.error("intraday_monitor.cycle_error", error=str(e))

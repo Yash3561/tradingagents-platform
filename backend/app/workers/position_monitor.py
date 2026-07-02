@@ -1,12 +1,9 @@
 """
 Position Monitor — enforces stop-loss and take-profit on every open trade.
 
-Runs every 60 seconds.
-Logic:
-  - Fetch all Alpaca positions (live P&L)
-  - Cross-reference with Trade DB rows to get agent-set stop/TP thresholds
-  - If breached → close position on Alpaca, mark trade closed in DB
-  - Broadcast WS event to room "alerts" and save a Notification
+Runs every 60 seconds. Multi-tenant: each connected user's positions are
+checked against their own trades' thresholds and closed in their own account.
+The legacy env-configured account (user_id NULL) is monitored too.
 """
 from __future__ import annotations
 import asyncio
@@ -21,19 +18,9 @@ DEFAULT_STOP_LOSS_PCT = 7.0    # -7% → close
 DEFAULT_TAKE_PROFIT_PCT = 20.0  # +20% → take profits
 
 
-def _fetch_alpaca_positions() -> list[dict]:
-    from app.broker.alpaca_client import get_positions
-    return get_positions()
-
-
-def _close_alpaca_position(ticker: str) -> dict | None:
-    from app.broker.alpaca_client import close_position
-    return close_position(ticker)
-
-
-async def _load_open_trades() -> dict[str, dict]:
+async def _load_open_trades(user_id: int | None) -> dict[str, dict]:
     """
-    Return a map of ticker → trade row for all non-closed trades.
+    Return a map of ticker → trade row for one user's non-closed trades.
     Takes the most recent open trade per ticker (by submitted_at).
     """
     from sqlalchemy import select, desc
@@ -41,12 +28,13 @@ async def _load_open_trades() -> dict[str, dict]:
     from app.core.postgres import AsyncSessionLocal
 
     async with AsyncSessionLocal() as db:
-        result = await db.execute(
-            select(Trade).where(
-                Trade.status.in_(["submitted", "filled", "partial"]),
-                Trade.closed_at.is_(None),
-            ).order_by(desc(Trade.submitted_at))
-        )
+        q = select(Trade).where(
+            Trade.status.in_(["submitted", "filled", "partial"]),
+            Trade.closed_at.is_(None),
+        ).order_by(desc(Trade.submitted_at))
+        q = q.where(Trade.user_id == user_id) if user_id is not None \
+            else q.where(Trade.user_id.is_(None))
+        result = await db.execute(q)
         trades = result.scalars().all()
 
     # Most recent open trade per ticker wins
@@ -76,7 +64,8 @@ async def _mark_trade_closed(trade_id: str, reason: str, pnl: float):
             await db.commit()
 
 
-async def _save_close_notification(ticker: str, reason: str, pnl_dollar: float, pnl_pct: float):
+async def _save_close_notification(user_id: int | None, ticker: str, reason: str,
+                                   pnl_dollar: float, pnl_pct: float):
     from app.db.models.notification import Notification
     from app.core.postgres import AsyncSessionLocal
 
@@ -90,6 +79,7 @@ async def _save_close_notification(ticker: str, reason: str, pnl_dollar: float, 
     async with AsyncSessionLocal() as db:
         notif = Notification(
             id=str(uuid.uuid4()),
+            user_id=user_id,
             type=notif_type,
             title=title,
             body=body,
@@ -100,25 +90,22 @@ async def _save_close_notification(ticker: str, reason: str, pnl_dollar: float, 
         await db.commit()
 
 
-async def check_positions_once():
-    """
-    Single check cycle — compare all live Alpaca positions against thresholds.
-    Returns list of closed positions.
-    """
+async def _check_account(user_id: int | None, broker) -> list[dict]:
+    """Check one account's positions against thresholds. Returns closed positions."""
     from app.core.websocket_manager import ws_manager
 
     loop = asyncio.get_running_loop()
 
     try:
-        positions = await loop.run_in_executor(None, _fetch_alpaca_positions)
+        positions = await loop.run_in_executor(None, broker.get_positions)
     except Exception as e:
-        log.warning("monitor.fetch_failed", error=str(e))
+        log.warning("monitor.fetch_failed", user_id=user_id, error=str(e))
         return []
 
     if not positions:
         return []
 
-    open_trades = await _load_open_trades()
+    open_trades = await _load_open_trades(user_id)
     closed = []
 
     for pos in positions:
@@ -145,32 +132,25 @@ async def check_positions_once():
             if pnl_pct <= stop:
                 reason = "stop_loss"
                 log.warning("monitor.stop_loss_triggered",
-                            ticker=ticker, pnl_pct=round(pnl_pct, 2),
-                            threshold=stop)
+                            user_id=user_id, ticker=ticker,
+                            pnl_pct=round(pnl_pct, 2), threshold=stop)
             elif pnl_pct >= tp:
                 reason = "take_profit"
                 log.info("monitor.take_profit_triggered",
-                         ticker=ticker, pnl_pct=round(pnl_pct, 2),
-                         threshold=tp)
-
-            log.info("monitor.position_check",
-                     ticker=ticker, pnl_pct=round(pnl_pct, 2),
-                     stop=stop, tp=tp, will_close=reason is not None)
+                         user_id=user_id, ticker=ticker,
+                         pnl_pct=round(pnl_pct, 2), threshold=tp)
 
             if reason:
                 try:
-                    await loop.run_in_executor(None, _close_alpaca_position, ticker)
-                    log.info("monitor.position_closed",
+                    await loop.run_in_executor(None, broker.close_position, ticker)
+                    log.info("monitor.position_closed", user_id=user_id,
                              ticker=ticker, reason=reason, pnl_pct=round(pnl_pct, 2))
 
-                    # Update DB if we have a trade record
                     if ticker in open_trades:
                         await _mark_trade_closed(open_trades[ticker]["id"], reason, pnl_dollar)
 
-                    # Save notification
-                    await _save_close_notification(ticker, reason, pnl_dollar, pnl_pct)
+                    await _save_close_notification(user_id, ticker, reason, pnl_dollar, pnl_pct)
 
-                    # Broadcast WS event
                     await ws_manager.broadcast("alerts", {
                         "type": "position_closed",
                         "ticker": ticker,
@@ -190,6 +170,28 @@ async def check_positions_once():
 
         except Exception as e:
             log.error("monitor.position_check_failed", ticker=ticker, error=str(e))
+
+    return closed
+
+
+async def check_positions_once() -> list[dict]:
+    """
+    Single check cycle across all connected users + legacy env account.
+    Returns list of closed positions.
+    """
+    from app.broker.credentials import connected_user_ids, get_client_for_user
+    from app.broker.alpaca_client import default_client
+
+    closed: list[dict] = []
+
+    for uid in await connected_user_ids():
+        broker = await get_client_for_user(uid)
+        if broker is not None:
+            closed.extend(await _check_account(uid, broker))
+
+    legacy = default_client()
+    if legacy.configured:
+        closed.extend(await _check_account(None, legacy))
 
     return closed
 

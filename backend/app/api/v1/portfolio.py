@@ -1,36 +1,26 @@
+import asyncio
 from fastapi import APIRouter, Depends
-import httpx
 import structlog
 from datetime import datetime, UTC
 from sqlalchemy.ext.asyncio import AsyncSession
+
 from app.core.postgres import get_db
-from app.config import get_settings
+from app.core.auth import require_user
+from app.broker.alpaca_client import AlpacaClient
+from app.broker.credentials import optional_broker
 
 router = APIRouter()
 log = structlog.get_logger()
-settings = get_settings()
-
-
-def _alpaca_headers():
-    return {
-        "APCA-API-KEY-ID": settings.alpaca_api_key,
-        "APCA-API-SECRET-KEY": settings.alpaca_api_secret,
-    }
 
 
 @router.get("/positions")
-async def get_positions():
-    """Live positions from Alpaca paper account."""
-    if not settings.alpaca_api_key:
+async def get_positions(broker: AlpacaClient | None = Depends(optional_broker)):
+    """Live positions from the user's Alpaca paper account."""
+    if broker is None:
         return []
     try:
-        async with httpx.AsyncClient(timeout=8.0) as client:
-            r = await client.get(
-                f"{settings.alpaca_base_url}/v2/positions",
-                headers=_alpaca_headers(),
-            )
-            if r.status_code != 200:
-                return []
+        loop = asyncio.get_running_loop()
+        raw = await loop.run_in_executor(None, broker.get_positions)
         return [
             {
                 "ticker": p["symbol"],
@@ -43,7 +33,7 @@ async def get_positions():
                 "avg_entry_price": float(p["avg_entry_price"]),
                 "side": p["side"],
             }
-            for p in r.json()
+            for p in raw
         ]
     except Exception as e:
         log.warning("portfolio.positions_failed", error=str(e))
@@ -51,9 +41,9 @@ async def get_positions():
 
 
 @router.get("/allocation")
-async def get_allocation():
+async def get_allocation(broker: AlpacaClient | None = Depends(optional_broker)):
     """Position allocation breakdown."""
-    positions = await get_positions()
+    positions = await get_positions(broker)
     total = sum(p["market_value"] for p in positions)
     if not total:
         return []
@@ -68,22 +58,20 @@ async def get_allocation():
 
 
 @router.get("/risk-metrics")
-async def risk_metrics():
+async def risk_metrics(
+    user=Depends(require_user),
+    broker: AlpacaClient | None = Depends(optional_broker),
+):
     """Portfolio metrics from Alpaca account + computed Sharpe/drawdown from equity curve."""
     from app.workers.equity_tracker import compute_performance_metrics
 
-    # Fetch live account data
     acct_data = {}
-    try:
-        async with httpx.AsyncClient(timeout=8.0) as client:
-            r = await client.get(
-                f"{settings.alpaca_base_url}/v2/account",
-                headers=_alpaca_headers(),
-            )
-        if r.status_code == 200:
-            acct_data = r.json()
-    except Exception as e:
-        log.warning("portfolio.metrics_alpaca_failed", error=str(e))
+    if broker is not None:
+        try:
+            loop = asyncio.get_running_loop()
+            acct_data = await loop.run_in_executor(None, broker.get_account)
+        except Exception as e:
+            log.warning("portfolio.metrics_alpaca_failed", error=str(e))
 
     equity = float(acct_data.get("equity", 100000))
     last_equity = float(acct_data.get("last_equity", equity))
@@ -91,8 +79,7 @@ async def risk_metrics():
     cash = float(acct_data.get("cash", equity))
     day_pnl = equity - last_equity
 
-    # Compute Sharpe + drawdown from historical snapshots
-    perf = await compute_performance_metrics(days=90)
+    perf = await compute_performance_metrics(days=90, user_id=user.id)
 
     return {
         "equity": round(equity, 2),
@@ -107,34 +94,33 @@ async def risk_metrics():
         "max_drawdown": perf.get("max_drawdown"),
         "total_return": perf.get("total_return"),
         "snapshot_count": perf.get("snapshot_count", 0),
+        "broker_connected": broker is not None,
     }
 
 
 @router.get("/equity-curve")
-async def equity_curve(limit: int = 200):
+async def equity_curve(
+    limit: int = 200,
+    user=Depends(require_user),
+    broker: AlpacaClient | None = Depends(optional_broker),
+):
     """
     Historical equity curve for charting.
-    Primary source: local equity_snapshots (taken every 15 min).
+    Primary source: local equity_snapshots (taken every 15 min, per user).
     Fallback/backfill: Alpaca portfolio history API (daily, 30 days) when <10 local points.
     """
     from app.workers.equity_tracker import get_equity_curve
-    local = await get_equity_curve(limit=limit)
+    local = await get_equity_curve(limit=limit, user_id=user.id)
 
-    # If we have enough local data, return it directly
     if len(local) >= 10:
         return local
 
-    # Backfill from Alpaca portfolio history (daily resolution)
     alpaca_points = []
-    try:
-        async with httpx.AsyncClient(timeout=8.0) as client:
-            r = await client.get(
-                f"{settings.alpaca_base_url}/v2/account/portfolio/history",
-                params={"period": "1M", "timeframe": "1D", "extended_hours": "false"},
-                headers=_alpaca_headers(),
-            )
-            if r.status_code == 200:
-                data = r.json()
+    if broker is not None:
+        try:
+            loop = asyncio.get_running_loop()
+            data = await loop.run_in_executor(None, broker.get_portfolio_history)
+            if data:
                 timestamps = data.get("timestamp", [])
                 equities = data.get("equity", [])
                 profit_loss = data.get("profit_loss", [])
@@ -146,8 +132,8 @@ async def equity_curve(limit: int = 200):
                             "cash": 0.0,
                             "day_pnl": round(float(pl or 0), 2),
                         })
-    except Exception:
-        pass
+        except Exception:
+            pass
 
     if not alpaca_points:
         return local
@@ -160,30 +146,30 @@ async def equity_curve(limit: int = 200):
 
 
 @router.get("/pnl-calendar")
-async def get_pnl_calendar(db: AsyncSession = Depends(get_db)):
+async def get_pnl_calendar(
+    db: AsyncSession = Depends(get_db),
+    user=Depends(require_user),
+    broker: AlpacaClient | None = Depends(optional_broker),
+):
     """
     Daily P&L for the last 90 days.
     Returns list of {date, pnl, trades} for calendar heatmap.
     """
-    from sqlalchemy import select, desc, func
+    from sqlalchemy import select
     from app.db.models.trade import Trade
     from datetime import timedelta
-    import httpx
-    from app.config import get_settings
 
-    settings = get_settings()
     cutoff = datetime.now(UTC) - timedelta(days=90)
 
-    # Get closed trades with P&L grouped by date
     result = await db.execute(
         select(Trade)
+        .where(Trade.user_id == user.id)
         .where(Trade.submitted_at >= cutoff)
         .where(Trade.pnl.isnot(None))
         .order_by(Trade.submitted_at)
     )
     trades = result.scalars().all()
 
-    # Group by date
     by_date: dict = {}
     for t in trades:
         if t.submitted_at:
@@ -193,33 +179,26 @@ async def get_pnl_calendar(db: AsyncSession = Depends(get_db)):
             by_date[date_str]["pnl"] += float(t.pnl or 0)
             by_date[date_str]["trades"] += 1
 
-    # Also try to get daily P&L from Alpaca account history
-    try:
-        headers = {
-            "APCA-API-KEY-ID": settings.alpaca_api_key,
-            "APCA-API-SECRET-KEY": settings.alpaca_api_secret,
-        }
-        async with httpx.AsyncClient(timeout=8.0) as client:
-            r = await client.get(
-                f"{settings.alpaca_base_url}/v2/account/portfolio/history",
-                headers=headers,
-                params={"period": "3M", "timeframe": "1D"},
+    # Also try to get daily P&L from the user's Alpaca account history
+    if broker is not None:
+        try:
+            loop = asyncio.get_running_loop()
+            hist = await loop.run_in_executor(
+                None, lambda: broker.get_portfolio_history(period="3M", timeframe="1D")
             )
-        if r.status_code == 200:
-            hist = r.json()
-            timestamps = hist.get("timestamp", [])
-            profit_loss = hist.get("profit_loss", [])
-            for ts, pl in zip(timestamps, profit_loss):
-                if pl is not None:
-                    from datetime import datetime, timezone
-                    date_str = datetime.fromtimestamp(ts, tz=timezone.utc).date().isoformat()
-                    if date_str not in by_date:
-                        by_date[date_str] = {"date": date_str, "pnl": 0.0, "trades": 0}
-                    # Use Alpaca P&L if we don't have trade-level data for that day
-                    if by_date[date_str]["trades"] == 0:
-                        by_date[date_str]["pnl"] = round(float(pl), 2)
-    except Exception:
-        pass
+            if hist:
+                timestamps = hist.get("timestamp", [])
+                profit_loss = hist.get("profit_loss", [])
+                for ts, pl in zip(timestamps, profit_loss):
+                    if pl is not None:
+                        date_str = datetime.fromtimestamp(ts, tz=UTC).date().isoformat()
+                        if date_str not in by_date:
+                            by_date[date_str] = {"date": date_str, "pnl": 0.0, "trades": 0}
+                        # Use Alpaca P&L if we don't have trade-level data for that day
+                        if by_date[date_str]["trades"] == 0:
+                            by_date[date_str]["pnl"] = round(float(pl), 2)
+        except Exception:
+            pass
 
     calendar = sorted(by_date.values(), key=lambda x: x["date"])
     for c in calendar:

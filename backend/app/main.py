@@ -14,6 +14,8 @@ import app.db.models.notification     # noqa: F401
 import app.db.models.activity_log     # noqa: F401
 import app.db.models.settings         # noqa: F401
 import app.db.models.user            # noqa: F401
+import app.db.models.user_settings    # noqa: F401
+import app.db.models.broker_connection  # noqa: F401
 from app.core.redis_client import get_redis
 from app.api.router import api_router
 
@@ -82,8 +84,11 @@ app.add_middleware(
 app.include_router(api_router, prefix="/api/v1")
 
 # System status router
+from fastapi import Depends
+from app.core.auth import require_user
 from app.api.v1.system import router as system_router
-app.include_router(system_router, prefix="/api/v1/system", tags=["system"])
+app.include_router(system_router, prefix="/api/v1/system", tags=["system"],
+                   dependencies=[Depends(require_user)])
 
 
 @app.get("/health")

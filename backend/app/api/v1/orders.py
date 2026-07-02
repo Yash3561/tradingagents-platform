@@ -1,18 +1,13 @@
-from fastapi import APIRouter, HTTPException
-import httpx
+import asyncio
+
+from fastapi import APIRouter, Depends, HTTPException
 import structlog
-from app.config import get_settings
+
+from app.broker.alpaca_client import AlpacaClient
+from app.broker.credentials import optional_broker, required_broker
 
 router = APIRouter()
 log = structlog.get_logger()
-settings = get_settings()
-
-
-def _headers():
-    return {
-        "APCA-API-KEY-ID": settings.alpaca_api_key,
-        "APCA-API-SECRET-KEY": settings.alpaca_api_secret,
-    }
 
 
 def _fmt_order(o: dict) -> dict:
@@ -38,55 +33,42 @@ def _fmt_order(o: dict) -> dict:
 
 
 @router.get("/")
-async def list_orders(status: str = "open", limit: int = 50):
+async def list_orders(
+    status: str = "open",
+    limit: int = 50,
+    broker: AlpacaClient | None = Depends(optional_broker),
+):
     """
-    List orders from Alpaca.
+    List orders from the user's Alpaca account.
     status: open | closed | all
     """
-    if not settings.alpaca_api_key:
+    if broker is None:
         return []
     try:
-        async with httpx.AsyncClient(timeout=8.0) as client:
-            r = await client.get(
-                f"{settings.alpaca_base_url}/v2/orders",
-                headers=_headers(),
-                params={"status": status, "limit": limit, "direction": "desc"},
-            )
-        if r.status_code != 200:
-            log.warning("orders.list_failed", status=r.status_code, body=r.text[:200])
-            return []
-        return [_fmt_order(o) for o in r.json()]
+        loop = asyncio.get_running_loop()
+        raw = await loop.run_in_executor(None, lambda: broker.get_orders(status, limit))
+        return [_fmt_order(o) for o in raw]
     except Exception as e:
         log.warning("orders.list_error", error=str(e))
         return []
 
 
 @router.delete("/{order_id}")
-async def cancel_order(order_id: str):
+async def cancel_order(order_id: str, broker: AlpacaClient = Depends(required_broker)):
     """Cancel a single open order."""
-    if not settings.alpaca_api_key:
-        raise HTTPException(status_code=400, detail="Alpaca not configured")
-    async with httpx.AsyncClient(timeout=8.0) as client:
-        r = await client.delete(
-            f"{settings.alpaca_base_url}/v2/orders/{order_id}",
-            headers=_headers(),
-        )
-    if r.status_code == 204:
+    loop = asyncio.get_running_loop()
+    ok = await loop.run_in_executor(None, broker.cancel_order, order_id)
+    if ok:
         return {"cancelled": order_id}
-    raise HTTPException(status_code=r.status_code, detail=r.text)
+    raise HTTPException(status_code=400, detail=f"Could not cancel order {order_id}")
 
 
 @router.delete("/")
-async def cancel_all_orders():
+async def cancel_all_orders(broker: AlpacaClient = Depends(required_broker)):
     """Cancel all open orders."""
-    if not settings.alpaca_api_key:
-        raise HTTPException(status_code=400, detail="Alpaca not configured")
-    async with httpx.AsyncClient(timeout=8.0) as client:
-        r = await client.delete(
-            f"{settings.alpaca_base_url}/v2/orders",
-            headers=_headers(),
-        )
-    if r.status_code in (200, 207):
-        cancelled = r.json() if r.text else []
+    loop = asyncio.get_running_loop()
+    try:
+        cancelled = await loop.run_in_executor(None, broker.cancel_all_orders)
         return {"cancelled_count": len(cancelled)}
-    raise HTTPException(status_code=r.status_code, detail=r.text)
+    except Exception as e:
+        raise HTTPException(status_code=502, detail=str(e))

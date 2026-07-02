@@ -42,18 +42,16 @@ WATCHLIST = [
 MAX_AI_CANDIDATES = 8
 
 
-async def get_active_watchlist() -> list[str]:
-    """Returns custom watchlist from DB if set, else the default WATCHLIST."""
+async def get_active_watchlist(user_id: int | None = None) -> list[str]:
+    """Returns the user's custom watchlist if set, else the default WATCHLIST."""
     try:
-        from app.core.postgres import AsyncSessionLocal
-        from app.db.models.settings import get_setting
+        from app.db.models.user_settings import get_user_setting
         import json
-        async with AsyncSessionLocal() as db:
-            custom = await get_setting(db, "custom_watchlist")
-            if custom:
-                tickers = json.loads(custom) if isinstance(custom, str) else custom
-                if tickers:
-                    return tickers
+        custom = await get_user_setting(user_id, "custom_watchlist")
+        if custom:
+            tickers = json.loads(custom) if isinstance(custom, str) else custom
+            if tickers:
+                return tickers
     except Exception:
         pass
     return WATCHLIST
@@ -351,6 +349,7 @@ async def run_market_scan(
     vix_override: float | None = None,
     scan_id: str | None = None,
     criteria: dict | None = None,
+    user_id: int | None = None,
 ) -> dict:
     """
     Full market scan:
@@ -358,17 +357,20 @@ async def run_market_scan(
     1. Check VIX regime — if VIX > 30, suppress all BUY signals
     2. Pre-screen watchlist
     3. Run AI pipeline on top candidates
-    4. Execute approved trades
+    4. Execute approved trades (in the user's Alpaca account when user_id given)
     Returns scan summary.
     """
     from app.agents.structured_runner import run_structured_agent_analysis
     from app.core.postgres import AsyncSessionLocal
     from app.db.models.agent_run import AgentRun
     from app.api.v1.notifications import save_notification
-    from app.db.models.settings import get_setting as _get_setting
     import uuid
 
-    # Load scan parameters from DB settings (caller overrides take precedence)
+    async def _get_setting(key, default=None):
+        from app.db.models.user_settings import get_user_setting
+        return await get_user_setting(user_id, key, default)
+
+    # Load scan parameters from settings (caller overrides take precedence)
     if model is None:
         model = str(await _get_setting("llm_model", "deepseek-ai/deepseek-v4-flash"))
     if max_candidates is None:
@@ -386,7 +388,7 @@ async def run_market_scan(
             "duration_s": 0,
         }
 
-    scan_watchlist = watchlist or await get_active_watchlist()
+    scan_watchlist = watchlist or await get_active_watchlist(user_id)
     scan_start = datetime.now(UTC)
     debate_rounds_setting = int(await _get_setting("debate_rounds", 2))
 
@@ -401,6 +403,7 @@ async def run_market_scan(
                 type="scan_blocked",
                 title="Scan blocked by circuit breaker",
                 body=f"Market scan skipped — circuit breaker active: {reasons}",
+                user_id=user_id,
             )
             return {
                 "status": "blocked_circuit_breaker",
@@ -487,6 +490,7 @@ async def run_market_scan(
         async with AsyncSessionLocal() as db:
             run = AgentRun(
                 id=run_id,
+                user_id=user_id,
                 ticker=ticker,
                 analysis_date=analysis_date,
                 status="pending",
@@ -524,6 +528,7 @@ async def run_market_scan(
                 debate_rounds=debate_rounds_setting,
                 model=model,
                 senior_model=senior_model,
+                user_id=user_id,
             )
             r = {"ticker": ticker, "run_id": run_id, "status": "completed"}
         except Exception as e:
@@ -585,6 +590,7 @@ async def run_market_scan(
             },
             result="completed",
             duration_s=round(duration, 1),
+            user_id=user_id,
         )
     except Exception as act_err:
         log.warning("scanner.activity_log_failed", error=str(act_err))

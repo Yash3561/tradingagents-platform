@@ -5,8 +5,12 @@ No AI calls — pure technical rules for speed.
 """
 from __future__ import annotations
 from datetime import datetime, UTC, timedelta
-from fastapi import APIRouter
+from fastapi import APIRouter, Depends
 import structlog
+
+from app.core.auth import require_user
+from app.broker.alpaca_client import AlpacaClient
+from app.broker.credentials import optional_broker
 
 router = APIRouter()
 log = structlog.get_logger()
@@ -17,40 +21,33 @@ def _severity_order(a: dict) -> int:
 
 
 @router.get("/")
-async def get_alerts():
+async def get_alerts(user=Depends(require_user),
+                     broker: AlpacaClient | None = Depends(optional_broker)):
     """
-    Scan portfolio for risk conditions and return prioritized alerts.
+    Scan the user's portfolio for risk conditions and return prioritized alerts.
     Checks: position concentration, stop-loss proximity, momentum divergence,
     earnings proximity, large drawdowns, overextended positions (RSI>75).
     """
     import asyncio
-    import httpx
     import yfinance as yf
-    from app.config import get_settings
     from app.core.postgres import AsyncSessionLocal
     from app.db.models.trade import Trade
-    from sqlalchemy import select, desc
+    from sqlalchemy import select
 
-    settings = get_settings()
     alerts = []
 
-    # ── Fetch positions from Alpaca ─────────────────────────────────────────
+    if broker is None:
+        return {"alerts": [], "scanned_at": datetime.now(UTC).isoformat(), "positions_checked": 0}
+
+    # ── Fetch positions from the user's Alpaca account ──────────────────────
     positions = []
     account = {}
     try:
-        headers = {
-            "APCA-API-KEY-ID": settings.alpaca_api_key,
-            "APCA-API-SECRET-KEY": settings.alpaca_api_secret,
-        }
-        async with httpx.AsyncClient(timeout=8.0) as client:
-            pos_r, acct_r = await asyncio.gather(
-                client.get(f"{settings.alpaca_base_url}/v2/positions", headers=headers),
-                client.get(f"{settings.alpaca_base_url}/v2/account", headers=headers),
-            )
-        if pos_r.status_code == 200:
-            positions = pos_r.json()
-        if acct_r.status_code == 200:
-            account = acct_r.json()
+        loop = asyncio.get_running_loop()
+        positions, account = await asyncio.gather(
+            loop.run_in_executor(None, broker.get_positions),
+            loop.run_in_executor(None, broker.get_account),
+        )
     except Exception as e:
         log.warning("alerts.alpaca_failed", error=str(e))
         return {"alerts": [], "scanned_at": datetime.now(UTC).isoformat(), "error": str(e)}
@@ -180,6 +177,7 @@ async def get_alerts():
         cutoff = datetime.now(UTC) - timedelta(days=30)
         result = await db.execute(
             select(Trade)
+            .where(Trade.user_id == user.id)
             .where(Trade.status.in_(["filled", "submitted"]))
             .where(Trade.submitted_at <= cutoff)
             .where(Trade.closed_at.is_(None))
@@ -221,10 +219,11 @@ async def get_alerts():
 
 
 @router.get("/summary")
-async def get_alert_summary():
+async def get_alert_summary(user=Depends(require_user),
+                            broker: AlpacaClient | None = Depends(optional_broker)):
     """Quick alert count check — used by header/dashboard for badge."""
     try:
-        full = await get_alerts()
+        full = await get_alerts(user=user, broker=broker)
         counts = full.get("alert_counts", {})
         return {
             "total": len(full.get("alerts", [])),

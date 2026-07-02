@@ -987,7 +987,8 @@ def _run_full_pipeline(run_id: str, ticker: str, date: str, debate_rounds: int, 
     }
 
 
-async def _place_order_if_approved(run_id: str, ticker: str, result: dict):
+async def _place_order_if_approved(run_id: str, ticker: str, result: dict,
+                                   user_id: int | None = None):
     """
     After pipeline completes, place a real Alpaca paper order if approved.
     Rules:
@@ -996,10 +997,31 @@ async def _place_order_if_approved(run_id: str, ticker: str, result: dict):
     - Already hold a long position in this ticker → skip (no doubling up)
     - Position size: minimum 5% of equity for confident trades
     - Quantity: always whole shares (no fractions)
+
+    Orders go to the *user's* connected Alpaca paper account. Legacy runs
+    without a user fall back to the env-configured account.
     """
     import uuid
     from app.db.models.trade import Trade
-    from app.broker import alpaca_client
+    from app.broker.credentials import get_client_for_user
+    from app.broker.alpaca_client import default_client
+
+    if user_id is not None:
+        broker = await get_client_for_user(user_id)
+        if broker is None:
+            log.info("broker.no_connection", run_id=run_id, user_id=user_id,
+                     reason="User has not connected an Alpaca account — analysis only")
+            await _emit(run_id, {
+                "type": "order_skipped",
+                "reason": "broker_not_connected",
+                "message": "Connect your Alpaca paper account in Settings to auto-execute trades.",
+            })
+            return
+    else:
+        broker = default_client()
+        if not broker.configured:
+            log.info("broker.no_order", run_id=run_id, reason="no broker configured")
+            return
 
     final = result["reasoning_json"].get("final", {})
     decision = final.get("decision", "HOLD")
@@ -1034,7 +1056,7 @@ async def _place_order_if_approved(run_id: str, ticker: str, result: dict):
                         ticker=ticker, error=str(cb_err))
 
         # Don't stack positions — skip if we already hold this ticker
-        existing = alpaca_client.get_position(ticker)
+        existing = broker.get_position(ticker)
         if existing and float(existing.get("qty", 0)) > 0:
             log.info("broker.already_positioned", run_id=run_id, ticker=ticker,
                      qty=existing.get("qty"))
@@ -1046,12 +1068,12 @@ async def _place_order_if_approved(run_id: str, ticker: str, result: dict):
             log.warning("broker.no_price", ticker=ticker)
             return
 
-        # Load position sizing and stop parameters from DB settings
-        from app.db.models.settings import get_setting as _get_setting
-        db_pos_size_pct = await _get_setting("position_size_pct", 5.0)
-        db_pos_size_high_conf = await _get_setting("position_size_high_conf", 7.0)
-        db_stop_loss_pct = await _get_setting("stop_loss_pct", 7.0)
-        db_take_profit_pct = await _get_setting("take_profit_pct", 15.0)
+        # Load position sizing and stop parameters — user override first, then platform
+        from app.db.models.user_settings import get_user_setting as _get_setting
+        db_pos_size_pct = await _get_setting(user_id, "position_size_pct", 5.0)
+        db_pos_size_high_conf = await _get_setting(user_id, "position_size_high_conf", 7.0)
+        db_stop_loss_pct = await _get_setting(user_id, "stop_loss_pct", 7.0)
+        db_take_profit_pct = await _get_setting(user_id, "take_profit_pct", 15.0)
 
         # Boost position size for high-confidence trades (>= 0.70)
         min_pct = float(db_pos_size_high_conf) if confidence >= 0.70 else float(db_pos_size_pct)
@@ -1062,20 +1084,21 @@ async def _place_order_if_approved(run_id: str, ticker: str, result: dict):
 
         # Calculate qty and force whole shares only
         import math
-        account = alpaca_client.get_account()
+        account = broker.get_account()
         equity = float(account.get("equity", 100_000))
         dollar_amount = equity * (position_pct / 100.0)
         qty = max(1, math.floor(dollar_amount / current_price))  # whole shares, minimum 1
 
         side = "buy"
         # Use bracket order so Alpaca manages stop-loss and take-profit natively
-        order = alpaca_client.submit_bracket_order(
+        order = broker.submit_bracket_order(
             ticker, qty, stop_loss_pct, take_profit_pct, current_price
         )
 
         async with AsyncSessionLocal() as db:
             trade = Trade(
                 id=str(uuid.uuid4()),
+                user_id=user_id,
                 agent_run_id=run_id,
                 alpaca_order_id=order.get("id"),
                 ticker=ticker,
@@ -1124,6 +1147,7 @@ async def _place_order_if_approved(run_id: str, ticker: str, result: dict):
                     f"at ~${current_price:,.2f}. Order ID: {order.get('id', 'N/A')}"
                 ),
                 ticker=ticker,
+                user_id=user_id,
             )
             await log_activity(
                 feature="agent_hub",
@@ -1137,6 +1161,7 @@ async def _place_order_if_approved(run_id: str, ticker: str, result: dict):
                     "run_id": run_id,
                 },
                 result=action_label,
+                user_id=user_id,
             )
         except Exception as notif_err:
             log.warning("broker.notification_failed", error=str(notif_err))
@@ -1153,9 +1178,10 @@ async def run_structured_agent_analysis(
     debate_rounds: int,
     model: str,
     senior_model: str | None = None,
+    user_id: int | None = None,
 ):
     """Async entry point. Updates DB and broadcasts WS events throughout."""
-    log.info("structured_agent.run.start", run_id=run_id, ticker=ticker)
+    log.info("structured_agent.run.start", run_id=run_id, ticker=ticker, user_id=user_id)
 
     async with AsyncSessionLocal() as db:
         run = await db.get(AgentRun, run_id)
@@ -1192,7 +1218,7 @@ async def run_structured_agent_analysis(
         })
 
         # Place paper order if agents approved a trade
-        await _place_order_if_approved(run_id, ticker, result)
+        await _place_order_if_approved(run_id, ticker, result, user_id=user_id)
 
     except Exception as exc:
         import traceback

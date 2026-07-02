@@ -1,18 +1,31 @@
 # TradingAgents Platform — Session Checkpoint
 
 > Rally race co-driver notes. Read this before touching anything.
-> Last updated: 2026-07-02
+> Last updated: 2026-07-02 (multi-tenant SaaS conversion)
 
 ---
 
 ## What This Is
 
-A **professional-grade multi-agent trading platform** with world-class trading frameworks baked into every agent.
+A **multi-tenant paper-trading SaaS** — a professional-grade multi-agent trading platform where each user signs up, connects their own Alpaca **paper** account, and the AI agents analyze + trade in *their* account.
 
-**Not a toy.** Architecture is production-grade: typed agent contracts, WebSocket streaming, Alpaca paper trading integration, market regime detection, Kelly Criterion position sizing, ATR-based stops.
+**Not a toy.** Architecture is production-grade: typed agent contracts, WebSocket streaming, per-user Alpaca integration, market regime detection, Kelly Criterion position sizing, ATR-based stops.
 
-**Always paper trading by default.** `ALPACA_BASE_URL` defaults to paper API.
-Never switch to live without explicit user confirmation.
+**Paper-only, enforced server-side.** `broker_connections.base_url` is forced to
+the paper API in code (`PAPER_BASE_URL` in `db/models/broker_connection.py`).
+Live trading is a deliberate future product/legal decision — do not soften this.
+
+## Multi-Tenancy (★ read this first)
+
+- **Auth**: every endpoint except `/auth/*` and `/ws` requires JWT (`require_user` dependency added at router level in `api/router.py`).
+- **Broker**: users paste their Alpaca paper keys in Settings → verified live against Alpaca → Fernet-encrypted (key derived from `SECRET_KEY` in `core/crypto.py`) → stored in `broker_connections`. Rotating `SECRET_KEY` invalidates stored creds.
+- **Per-user client**: `app/broker/credentials.py` — `get_client_for_user(user_id)` (120s TTL cache), FastAPI deps `optional_broker` (None → endpoints return empties) and `required_broker` (409 `broker_not_connected`).
+- **AlpacaClient class**: `app/broker/alpaca_client.py` — instance-scoped creds. Module-level functions = legacy env-key path (market clock, price feed, circuit breakers, overnight agent, dev fallback).
+- **Data isolation**: `user_id` column (nullable = legacy rows) on trades, agent_runs, equity_snapshots, notifications, activity_logs. All API queries filter by it. Added via idempotent `ALTER TABLE ... IF NOT EXISTS` in `core/postgres.py::init_db` (no Alembic needed).
+- **Per-user settings**: `user_settings` table; `get_user_setting(user_id, key, default)` falls back to platform_settings. Watchlist is per-user (`custom_watchlist` key).
+- **Workers**: trade_sync groups trades by user; position_monitor / equity_tracker / intraday monitor loop `connected_user_ids()` + legacy env account; scheduled scans run **only for users with explicit `scan_enabled=true` user setting** (LLM cost control).
+- **Order flow**: `run_structured_agent_analysis(..., user_id)` → `_place_order_if_approved` uses the user's client; no broker connected → emits `order_skipped` WS event, analysis-only.
+- **Verified 2026-07-02**: two-user isolation test passed (401 unauth, cross-user trade fetch 404, watchlist isolation, fake Alpaca keys rejected with 400).
 
 ---
 
@@ -364,6 +377,14 @@ docker compose up --build backend -d
 - Git history cleaned — no AI attribution in commit history
 
 ---
+
+## Known Issues / Watch Out (multi-tenant additions)
+
+- `/trades/export-csv` is registered AFTER `/trades/{trade_id}` → path shadowed, returns 404 (pre-existing; fix = move route above the dynamic one)
+- WebSocket endpoint is unauthenticated — rooms are unguessable UUIDs, acceptable for now, but add token auth before public launch
+- `position_monitor` + `scheduler` run in BOTH the backend lifespan and the worker container (pre-existing duplication — double order-close race possible)
+- Circuit breaker daily-drawdown check still uses the legacy env account, not per-user
+- market.py / backtest.py / price_feed use platform env Alpaca keys for market DATA (fine — data is not account-scoped)
 
 ## Known Issues / Watch Out
 

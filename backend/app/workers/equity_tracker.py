@@ -1,8 +1,10 @@
 """
-Equity Tracker — takes periodic snapshots of portfolio equity.
+Equity Tracker — takes periodic snapshots of portfolio equity, per user.
 
 Runs every 15 minutes during market hours, and once at EOD.
 Snapshots power the equity curve chart and Sharpe / max-drawdown calculations.
+Multi-tenant: one snapshot per connected user each cycle. The env-configured
+legacy account (user_id NULL) is also snapshotted if keys are present.
 """
 from __future__ import annotations
 import asyncio
@@ -16,17 +18,10 @@ SNAPSHOT_INTERVAL = 900   # 15 minutes
 TRADING_DAYS_PER_YEAR = 252
 
 
-def _fetch_account_snapshot() -> dict | None:
-    from app.broker.alpaca_client import get_account, get_positions
-    from app.config import get_settings
-    settings = get_settings()
-
-    if not settings.alpaca_api_key:
-        return None
-
+def _fetch_account_snapshot(broker) -> dict | None:
     try:
-        acct = get_account()
-        positions = get_positions()
+        acct = broker.get_account()
+        positions = broker.get_positions()
         return {
             "equity": float(acct.get("equity", 0)),
             "cash": float(acct.get("cash", 0)),
@@ -39,10 +34,10 @@ def _fetch_account_snapshot() -> dict | None:
         return None
 
 
-async def take_snapshot() -> bool:
-    """Take one equity snapshot and store it in DB. Returns True on success."""
+async def take_snapshot_for_user(user_id: int | None, broker) -> bool:
+    """Take one equity snapshot for one account and store it. Returns True on success."""
     loop = asyncio.get_running_loop()
-    data = await loop.run_in_executor(None, _fetch_account_snapshot)
+    data = await loop.run_in_executor(None, _fetch_account_snapshot, broker)
 
     if not data or data["equity"] <= 0:
         return False
@@ -52,6 +47,7 @@ async def take_snapshot() -> bool:
 
     async with AsyncSessionLocal() as db:
         snap = EquitySnapshot(
+            user_id=user_id,
             equity=round(data["equity"], 2),
             cash=round(data["cash"], 2),
             long_market_value=round(data["long_market_value"], 2),
@@ -61,17 +57,43 @@ async def take_snapshot() -> bool:
         db.add(snap)
         await db.commit()
 
-    log.debug("equity_tracker.snapshot",
+    log.debug("equity_tracker.snapshot", user_id=user_id,
               equity=data["equity"], positions=data["positions_count"])
     return True
 
 
-async def compute_performance_metrics(days: int = 90) -> dict:
+async def take_snapshot() -> int:
+    """Snapshot every connected user (plus the legacy env account). Returns count taken."""
+    from app.broker.credentials import connected_user_ids, get_client_for_user
+    from app.broker.alpaca_client import default_client
+
+    taken = 0
+    for uid in await connected_user_ids():
+        broker = await get_client_for_user(uid)
+        if broker is not None:
+            try:
+                if await take_snapshot_for_user(uid, broker):
+                    taken += 1
+            except Exception as e:
+                log.warning("equity_tracker.user_snapshot_failed", user_id=uid, error=str(e))
+
+    legacy = default_client()
+    if legacy.configured:
+        try:
+            if await take_snapshot_for_user(None, legacy):
+                taken += 1
+        except Exception as e:
+            log.warning("equity_tracker.legacy_snapshot_failed", error=str(e))
+
+    return taken
+
+
+async def compute_performance_metrics(days: int = 90, user_id: int | None = None) -> dict:
     """
     Compute Sharpe ratio and max drawdown from recent equity snapshots.
-    Uses daily returns (one snapshot per day at close).
+    Scoped to one user's snapshots (user_id=None → legacy env account rows).
     """
-    from sqlalchemy import select, desc
+    from sqlalchemy import select
     from app.db.models.equity_snapshot import EquitySnapshot
     from app.core.postgres import AsyncSessionLocal
     from datetime import timedelta
@@ -79,11 +101,14 @@ async def compute_performance_metrics(days: int = 90) -> dict:
     cutoff = datetime.now(UTC) - timedelta(days=days)
 
     async with AsyncSessionLocal() as db:
-        result = await db.execute(
+        q = (
             select(EquitySnapshot)
             .where(EquitySnapshot.timestamp >= cutoff)
             .order_by(EquitySnapshot.timestamp)
         )
+        q = q.where(EquitySnapshot.user_id == user_id) if user_id is not None \
+            else q.where(EquitySnapshot.user_id.is_(None))
+        result = await db.execute(q)
         snaps = result.scalars().all()
 
     if len(snaps) < 5:
@@ -135,18 +160,17 @@ async def compute_performance_metrics(days: int = 90) -> dict:
     }
 
 
-async def get_equity_curve(limit: int = 200) -> list[dict]:
-    """Return recent equity snapshots for charting."""
+async def get_equity_curve(limit: int = 200, user_id: int | None = None) -> list[dict]:
+    """Return recent equity snapshots for charting, scoped to one user."""
     from sqlalchemy import select, desc
     from app.db.models.equity_snapshot import EquitySnapshot
     from app.core.postgres import AsyncSessionLocal
 
     async with AsyncSessionLocal() as db:
-        result = await db.execute(
-            select(EquitySnapshot)
-            .order_by(desc(EquitySnapshot.timestamp))
-            .limit(limit)
-        )
+        q = select(EquitySnapshot).order_by(desc(EquitySnapshot.timestamp)).limit(limit)
+        q = q.where(EquitySnapshot.user_id == user_id) if user_id is not None \
+            else q.where(EquitySnapshot.user_id.is_(None))
+        result = await db.execute(q)
         snaps = result.scalars().all()
 
     return [

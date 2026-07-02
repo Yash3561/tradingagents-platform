@@ -8,6 +8,7 @@ class EquitySnapshot(Base):
     __tablename__ = "equity_snapshots"
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    user_id: Mapped[int | None] = mapped_column(Integer, index=True)  # NULL = legacy single-tenant rows
     timestamp: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
         default=lambda: datetime.now(UTC),

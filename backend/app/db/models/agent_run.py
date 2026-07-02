@@ -8,6 +8,7 @@ class AgentRun(Base):
     __tablename__ = "agent_runs"
 
     id: Mapped[str] = mapped_column(String(36), primary_key=True)
+    user_id: Mapped[int | None] = mapped_column(Integer, index=True)  # NULL = legacy single-tenant rows
     ticker: Mapped[str] = mapped_column(String(20), index=True, nullable=False)
     analysis_date: Mapped[str] = mapped_column(String(10), nullable=False)
     status: Mapped[str] = mapped_column(String(20), default="pending")  # pending | running | completed | failed | cancelled

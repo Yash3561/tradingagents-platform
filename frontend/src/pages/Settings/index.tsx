@@ -1,6 +1,6 @@
 import { motion, AnimatePresence } from "framer-motion";
 import { useState, useEffect, useRef, useCallback } from "react";
-import { CheckCircle, Loader2, ShieldAlert, ShieldCheck, ShieldX } from "lucide-react";
+import { CheckCircle, Link2, Loader2, ShieldAlert, ShieldCheck, ShieldX, Unplug } from "lucide-react";
 import { api } from "../../lib/api";
 import { cn } from "../../lib/cn";
 
@@ -238,6 +238,153 @@ function CircuitBreakers() {
   );
 }
 
+// ── Broker Connection ──────────────────────────────────────────────────────────
+
+interface BrokerStatus {
+  connected: boolean;
+  account_number?: string;
+  equity?: number;
+  buying_power?: number;
+  status?: string;
+  last_verified_at?: string | null;
+}
+
+function BrokerConnection() {
+  const [status, setStatus] = useState<BrokerStatus | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [apiKey, setApiKey] = useState("");
+  const [apiSecret, setApiSecret] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const refresh = useCallback(() => {
+    api.get("/broker/status")
+      .then(({ data }) => setStatus(data))
+      .catch(() => setStatus({ connected: false }))
+      .finally(() => setLoading(false));
+  }, []);
+
+  useEffect(() => { refresh(); }, [refresh]);
+
+  const connect = async () => {
+    setBusy(true);
+    setError(null);
+    try {
+      await api.post("/broker/connect", { api_key: apiKey, api_secret: apiSecret });
+      setApiKey("");
+      setApiSecret("");
+      refresh();
+    } catch (e: any) {
+      setError(e.response?.data?.detail ?? "Connection failed — check your keys.");
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const disconnect = async () => {
+    if (!window.confirm("Disconnect your Alpaca account? Stored keys will be deleted.")) return;
+    setBusy(true);
+    try {
+      await api.delete("/broker/disconnect");
+      setStatus({ connected: false });
+    } catch {}
+    setBusy(false);
+  };
+
+  if (loading) {
+    return (
+      <div className="flex items-center gap-2 text-xs text-text-muted">
+        <Loader2 size={14} className="animate-spin" /> Loading broker status...
+      </div>
+    );
+  }
+
+  if (status?.connected) {
+    return (
+      <div className="space-y-4">
+        <div className="flex items-center justify-between py-2 px-3 bg-bg-elevated rounded-lg">
+          <div className="flex items-center gap-2">
+            <ShieldCheck size={16} className="text-gain" />
+            <span className="text-sm text-text-primary">Alpaca Paper Account</span>
+            <span className="badge-gain text-[10px] px-1.5 py-0.5 rounded">PAPER</span>
+          </div>
+          <span className="text-xs font-mono text-text-primary">{status.account_number}</span>
+        </div>
+
+        {status.equity !== undefined && (
+          <div className="grid grid-cols-2 gap-2">
+            <div className="py-2 px-3 bg-bg-elevated rounded-lg">
+              <p className="metric-label">Equity</p>
+              <p className="text-sm font-mono font-semibold text-text-primary">
+                ${status.equity.toLocaleString(undefined, { minimumFractionDigits: 2 })}
+              </p>
+            </div>
+            <div className="py-2 px-3 bg-bg-elevated rounded-lg">
+              <p className="metric-label">Buying Power</p>
+              <p className="text-sm font-mono font-semibold text-text-primary">
+                ${(status.buying_power ?? 0).toLocaleString(undefined, { minimumFractionDigits: 2 })}
+              </p>
+            </div>
+          </div>
+        )}
+
+        <button
+          onClick={disconnect}
+          disabled={busy}
+          className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-loss
+                     bg-loss/10 hover:bg-loss/20 rounded-lg transition-colors disabled:opacity-50"
+        >
+          <Unplug size={12} /> Disconnect
+        </button>
+      </div>
+    );
+  }
+
+  return (
+    <div className="space-y-4">
+      <p className="text-xs text-text-muted">
+        Connect your own Alpaca <span className="text-warn font-semibold">paper trading</span> account —
+        the AI agents will analyze and place trades in it. Get free paper keys at{" "}
+        <a href="https://app.alpaca.markets" target="_blank" rel="noreferrer" className="text-accent hover:underline">
+          app.alpaca.markets
+        </a>{" "}
+        (select “Paper” in the top-left, then Generate API Keys). No real money is ever involved.
+      </p>
+
+      <div className="space-y-2">
+        <input
+          type="text"
+          placeholder="API Key ID (starts with PK...)"
+          value={apiKey}
+          onChange={e => setApiKey(e.target.value)}
+          className="w-full px-3 py-2 bg-bg-elevated border border-border rounded-lg text-sm font-mono
+                     text-text-primary placeholder:text-text-muted focus:outline-none focus:border-accent"
+        />
+        <input
+          type="password"
+          placeholder="API Secret Key"
+          value={apiSecret}
+          onChange={e => setApiSecret(e.target.value)}
+          className="w-full px-3 py-2 bg-bg-elevated border border-border rounded-lg text-sm font-mono
+                     text-text-primary placeholder:text-text-muted focus:outline-none focus:border-accent"
+        />
+      </div>
+
+      {error && <p className="text-xs text-loss">{typeof error === "string" ? error : JSON.stringify(error)}</p>}
+
+      <button
+        onClick={connect}
+        disabled={busy || !apiKey.trim() || !apiSecret.trim()}
+        className="flex items-center gap-1.5 px-4 py-2 text-sm font-medium text-white bg-accent
+                   hover:bg-accent/90 rounded-lg transition-colors disabled:opacity-50"
+      >
+        {busy ? <Loader2 size={14} className="animate-spin" /> : <Link2 size={14} />}
+        {busy ? "Verifying with Alpaca..." : "Connect Paper Account"}
+      </button>
+    </div>
+  );
+}
+
 // ── Main Settings Page ─────────────────────────────────────────────────────────
 
 export default function Settings() {
@@ -353,6 +500,11 @@ export default function Settings() {
           )}
         </AnimatePresence>
       </div>
+
+      {/* ── Broker Connection ────────────────────────────────────────────────── */}
+      <Section title="Broker Connection">
+        <BrokerConnection />
+      </Section>
 
       {/* ── Risk Management ─────────────────────────────────────────────────── */}
       <Section title="Risk Management">

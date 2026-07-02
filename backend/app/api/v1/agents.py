@@ -5,6 +5,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from pydantic import BaseModel
 
 from app.core.postgres import get_db
+from app.core.auth import require_user
 from app.db.models.agent_run import AgentRun
 from app.agents.structured_runner import run_structured_agent_analysis
 from app.agents.contracts import get_all_schemas, get_contract_schema
@@ -33,12 +34,14 @@ async def trigger_run(
     body: RunRequest,
     background_tasks: BackgroundTasks,
     db: AsyncSession = Depends(get_db),
+    user=Depends(require_user),
 ):
     run_id = str(uuid.uuid4())
     analysis_date = body.date or datetime.now(UTC).strftime("%Y-%m-%d")
 
     run = AgentRun(
         id=run_id,
+        user_id=user.id,
         ticker=body.ticker.upper(),
         analysis_date=analysis_date,
         status="pending",
@@ -48,7 +51,10 @@ async def trigger_run(
     db.add(run)
     await db.commit()
 
-    background_tasks.add_task(run_structured_agent_analysis, run_id, body.ticker.upper(), analysis_date, body.debate_rounds, body.model, body.senior_model)
+    background_tasks.add_task(
+        run_structured_agent_analysis, run_id, body.ticker.upper(), analysis_date,
+        body.debate_rounds, body.model, body.senior_model, user.id,
+    )
 
     return RunResponse(
         run_id=run_id,
@@ -59,10 +65,12 @@ async def trigger_run(
 
 
 @router.get("/runs")
-async def list_runs(limit: int = 20, offset: int = 0, db: AsyncSession = Depends(get_db)):
+async def list_runs(limit: int = 20, offset: int = 0,
+                    db: AsyncSession = Depends(get_db), user=Depends(require_user)):
     from sqlalchemy import select, desc
     result = await db.execute(
-        select(AgentRun).order_by(desc(AgentRun.created_at)).limit(limit).offset(offset)
+        select(AgentRun).where(AgentRun.user_id == user.id)
+        .order_by(desc(AgentRun.created_at)).limit(limit).offset(offset)
     )
     runs = result.scalars().all()
     return [
@@ -81,9 +89,9 @@ async def list_runs(limit: int = 20, offset: int = 0, db: AsyncSession = Depends
 
 
 @router.get("/runs/{run_id}")
-async def get_run(run_id: str, db: AsyncSession = Depends(get_db)):
+async def get_run(run_id: str, db: AsyncSession = Depends(get_db), user=Depends(require_user)):
     run = await db.get(AgentRun, run_id)
-    if not run:
+    if not run or run.user_id != user.id:
         raise HTTPException(404, "Run not found")
     return {
         "run_id": run.id,
@@ -144,7 +152,8 @@ class ScanRequest(BaseModel):
 
 
 @router.post("/scan")
-async def trigger_scan(body: ScanRequest, background_tasks: BackgroundTasks):
+async def trigger_scan(body: ScanRequest, background_tasks: BackgroundTasks,
+                       user=Depends(require_user)):
     """
     Trigger a full market scan:
     1. Pre-screen 40+ stocks with technical analysis (free/fast)
@@ -165,6 +174,7 @@ async def trigger_scan(body: ScanRequest, background_tasks: BackgroundTasks):
                 max_candidates=body.max_candidates,
                 scan_id=scan_id,
                 criteria=body.criteria.model_dump(exclude_none=True) if body.criteria else None,
+                user_id=user.id,
             )
             await ws_manager.broadcast(f"scan:{scan_id}", {
                 "type": "scan_completed",
@@ -518,9 +528,9 @@ async def get_options_chain(ticker: str, expiry_index: int = 0):
 
 
 @router.delete("/runs/{run_id}")
-async def cancel_run(run_id: str, db: AsyncSession = Depends(get_db)):
+async def cancel_run(run_id: str, db: AsyncSession = Depends(get_db), user=Depends(require_user)):
     run = await db.get(AgentRun, run_id)
-    if not run:
+    if not run or run.user_id != user.id:
         raise HTTPException(404, "Run not found")
     if run.status not in ("pending", "running"):
         raise HTTPException(400, f"Cannot cancel run in status: {run.status}")
