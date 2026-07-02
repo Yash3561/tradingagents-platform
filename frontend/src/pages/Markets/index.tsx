@@ -3,6 +3,7 @@ import { motion, AnimatePresence } from "framer-motion";
 import { Search, TrendingUp, TrendingDown, Loader2, ExternalLink, Brain, RefreshCw, ShieldAlert } from "lucide-react";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import CandlestickChart, { ChartLevel } from "../../components/charts/CandlestickChart";
+import OrderTicket from "../../components/trading/OrderTicket";
 import { api } from "../../lib/api";
 import { cn } from "../../lib/cn";
 
@@ -368,6 +369,8 @@ export default function Markets() {
 
         {/* Stats panel — 1 col */}
         <div className="space-y-4">
+          <OrderTicket ticker={activeTicker} currentPrice={stats?.current_price ?? null} />
+
           {statsLoading ? (
             <div className="card p-5 flex items-center justify-center h-64">
               <Loader2 size={20} className="animate-spin text-accent" />

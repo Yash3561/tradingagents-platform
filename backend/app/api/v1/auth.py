@@ -16,6 +16,7 @@ class SignupRequest(BaseModel):
     email: str
     password: str
     full_name: str = ""
+    invite_code: str = ""
 
 
 class TokenResponse(BaseModel):
@@ -26,13 +27,25 @@ class TokenResponse(BaseModel):
     full_name: str | None
 
 
+@router.get("/signup-policy")
+async def signup_policy():
+    """Public: tells the signup form whether an invite code is required."""
+    from app.config import get_settings
+    return {"invite_required": bool(get_settings().signup_invite_code)}
+
+
 @router.post("/signup", response_model=TokenResponse)
 async def signup(body: SignupRequest, db: AsyncSession = Depends(get_db)):
     """
     Register a new account.
-    First user gets created immediately — no invite needed.
-    Subsequent signups blocked if MAX_USERS env is reached (default: unlimited for personal use).
+    When SIGNUP_INVITE_CODE is set in the environment, signups require it —
+    gate this before exposing a public URL.
     """
+    from app.config import get_settings
+    invite_code = get_settings().signup_invite_code
+    if invite_code and body.invite_code.strip() != invite_code:
+        raise HTTPException(status_code=403, detail="A valid invite code is required to sign up")
+
     # Check email taken
     result = await db.execute(select(User).where(User.email == body.email.lower().strip()))
     if result.scalar_one_or_none():

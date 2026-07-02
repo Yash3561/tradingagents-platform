@@ -117,8 +117,9 @@ class AlpacaClient:
         ticker: str,
         side: str,           # "buy" | "sell"
         qty: float,
-        order_type: str = "market",
-        time_in_force: str = "day",
+        order_type: str = "market",   # "market" | "limit"
+        time_in_force: str = "day",   # "day" | "gtc"
+        limit_price: float | None = None,
     ) -> dict:
         # Always use whole shares — cleaner and avoids Alpaca fractional edge cases
         final_qty = str(max(1, math.floor(qty)))
@@ -130,7 +131,11 @@ class AlpacaClient:
             "type": order_type,
             "time_in_force": time_in_force,
         }
-        log.info("alpaca.order.submit", ticker=ticker, side=side, qty=qty)
+        if order_type == "limit":
+            if limit_price is None:
+                raise ValueError("limit_price is required for limit orders")
+            payload["limit_price"] = str(round(limit_price, 2))
+        log.info("alpaca.order.submit", ticker=ticker, side=side, qty=qty, type=order_type)
         with httpx.Client(timeout=10.0) as client:
             r = client.post(f"{self.base_url}/v2/orders", headers=self.headers(), json=payload)
             r.raise_for_status()

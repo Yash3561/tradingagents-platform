@@ -1,6 +1,6 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { motion } from "framer-motion";
-import { Eye, EyeOff, Loader2, TrendingUp, AlertCircle } from "lucide-react";
+import { Eye, EyeOff, Loader2, TrendingUp, AlertCircle, KeyRound } from "lucide-react";
 import { api } from "../../lib/api";
 import { saveAuth } from "../../lib/auth";
 
@@ -16,6 +16,14 @@ export default function Signup({ onAuth, onGoLogin }: Props) {
   const [showPw, setShowPw] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [inviteRequired, setInviteRequired] = useState(false);
+  const [inviteCode, setInviteCode] = useState("");
+
+  useEffect(() => {
+    api.get("/auth/signup-policy")
+      .then(r => setInviteRequired(r.data?.invite_required === true))
+      .catch(() => {});
+  }, []);
 
   const submit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -31,6 +39,7 @@ export default function Signup({ onAuth, onGoLogin }: Props) {
         email,
         password,
         full_name: fullName,
+        invite_code: inviteCode,
       });
       saveAuth(data.access_token, {
         user_id: data.user_id,
@@ -164,6 +173,23 @@ export default function Signup({ onAuth, onGoLogin }: Props) {
               )}
             </div>
 
+            {inviteRequired && (
+              <div>
+                <label className="block text-xs font-medium text-slate-400 mb-1.5">
+                  <KeyRound size={11} className="inline mr-1 -mt-0.5" />
+                  Invite code
+                </label>
+                <input
+                  type="text"
+                  value={inviteCode}
+                  onChange={(e) => setInviteCode(e.target.value)}
+                  placeholder="Enter your invite code"
+                  className="w-full bg-bg-elevated border border-border rounded-lg px-3 py-2.5 text-sm text-white placeholder-slate-500 focus:outline-none focus:border-accent transition-colors font-mono"
+                  required
+                />
+              </div>
+            )}
+
             <button
               type="submit"
               disabled={loading}
@@ -173,6 +199,11 @@ export default function Signup({ onAuth, onGoLogin }: Props) {
               Create Account
             </button>
           </form>
+
+          <p className="text-[10px] text-slate-600 mt-4 leading-relaxed">
+            TradingAgents is a paper-trading simulation platform for educational purposes.
+            Trades use virtual money via Alpaca's paper API. AI analysis is not financial advice.
+          </p>
 
           <p className="text-center text-sm text-slate-500 mt-6">
             Already have an account?{" "}

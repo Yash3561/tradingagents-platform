@@ -9,6 +9,8 @@ class Settings(BaseSettings):
     environment: str = "development"
     secret_key: str = "change_this_in_production"
     log_level: str = "INFO"
+    # When set, new signups must supply this code (gate a public deployment)
+    signup_invite_code: str = ""
 
     # Database
     database_url: str = "postgresql+asyncpg://tap:tap_secret@localhost:5432/trading"

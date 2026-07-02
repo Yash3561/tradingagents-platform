@@ -3,6 +3,9 @@ import { getToken } from "./auth";
 
 const BASE = import.meta.env.VITE_API_URL ?? "http://localhost:8000";
 
+/** API host root (no /api/v1) — for host-level endpoints like /health. */
+export const API_ROOT = BASE;
+
 export const api = axios.create({
   baseURL: `${BASE}/api/v1`,
   headers: { "Content-Type": "application/json" },
