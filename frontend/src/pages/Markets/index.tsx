@@ -121,6 +121,25 @@ export default function Markets() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [searchParams]);
 
+  // Restore last viewed ticker (unless deep-linked), persist changes
+  const tickerRestoredRef = useRef(false);
+  useEffect(() => {
+    if (searchParams.get("ticker")) { tickerRestoredRef.current = true; return; }
+    api.get("/settings/last_market_ticker")
+      .then(r => { if (r.data?.value) setActiveTicker(String(r.data.value).toUpperCase()); })
+      .catch(() => {})
+      .finally(() => { tickerRestoredRef.current = true; });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  useEffect(() => {
+    if (!tickerRestoredRef.current) return;
+    const t = setTimeout(() => {
+      api.post("/settings/", { last_market_ticker: activeTicker }).catch(() => {});
+    }, 1000);
+    return () => clearTimeout(t);
+  }, [activeTicker]);
+
   useEffect(() => {
     setStatsLoading(true);
     setStats(null);

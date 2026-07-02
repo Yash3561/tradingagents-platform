@@ -38,8 +38,8 @@ function Toggle({ enabled, onChange }: { enabled: boolean; onChange: (v: boolean
     >
       <span
         className={cn(
-          "absolute top-1 w-4 h-4 bg-white rounded-full shadow transition-transform duration-200",
-          enabled ? "translate-x-5" : "translate-x-1"
+          "absolute left-0 top-1 w-4 h-4 bg-white rounded-full shadow transition-transform duration-200",
+          enabled ? "translate-x-6" : "translate-x-1"
         )}
       />
     </button>

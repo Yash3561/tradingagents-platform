@@ -19,6 +19,9 @@ export interface ChartLevel {
   kind: "support" | "resistance";
 }
 
+interface Trendline { t1: number; p1: number; t2: number; p2: number; }
+interface TickerDrawings { trendlines: Trendline[]; hlines: number[]; }
+
 interface CandlestickChartProps {
   ticker: string;
   period?: string;   // "1mo" | "3mo" | "6mo" | "1y" | "2y"
@@ -47,6 +50,8 @@ const MA_CONFIGS = [
   { key: "ma200", length: 200, color: "#B455F0", label: "MA200" },
 ] as const;
 
+const MAX_PERSISTED_TICKERS = 50;
+
 function computeMA(bars: Bar[], length: number) {
   const out: { time: UTCTimestamp; value: number }[] = [];
   let sum = 0;
@@ -57,6 +62,8 @@ function computeMA(bars: Bar[], length: number) {
   }
   return out;
 }
+
+const emptyDrawings = (): TickerDrawings => ({ trendlines: [], hlines: [] });
 
 export default function CandlestickChart({
   ticker,
@@ -80,6 +87,15 @@ export default function CandlestickChart({
   const pendingPointRef = useRef<{ time: number; price: number } | null>(null);
   const drawModeRef = useRef<DrawMode>("none");
 
+  // Persistence state (per-user, via settings store)
+  const allDrawingsRef = useRef<Record<string, TickerDrawings>>({});
+  const drawingsRef = useRef<TickerDrawings>(emptyDrawings());
+  const saveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const prefsTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const prefsLoadedRef = useRef(false);
+  const tickerRef = useRef(ticker);
+  tickerRef.current = ticker;
+
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [selectedPeriod, setSelectedPeriod] = useState(initialPeriod);
@@ -92,7 +108,65 @@ export default function CandlestickChart({
 
   drawModeRef.current = drawMode;
 
-  // ── Create chart + main series ────────────────────────────────────────────
+  // ── Persistence helpers ─────────────────────────────────────────────────────
+  const saveDrawings = useCallback(() => {
+    const map = allDrawingsRef.current;
+    const d = drawingsRef.current;
+    if (d.trendlines.length || d.hlines.length) {
+      map[tickerRef.current] = d;
+    } else {
+      delete map[tickerRef.current];
+    }
+    // Cap stored tickers so the settings row can't grow unbounded
+    const keys = Object.keys(map);
+    if (keys.length > MAX_PERSISTED_TICKERS) {
+      for (const k of keys.slice(0, keys.length - MAX_PERSISTED_TICKERS)) delete map[k];
+    }
+    if (saveTimerRef.current) clearTimeout(saveTimerRef.current);
+    saveTimerRef.current = setTimeout(() => {
+      api.post("/settings/", { chart_drawings: allDrawingsRef.current }).catch(() => {});
+    }, 800);
+  }, []);
+
+  const savePrefs = useCallback((patch: { style?: ChartStyle; mas?: string[]; period?: string; interval?: string }) => {
+    if (!prefsLoadedRef.current) return; // don't overwrite server prefs during initial load
+    if (prefsTimerRef.current) clearTimeout(prefsTimerRef.current);
+    prefsTimerRef.current = setTimeout(() => {
+      api.post("/settings/", {
+        chart_prefs: {
+          style: patch.style ?? chartStyle,
+          mas: patch.mas ?? Array.from(activeMAs),
+          period: patch.period ?? selectedPeriod,
+          interval: patch.interval ?? selectedInterval,
+        },
+      }).catch(() => {});
+    }, 800);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [chartStyle, activeMAs, selectedPeriod, selectedInterval]);
+
+  // Load saved prefs + drawings once on mount
+  useEffect(() => {
+    Promise.allSettled([
+      api.get("/settings/chart_prefs"),
+      api.get("/settings/chart_drawings"),
+    ]).then(([prefsRes, drawRes]) => {
+      if (prefsRes.status === "fulfilled" && prefsRes.value.data?.value) {
+        const v = prefsRes.value.data.value;
+        if (v.style === "candles" || v.style === "line" || v.style === "area") setChartStyle(v.style);
+        if (Array.isArray(v.mas)) setActiveMAs(new Set(v.mas));
+        if (v.period && v.interval) { setSelectedPeriod(v.period); setSelectedInterval(v.interval); }
+      }
+      if (drawRes.status === "fulfilled" && drawRes.value.data?.value) {
+        allDrawingsRef.current = drawRes.value.data.value || {};
+        drawingsRef.current = allDrawingsRef.current[tickerRef.current] ?? emptyDrawings();
+        renderDrawings();
+      }
+      prefsLoadedRef.current = true;
+    }).catch(() => { prefsLoadedRef.current = true; });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  // ── Series builders ─────────────────────────────────────────────────────────
   const buildMainSeries = useCallback((chart: ReturnType<typeof createChart>, style: ChartStyle) => {
     if (style === "candles") {
       return chart.addCandlestickSeries({
@@ -119,6 +193,61 @@ export default function CandlestickChart({
     }
   }, []);
 
+  // ── Render drawings from data (idempotent) ──────────────────────────────────
+  const renderDrawings = useCallback(() => {
+    const chart = chartRef.current;
+    if (!chart || !seriesRef.current) return;
+    for (const s of drawingSeriesRef.current) { try { chart.removeSeries(s); } catch { /* gone */ } }
+    drawingSeriesRef.current = [];
+    for (const pl of drawnPriceLinesRef.current) { try { seriesRef.current.removePriceLine(pl); } catch { /* gone */ } }
+    drawnPriceLinesRef.current = [];
+
+    const d = drawingsRef.current;
+    for (const tl of d.trendlines) {
+      const lineSeries = chart.addLineSeries({
+        color: "#FFB740", lineWidth: 1,
+        priceLineVisible: false, lastValueVisible: false,
+        crosshairMarkerVisible: false,
+      });
+      const pts = [{ time: tl.t1, value: tl.p1 }, { time: tl.t2, value: tl.p2 }]
+        .sort((a, b) => a.time - b.time)
+        .map(p => ({ time: p.time as UTCTimestamp, value: p.value }));
+      lineSeries.setData(pts);
+      drawingSeriesRef.current.push(lineSeries);
+    }
+    for (const price of d.hlines) {
+      const pl = seriesRef.current.createPriceLine({
+        price, color: "#FFB740", lineWidth: 1,
+        lineStyle: LineStyle.Dashed, axisLabelVisible: true, title: "",
+      });
+      drawnPriceLinesRef.current.push(pl);
+    }
+  }, []);
+
+  // ── AI support/resistance levels ────────────────────────────────────────────
+  const applyLevels = useCallback(() => {
+    if (!seriesRef.current) return;
+    for (const pl of levelLinesRef.current) {
+      try { seriesRef.current.removePriceLine(pl); } catch { /* series may be gone */ }
+    }
+    levelLinesRef.current = [];
+    for (const lv of levels) {
+      const pl = seriesRef.current.createPriceLine({
+        price: lv.price,
+        color: lv.kind === "support" ? "#00E676" : "#FF3D57",
+        lineWidth: 1,
+        lineStyle: LineStyle.Dotted,
+        axisLabelVisible: true,
+        title: lv.label,
+      });
+      levelLinesRef.current.push(pl);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [levels]);
+
+  useEffect(() => { applyLevels(); }, [applyLevels]);
+
+  // ── Create chart once ───────────────────────────────────────────────────────
   useEffect(() => {
     if (!containerRef.current) return;
 
@@ -160,15 +289,9 @@ export default function CandlestickChart({
       if (price == null) return;
 
       if (mode === "hline") {
-        const pl = seriesRef.current.createPriceLine({
-          price: price as number,
-          color: "#FFB740",
-          lineWidth: 1,
-          lineStyle: LineStyle.Dashed,
-          axisLabelVisible: true,
-          title: "",
-        });
-        drawnPriceLinesRef.current.push(pl);
+        drawingsRef.current.hlines.push(price as number);
+        renderDrawings();
+        saveDrawings();
         return;
       }
 
@@ -179,17 +302,13 @@ export default function CandlestickChart({
       if (!pending) {
         pendingPointRef.current = { time, price: price as number };
       } else if (time !== pending.time) {
-        const lineSeries = chart.addLineSeries({
-          color: "#FFB740", lineWidth: 1,
-          priceLineVisible: false, lastValueVisible: false,
-          crosshairMarkerVisible: false,
+        drawingsRef.current.trendlines.push({
+          t1: pending.time, p1: pending.price,
+          t2: time, p2: price as number,
         });
-        const pts = [pending, { time, price: price as number }]
-          .sort((a, b) => a.time - b.time)
-          .map(p => ({ time: p.time as never, value: p.price }));
-        lineSeries.setData(pts);
-        drawingSeriesRef.current.push(lineSeries);
         pendingPointRef.current = null;
+        renderDrawings();
+        saveDrawings();
       }
     });
 
@@ -211,21 +330,61 @@ export default function CandlestickChart({
       drawnPriceLinesRef.current = [];
       levelLinesRef.current = [];
     };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [height, buildMainSeries]);
 
-  // ── Chart style switch: rebuild the main series, keep everything else ──────
+  // ── Chart style switch: rebuild main series, re-attach lines ────────────────
   useEffect(() => {
     const chart = chartRef.current;
     if (!chart || !seriesRef.current) return;
-    // Re-apply AI levels + clear stale price-line handles (they die with the old series)
     chart.removeSeries(seriesRef.current);
     drawnPriceLinesRef.current = [];
     levelLinesRef.current = [];
     seriesRef.current = buildMainSeries(chart, chartStyle);
     setMainSeriesData(chartStyle, barsRef.current);
+    renderDrawings();
     applyLevels();
+    savePrefs({ style: chartStyle });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [chartStyle]);
+
+  // ── Ticker change: swap in that ticker's saved drawings ─────────────────────
+  useEffect(() => {
+    drawingsRef.current = allDrawingsRef.current[ticker] ?? emptyDrawings();
+    pendingPointRef.current = null;
+    renderDrawings();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [ticker]);
+
+  // ── Moving averages ─────────────────────────────────────────────────────────
+  const refreshMAs = useCallback((bars: Bar[]) => {
+    const chart = chartRef.current;
+    if (!chart) return;
+    for (const cfg of MA_CONFIGS) {
+      const active = activeMAs.has(cfg.key);
+      const existing = maSeriesRef.current[cfg.key];
+      if (active && bars.length >= cfg.length) {
+        const data = computeMA(bars, cfg.length);
+        if (existing) {
+          existing.setData(data);
+        } else {
+          const s = chart.addLineSeries({
+            color: cfg.color, lineWidth: 1,
+            priceLineVisible: false, lastValueVisible: false,
+            crosshairMarkerVisible: false,
+          });
+          s.setData(data);
+          maSeriesRef.current[cfg.key] = s;
+        }
+      } else if (existing) {
+        chart.removeSeries(existing);
+        delete maSeriesRef.current[cfg.key];
+      }
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activeMAs]);
+
+  useEffect(() => { refreshMAs(barsRef.current); }, [refreshMAs]);
 
   // ── Fetch bars when ticker/period changes ───────────────────────────────────
   const fetchBars = useCallback((showSpinner: boolean) => {
@@ -291,81 +450,25 @@ export default function CandlestickChart({
     return () => { clearInterval(barsTimer); clearInterval(priceTimer); };
   }, [ticker, chartStyle, fetchBars]);
 
-  // ── Moving averages ─────────────────────────────────────────────────────────
-  const refreshMAs = useCallback((bars: Bar[]) => {
-    const chart = chartRef.current;
-    if (!chart) return;
-    for (const cfg of MA_CONFIGS) {
-      const active = activeMAs.has(cfg.key);
-      const existing = maSeriesRef.current[cfg.key];
-      if (active && bars.length >= cfg.length) {
-        const data = computeMA(bars, cfg.length);
-        if (existing) {
-          existing.setData(data);
-        } else {
-          const s = chart.addLineSeries({
-            color: cfg.color, lineWidth: 1,
-            priceLineVisible: false, lastValueVisible: false,
-            crosshairMarkerVisible: false,
-          });
-          s.setData(data);
-          maSeriesRef.current[cfg.key] = s;
-        }
-      } else if (existing) {
-        chart.removeSeries(existing);
-        delete maSeriesRef.current[cfg.key];
-      }
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [activeMAs]);
-
-  useEffect(() => { refreshMAs(barsRef.current); }, [refreshMAs]);
-
-  // ── AI support/resistance levels ────────────────────────────────────────────
-  const applyLevels = useCallback(() => {
-    if (!seriesRef.current) return;
-    for (const pl of levelLinesRef.current) {
-      try { seriesRef.current.removePriceLine(pl); } catch { /* series may be gone */ }
-    }
-    levelLinesRef.current = [];
-    for (const lv of levels) {
-      const pl = seriesRef.current.createPriceLine({
-        price: lv.price,
-        color: lv.kind === "support" ? "#00E676" : "#FF3D57",
-        lineWidth: 1,
-        lineStyle: LineStyle.Dotted,
-        axisLabelVisible: true,
-        title: lv.label,
-      });
-      levelLinesRef.current.push(pl);
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [levels]);
-
-  useEffect(() => { applyLevels(); }, [applyLevels]);
-
-  // ── Clear drawings ──────────────────────────────────────────────────────────
+  // ── Actions ─────────────────────────────────────────────────────────────────
   const clearDrawings = () => {
-    const chart = chartRef.current;
-    if (!chart) return;
-    for (const s of drawingSeriesRef.current) chart.removeSeries(s);
-    drawingSeriesRef.current = [];
-    for (const pl of drawnPriceLinesRef.current) {
-      try { seriesRef.current?.removePriceLine(pl); } catch { /* ignore */ }
-    }
-    drawnPriceLinesRef.current = [];
+    drawingsRef.current = emptyDrawings();
     pendingPointRef.current = null;
+    renderDrawings();
+    saveDrawings();
   };
 
   const changePeriod = (p: (typeof PERIODS)[0]) => {
     setSelectedPeriod(p.period);
     setSelectedInterval(p.interval);
+    savePrefs({ period: p.period, interval: p.interval });
   };
 
   const toggleMA = (key: string) => {
     setActiveMAs(prev => {
       const next = new Set(prev);
       if (next.has(key)) next.delete(key); else next.add(key);
+      savePrefs({ mas: Array.from(next) });
       return next;
     });
   };
@@ -471,7 +574,7 @@ export default function CandlestickChart({
             >
               <Minus size={13} />
             </button>
-            <button title="Clear drawings" onClick={clearDrawings}
+            <button title="Clear drawings for this ticker" onClick={clearDrawings}
               className="p-1.5 rounded text-slate-400 hover:text-loss transition-colors">
               <Eraser size={13} />
             </button>
@@ -482,8 +585,8 @@ export default function CandlestickChart({
       {drawMode !== "none" && (
         <p className="text-[11px] text-warn mb-2">
           {drawMode === "trendline"
-            ? "Trendline mode: click two points on the chart. Click the pencil again to exit."
-            : "Level mode: click any price on the chart to drop a horizontal line. Click the icon again to exit."}
+            ? "Trendline mode: click two points on the chart. Saved automatically — click the pencil again to exit."
+            : "Level mode: click any price to drop a horizontal line. Saved automatically — click the icon again to exit."}
         </p>
       )}
 
