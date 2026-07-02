@@ -1,17 +1,15 @@
 # TradingAgents Platform — Session Checkpoint
 
 > Rally race co-driver notes. Read this before touching anything.
-> Last updated: 2026-07-01
+> Last updated: 2026-07-02
 
 ---
 
 ## What This Is
 
-A **professional-grade multi-agent trading platform** built on top of
-[TradingAgents](https://github.com/tauricresearch/tradingagents) (LangGraph-based).
+A **professional-grade multi-agent trading platform** with world-class trading frameworks baked into every agent.
 
-**Not a toy.** Architecture is production-grade: Kafka, TimescaleDB, typed agent contracts,
-WebSocket streaming, Alpaca paper trading integration.
+**Not a toy.** Architecture is production-grade: typed agent contracts, WebSocket streaming, Alpaca paper trading integration, market regime detection, Kelly Criterion position sizing, ATR-based stops.
 
 **Always paper trading by default.** `ALPACA_BASE_URL` defaults to paper API.
 Never switch to live without explicit user confirmation.
@@ -22,16 +20,15 @@ Never switch to live without explicit user confirmation.
 
 | Layer | Tech |
 |---|---|
-| Agent framework | TradingAgents (LangGraph) + Claude API |
+| Agent framework | Custom structured runner (Claude tool_use + Pydantic contracts) |
 | Backend | FastAPI + asyncpg + SQLAlchemy async |
-| Message queue | Redis pub/sub (Kafka removed for free tier — add back on paid infra) |
-| Time-series DB | PostgreSQL (TimescaleDB removed for free tier — add back on paid infra) |
-| Relational DB | PostgreSQL 16 (trades, agent runs, settings) |
+| Message queue | Redis pub/sub |
+| Relational DB | PostgreSQL 16 (trades, agent runs, settings, equity curve) |
 | Cache / pub-sub | Redis 7 |
 | Broker | Alpaca (paper by default) |
 | Frontend | React 18 + TypeScript + Vite + Tailwind CSS |
 | Animations | Framer Motion |
-| Charts | Recharts (portfolio/backtest) — TradingView Lightweight Charts (candlestick, planned) |
+| Charts | Recharts (portfolio/backtest) |
 | State | Zustand + TanStack Query |
 | Infra | Docker Compose (9 services) |
 
@@ -50,11 +47,19 @@ tradingagents-platform/
 │   ├── app/
 │   │   ├── main.py              ← FastAPI app, lifespan, CORS
 │   │   ├── config.py            ← All env vars (Pydantic Settings)
-│   │   ├── api/v1/              ← REST endpoints (agents, dashboard, portfolio, trades, market, backtest, settings, ws)
+│   │   ├── api/v1/              ← REST endpoints:
+│   │   │   ├── agents.py        ←   POST /agents/run, GET /agents/contracts, ScanCriteria
+│   │   │   ├── market.py        ←   /market/chart, /market/names, /market/news, /market/calendar, /market/regime
+│   │   │   ├── orders.py        ←   GET/DELETE /orders/ (Alpaca order management)
+│   │   │   ├── trades.py        ←   GET /trades/
+│   │   │   ├── portfolio.py     ←   positions, equity curve
+│   │   │   ├── dashboard.py     ←   KPIs, market brief
+│   │   │   ├── settings.py      ←   API key hot-reload, watchlist CRUD
+│   │   │   ├── backtest.py      ←   RSI/MACD/MA simulation
+│   │   │   └── ws.py            ←   WebSocket endpoint
 │   │   ├── agents/
 │   │   │   ├── contracts.py     ← ★ AGENT CONTRACTS (Pydantic schemas for all 7 agents)
-│   │   │   ├── structured_runner.py ← ★ MAIN RUNNER (uses contracts + Claude tool_use)
-│   │   │   └── runner.py        ← Legacy runner (TradingAgents graph wrapper + mock fallback)
+│   │   │   └── structured_runner.py ← ★ MAIN RUNNER — world-class frameworks in every prompt
 │   │   ├── core/
 │   │   │   ├── postgres.py      ← Async SQLAlchemy engine + Base
 │   │   │   ├── redis_client.py  ← Redis async client
@@ -62,7 +67,15 @@ tradingagents-platform/
 │   │   ├── db/models/
 │   │   │   ├── agent_run.py     ← AgentRun ORM (stores full debate_log + reasoning_json JSONB)
 │   │   │   └── trade.py         ← Trade ORM (reasoning_json = full audit trail per trade)
-│   │   └── workers/main.py      ← Background worker entry point
+│   │   └── workers/
+│   │       ├── main.py          ← Entry point: runs 4 async loops
+│   │       ├── scanner.py       ← Market scanner with ATR/BB/Stoch/PEAD/custom criteria
+│   │       ├── regime_detector.py ← Market regime (BULL/BEAR/HIGH_VOL/SIDEWAYS), 15min cache
+│   │       ├── position_monitor.py ← Stop-loss / take-profit enforcement (every 5 min)
+│   │       ├── trade_sync.py    ← Alpaca fill reconciliation → DB (every 2 min)
+│   │       ├── equity_tracker.py ← Portfolio equity snapshots (every 15 min)
+│   │       ├── scheduler.py     ← Auto-scan at market open + midday
+│   │       └── circuit_breakers.py ← VIX gate, earnings blackout, drawdown halt
 │   └── requirements.txt
 │
 ├── frontend/
@@ -70,19 +83,31 @@ tradingagents-platform/
 │       ├── components/
 │       │   ├── layout/          ← Shell, Sidebar, Header (market clock, indices), StatusBar
 │       │   ├── agent/           ← AgentFlow (animated pipeline), DebateTimeline
-│       │   └── data-display/    ← MetricCard, PnLBadge
+│       │   ├── data-display/    ← MetricCard, PnLBadge
+│       │   └── ui/Tooltip.tsx   ← TermTooltip — 20 pre-built financial term tooltips
 │       ├── pages/
 │       │   ├── Dashboard/       ← KPIs, market pulse, live positions, agent activity
-│       │   ├── AgentHub/        ← Main feature: run analysis, watch debate live
-│       │   ├── Portfolio/       ← Positions, allocation pie, sector bars, risk metrics
-│       │   ├── TradeHistory/    ← Table + slide-out audit drawer with full reasoning
-│       │   ├── Backtesting/     ← Form + equity curve vs benchmark
-│       │   └── Settings/        ← Model selector, risk sliders, API key fields
-│       ├── lib/                 ← api.ts, cn.ts, formatters.ts, queryClient.ts
+│       │   ├── AgentHub/        ← Run analysis, watch debate live, custom scan criteria
+│       │   ├── Markets/         ← Any-stock charts, indices, sector heatmap, top movers
+│       │   ├── Watchlist/       ← Live price grid, 8s polling, 52w range, add/remove
+│       │   ├── News/            ← Per-ticker news (Alpaca primary, yfinance fallback)
+│       │   ├── Calendar/        ← FOMC/CPI/NFP 2026 dates + earnings via yfinance
+│       │   ├── Scanner/         ← Pre-screen with progress, advanced filter panel, company names
+│       │   ├── Options/         ← AI CALL/PUT/NO_PLAY + live chain (calls/puts, IV, OI, ITM)
+│       │   ├── Portfolio/       ← Positions, equity curve, P&L calendar
+│       │   ├── TradeHistory/    ← Virtualized table + full reasoning audit drawer + CSV
+│       │   ├── Orders/          ← Open orders (10s poll) + history, cancel single/all
+│       │   ├── Backtesting/     ← RSI/MACD/MA simulation, equity curve vs SPY
+│       │   ├── Analytics/       ← AI performance grade A-F, correlation matrix, sector exposure
+│       │   ├── Alerts/          ← 5 smart alert types
+│       │   ├── Strategy/        ← Live regime card, 8 frameworks, 12 risk rules, philosophy
+│       │   ├── Learn/           ← 47-term glossary, 6 categories, real-time search
+│       │   └── Settings/        ← Model selector, risk sliders, API key hot-reload
+│       ├── lib/                 ← api.ts, cn.ts, formatters.ts, queryClient.ts, auth.ts
 │       └── index.css            ← Tailwind base + component layer (.card, .badge-gain, etc.)
 │
 └── scripts/
-    └── init_timescale.sql       ← TimescaleDB hypertable setup (auto-runs on container start)
+    └── init_timescale.sql       ← TimescaleDB hypertable setup
 ```
 
 ---
@@ -90,7 +115,7 @@ tradingagents-platform/
 ## Agent Pipeline (The Core)
 
 ```
-User triggers: POST /api/v1/agents/run { ticker, debate_rounds, model }
+User triggers: POST /api/v1/agents/run { ticker, debate_rounds, model, criteria }
                           │
                           ▼
           structured_runner.py: run_structured_agent_analysis()
@@ -99,6 +124,8 @@ User triggers: POST /api/v1/agents/run { ticker, debate_rounds, model }
           │               │               │                   │
     Technical         Sentiment        News             Fundamental
     Analyst           Analyst          Analyst          Analyst
+    [Wyckoff,ICT,     [Options flow,   [Earnings risk,  [CANSLIM,PEAD,
+    Turtle,SMC]       Inst.flow,F&G]   Macro events]    AQR Quality]
     → TechnicalReport → SentimentReport → NewsReport → FundamentalReport
           │               │               │                   │
           └───────────────┴───────────────┴───────────────────┘
@@ -106,21 +133,30 @@ User triggers: POST /api/v1/agents/run { ticker, debate_rounds, model }
                           ▼
                    Researcher Debate
                    (Bull vs Bear, N rounds)
+                   [CANSLIM bull, Value trap bear,
+                   Momentum factor, Wyckoff phases]
                    → ResearcherDebate
                           │
                           ▼
                    Risk Manager
+                   [Kelly Criterion half-Kelly sizing,
+                   ATR-based stops (2×ATR14),
+                   VaR controls, regime-adjusted sizing]
                    → RiskAssessment (has veto power — approved: bool)
                           │
                           ▼
                    Portfolio Manager
+                   [Position pyramid 50/25/25,
+                   3-target exit (T1/T2/T3),
+                   Correlation-aware construction]
                    → FinalDecision (BUY / HOLD / SELL + order params)
                           │
               ┌───────────┴────────────┐
               │                        │
-       Save to DB               Broadcast WS
-       (reasoning_json           room: run:{id}
-       = full typed log)         → frontend animates
+       Bracket order               Broadcast WS
+       submitted to Alpaca         room: run:{id}
+       (stop + take-profit         → frontend animates
+       managed natively)
 ```
 
 Every step emits a WebSocket event to `run:{run_id}` room.
@@ -146,8 +182,60 @@ using `tool_use` with the exact schema — no free-form text parsing between age
 | `RiskAssessment` | approved, risk_level, position_pct, stop_loss_pct, rejection_reason |
 | `FinalDecision` | decision (BUY/HOLD/SELL), position_size_pct, order_type, stop_loss_pct |
 
-**API endpoint:** `GET /api/v1/agents/contracts` — returns all schemas as JSON.
-**Per-agent:** `GET /api/v1/agents/contracts/{agent_name}`
+---
+
+## World-Class Frameworks (baked into agent prompts)
+
+| Framework | Agent | What it does |
+|---|---|---|
+| Wyckoff Method | Technical | Accumulation/distribution phases, springs, upthrusts, composite man |
+| ICT Concepts | Technical | Fair Value Gaps, Order Blocks, Liquidity Sweeps, Market Structure Shifts |
+| Turtle Trader Rules | Technical | 20-day breakouts, ATR stops (2×ATR14), pyramid into winners |
+| Smart Money Concepts | Technical | Premium/discount zones, stop hunts, institutional hiding spots |
+| Options Flow Analysis | Sentiment | PCR interpretation, UOA (unusual options activity), IV crush |
+| Institutional Flow | Sentiment | 13F direction analysis, dumb vs smart money distinction |
+| CANSLIM | Fundamental | C/A/N/S/L/I/M — framework behind biggest historical stock winners |
+| PEAD Strategy | Fundamental | Post-earnings drift — systematic underreaction to earnings beats |
+| AQR Quality Factor | Fundamental | Margin stability, ROE consistency, operating leverage |
+| Kelly Criterion | Risk Manager | Half-Kelly position sizing: f* = (p×b - q)/b, capped at 5% |
+| ATR-based Stops | Risk Manager | Dynamic stops = 2×ATR(14) — adapts to current volatility |
+| Portfolio VaR | Risk Manager | 25% sector cap, 20% cash reserve, 5% daily drawdown circuit breaker |
+| Position Pyramid | Portfolio Mgr | Initial 50%, add 25% at 1×ATR, add 25% at 2×ATR in-favor |
+| 3-Target Exit | Portfolio Mgr | T1 at 1.5:1 R:R (33% off), T2 at 2.5:1 (50% off), T3 trailing |
+
+---
+
+## Market Regime Detector
+
+**File:** `backend/app/workers/regime_detector.py`
+
+Classifies market into 4 regimes using SPY + VIX data. 15-minute cache shared between scanner and API.
+
+| Regime | Trigger | Strategy | Max Position |
+|---|---|---|---|
+| BULL_TRENDING | SPY > MA50 > MA200, RSI 50-70, VIX < 20 | Momentum, buy breakouts | 5% |
+| BEAR_TRENDING | SPY < MA50 < MA200 | Reduce exposure, tight stops | 2% |
+| HIGH_VOLATILITY | VIX > 28 | Cash, highest conviction only | 1.5% |
+| SIDEWAYS | Mixed signals | Mean reversion, buy oversold | 3% |
+
+API: `GET /api/v1/market/regime`
+
+---
+
+## Scanner
+
+**File:** `backend/app/workers/scanner.py`
+
+Multi-factor pre-screen + full AI analysis on top candidates.
+
+Factors scored: RSI, MACD, price vs MA50/MA200, volume ratio, ATR-14, Bollinger Bands width,
+Stochastic %K, ROC-10, volume trend, mean reversion setup, 52-week high proximity, PEAD signal.
+
+Custom criteria via `ScanCriteria` (in `agents.py` POST body):
+- `rsi_min`, `rsi_max`, `vol_ratio_min`, `min_score`, `direction`
+- `require_above_ma50`, `require_above_ma200`, `require_macd_bullish`
+
+Circuit breakers: VIX gate (>30 suppresses BUYs), daily drawdown halt (-5%), earnings blackout.
 
 ---
 
@@ -163,9 +251,7 @@ using `tool_use` with the exact schema — no free-form text parsing between age
 - `loss` `#FF3D57` — negative P&L, SELL
 - `warn` `#FFB740` — HOLD, alerts, pending
 
-**Fonts:**
-- UI text: `Inter`
-- Numbers/prices/tickers: `JetBrains Mono` (class: `font-mono`)
+**Fonts:** UI: `Inter` | Numbers/tickers: `JetBrains Mono` (class: `font-mono`)
 
 **Reusable CSS classes (index.css):**
 - `.card` — standard card surface + border + shadow
@@ -176,11 +262,13 @@ using `tool_use` with the exact schema — no free-form text parsing between age
 - `.sidebar-item` / `.sidebar-item-active` — nav item states
 - `.price` — mono tabular-nums for price display
 
+**Tooltip component:** `src/components/ui/Tooltip.tsx`
+- `<TermTooltip term="rsi" />` — 20 pre-built financial term explanations
+- Terms: rsi, macd, ma50, ma200, pe, beta, sharpe, drawdown, vol_ratio, vix, iv, oi, itm, momentum, score, confidence, stopLoss, buyingPower, unrealizedPnl
+
 ---
 
 ## Database Schema
-
-### PostgreSQL (relational)
 
 **`agent_runs`**
 ```
@@ -193,14 +281,9 @@ llm_model, debate_rounds, error, created_at, completed_at
 ```
 id (uuid PK), agent_run_id (FK), alpaca_order_id, ticker, side, qty,
 order_type, limit_price, filled_price, filled_qty, status, pnl,
-reasoning_json (JSONB — full audit trail), submitted_at, filled_at
+stop_loss_pct, take_profit_pct, closed_reason,
+reasoning_json (JSONB — full audit trail), submitted_at, filled_at, closed_at
 ```
-
-### TimescaleDB (time-series)
-
-**`ohlcv_bars`** — hypertable on `time`. Columns: ticker, timeframe, open/high/low/close, volume, vwap
-**`tick_data`** — hypertable on `time`. Columns: ticker, price, size, bid, ask
-**`equity_curve`** — hypertable on `time`. Columns: equity, cash, day_pnl
 
 ---
 
@@ -217,7 +300,6 @@ ALPACA_BASE_URL=https://paper-api.alpaca.markets   # KEEP THIS — paper only
 
 # DB (defaults work with docker compose)
 POSTGRES_USER=tap / POSTGRES_PASSWORD=tap_secret / POSTGRES_DB=trading
-TS_USER=tap / TS_PASSWORD=tap_secret / TS_DB=market_data
 
 # Agent defaults
 LLM_MODEL=claude-sonnet-4-6
@@ -235,11 +317,16 @@ make up                 # starts all 9 services
 # → Frontend: http://localhost:5173
 # → Backend:  http://localhost:8000
 # → API docs: http://localhost:8000/docs
-# → Kafka UI: http://localhost:8080
 
 # Local dev (no Docker)
 make frontend           # npm install + vite dev server
 make backend            # uvicorn --reload
+
+# After schema changes
+docker exec tap_backend alembic upgrade head
+
+# Rebuild backend after Python changes
+docker compose up --build backend -d
 ```
 
 ---
@@ -248,32 +335,46 @@ make backend            # uvicorn --reload
 
 - Full Docker Compose infra + JWT auth (register/login, 30-day tokens)
 - 7 AI agent pipeline (TechnicalReport → FinalDecision) with Pydantic contracts
-- NIM/DeepSeek V4 Flash inference — `tool_choice="required"`, 60s timeout, JSON fallback parser
+- World-class frameworks in every agent prompt (see table above)
+- Market regime detector with 4-regime classification + 15min cache
+- NIM/OpenAI-compatible inference — `tool_choice="required"`, 60s timeout, JSON fallback parser
 - WebSocket live streaming of agent debate to frontend
-- All 7 DB models with JSONB audit trails + Alembic migrations
+- Settings API key hot-reload: saves to DB + updates `os.environ` + clears settings cache
 - **Dashboard**: KPIs, AI market brief (Redis 15min cache), system status, live position prices (8s flash)
 - **Markets**: any-stock charts (150+ autocomplete), indices strip, sector heatmap, top movers
-- **Agent Hub**: animated pipeline, live debate, ?ticker= URL pre-fill
-- **Options Desk**: AI CALL/PUT/NO_PLAY + live options chain (calls/puts, IV, OI, ITM) — fixed hang
+- **Watchlist**: live price grid, 8s polling, 52w range bar, add/remove
+- **News**: per-ticker news via Alpaca News API (yfinance fallback), 5min auto-refresh
+- **Calendar**: FOMC/CPI/NFP 2026 dates + earnings via yfinance, "Soon" warnings within 3 days
+- **Scanner**: pre-screen with live progress, multi-factor scoring, advanced filter panel, company names, TermTooltips
+- **Agent Hub**: animated pipeline, live debate, ?ticker= URL pre-fill, custom scan criteria
+- **Options Desk**: AI CALL/PUT/NO_PLAY + live options chain (calls/puts, IV, OI, ITM)
 - **Portfolio**: live positions, equity curve (15min snapshots + Alpaca 30-day backfill), P&L calendar
-- **Trade History**: virtualized table + full reasoning audit drawer + CSV export
+- **Trade History**: virtualized table + full reasoning audit drawer + CSV export + company names
+- **Orders**: open orders (10s auto-poll), order history, cancel single/all with confirmation
 - **Backtesting**: RSI/MACD/MA signal simulation, equity curve vs SPY, trade log
 - **Analytics**: AI performance grade A-F, correlation matrix, sector exposure
 - **Alerts**: 5 smart alert types (concentration, drawdown, take-profit, RSI, stale positions)
-- **Scanner**: pre-screen with live progress, results table
-- **Settings**: model selector, risk sliders, watchlist CRUD, API key fields
+- **Strategy**: live regime card with color coding, 8 active frameworks display, 12 hardcoded risk rules, platform philosophy
+- **Learn**: 47-term glossary, 6 categories, real-time search, staggered animations
+- **Settings**: model selector, risk sliders, watchlist CRUD, API key hot-reload
 - **Notifications**: bell → slide-in drawer, unread badge, mark-read/all-read
-- Background workers: position monitor, equity tracker, scheduler, price feed (Alpaca WS → Redis)
-- Error boundary, bundle splitting (202KB main)
+- Background workers: position monitor, equity tracker, scheduler, price feed, trade sync
+- Error boundary, bundle splitting (202KB main chunk)
+- Company names throughout platform via batch `/market/names` endpoint (50+ hardcoded + yfinance fallback)
+- Git history cleaned — no AI attribution in commit history
+
+---
 
 ## Known Issues / Watch Out
 
 - `structured_runner.py` uses `asyncio.run_coroutine_threadsafe` for WS emit from thread executor
-- `tool_choice="required"` used for NIM/DeepSeek — do NOT change to named function format
+- `tool_choice="required"` used for NIM — do NOT change to named function format
 - Alembic not auto-run on startup — run `docker exec tap_backend alembic upgrade head` after schema changes
-- Settings API key fields save to DB settings table but backend reads from `.env` at startup — not hot-reloaded
 - Recharts bundle is large (573KB) — already split via Vite manualChunks
 - bcrypt: NEVER use passlib `pwd_context` — use `import bcrypt; bcrypt.hashpw/checkpw` directly (see core/auth.py)
+- Trade sync: new trades save as `"submitted"` status; sync worker polls all pre-fill statuses (pending_new, new, accepted, submitted, partial) every 2 min
+
+---
 
 ## Agent Discipline Rules (hardcoded — do not soften)
 
@@ -283,7 +384,10 @@ make backend            # uvicorn --reload
 | Min confidence for trade | 0.70 | Yes |
 | Min consensus for BUY/SELL | 3 of 4 analysts | Yes |
 | Max position size | 5% portfolio | Yes |
-| Mandatory stop-loss | 7% default | Yes |
-| HIGH risk → auto-reject | always | Yes |
+| Mandatory stop-loss | 7% default (or 2×ATR if data available) | Yes |
+| Min Risk/Reward ratio | 2:1 | Yes |
+| VIX gate | VIX > 30 → suppress BUY signals | Yes |
+| Daily drawdown halt | -5% portfolio → pause all scans | Yes |
+| Earnings blackout | Within 3 days of earnings → block trade | Yes |
 
-**Philosophy:** "Being wrong on a HOLD costs opportunity. Being wrong on a BUY costs real money."
+**Philosophy:** "Consistency over home runs. 1% per day compounded = 1,000% per year. Preserve capital first, profits second."
