@@ -387,7 +387,11 @@ async def run_overnight_agent():
         await asyncio.sleep(secs)
 
         try:
-            await _run_once()
+            from app.db.models.settings import get_setting
+            if bool(await get_setting("overnight_agent_enabled", True)):
+                await _run_once()
+            else:
+                log.info("overnight_agent.disabled_by_setting")
         except Exception as e:
             log.error("overnight_agent.run_failed", error=str(e))
 

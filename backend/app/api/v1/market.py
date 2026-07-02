@@ -166,7 +166,7 @@ async def search_ticker(q: str):
         {"symbol": "SE", "name": "Sea Limited", "sector": "Consumer Discretionary"},
         # Financials
         {"symbol": "COIN", "name": "Coinbase Global Inc.", "sector": "Financials"},
-        {"symbol": "SQ", "name": "Block Inc.", "sector": "Financials"},
+        {"symbol": "XYZ", "name": "Block Inc.", "sector": "Financials"},
         {"symbol": "PYPL", "name": "PayPal Holdings Inc.", "sector": "Financials"},
         {"symbol": "JPM", "name": "JPMorgan Chase & Co.", "sector": "Financials"},
         {"symbol": "GS", "name": "Goldman Sachs Group Inc.", "sector": "Financials"},
@@ -415,11 +415,18 @@ async def get_ticker_stats(ticker: str):
 
     def _fetch():
         t = yf.Ticker(ticker.upper())
-        info = t.info or {}
+        # yfinance .info is flaky (rate limits, schema changes) — degrade
+        # gracefully to price-only stats rather than failing the whole panel
+        try:
+            info = t.info or {}
+        except Exception:
+            info = {}
         hist = t.history(period="1y", interval="1d")
+        if hist.empty and not info:
+            raise ValueError(f"No data for {ticker.upper()}")
         stats = {
             "symbol": ticker.upper(),
-            "name": info.get("longName") or info.get("shortName", ticker.upper()),
+            "name": info.get("longName") or info.get("shortName") or ticker.upper(),
             "sector": info.get("sector", "Unknown"),
             "industry": info.get("industry", ""),
             "market_cap": info.get("marketCap"),
@@ -429,6 +436,9 @@ async def get_ticker_stats(ticker: str):
             "dividend_yield": info.get("dividendYield"),
             "avg_volume": info.get("averageVolume"),
             "shares_outstanding": info.get("sharesOutstanding"),
+            "week_52_high": None,
+            "week_52_low": None,
+            "current_price": None,
         }
         if not hist.empty:
             stats["week_52_high"] = round(float(hist["High"].max()), 2)
@@ -439,6 +449,8 @@ async def get_ticker_stats(ticker: str):
     loop = asyncio.get_running_loop()
     try:
         return await loop.run_in_executor(None, _fetch)
+    except ValueError as e:
+        raise HTTPException(404, str(e))
     except Exception as e:
         raise HTTPException(500, f"Failed to fetch stats: {e}")
 
@@ -670,7 +682,8 @@ async def get_ticker_names(tickers: str = ""):
         "GLD": ("SPDR Gold Trust", "ETF"), "SLV": ("iShares Silver Trust", "ETF"),
         "IBIT": ("iShares Bitcoin Trust", "ETF"), "MSTR": ("MicroStrategy Inc.", "Technology"),
         "MARA": ("Marathon Digital Holdings", "Technology"), "PYPL": ("PayPal Holdings", "Financials"),
-        "SQ": ("Block Inc.", "Financials"), "SHOP": ("Shopify Inc.", "Technology"),
+        "SQ": ("Block Inc.", "Financials"), "XYZ": ("Block Inc.", "Financials"),
+        "SHOP": ("Shopify Inc.", "Technology"),
         "ARM": ("Arm Holdings", "Technology"), "SMCI": ("Super Micro Computer", "Technology"),
         "HOOD": ("Robinhood Markets", "Financials"), "SOFI": ("SoFi Technologies", "Financials"),
         "^GSPC": ("S&P 500 Index", "Index"), "^IXIC": ("NASDAQ Composite", "Index"),

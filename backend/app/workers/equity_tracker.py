@@ -64,8 +64,7 @@ async def take_snapshot_for_user(user_id: int | None, broker) -> bool:
 
 async def take_snapshot() -> int:
     """Snapshot every connected user (plus the legacy env account). Returns count taken."""
-    from app.broker.credentials import connected_user_ids, get_client_for_user
-    from app.broker.alpaca_client import default_client
+    from app.broker.credentials import connected_user_ids, get_client_for_user, legacy_env_client
 
     taken = 0
     for uid in await connected_user_ids():
@@ -77,8 +76,8 @@ async def take_snapshot() -> int:
             except Exception as e:
                 log.warning("equity_tracker.user_snapshot_failed", user_id=uid, error=str(e))
 
-    legacy = default_client()
-    if legacy.configured:
+    legacy = await legacy_env_client()
+    if legacy is not None:
         try:
             if await take_snapshot_for_user(None, legacy):
                 taken += 1

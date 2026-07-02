@@ -1,13 +1,31 @@
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect
+from jose import jwt, JWTError
+
 from app.core.websocket_manager import ws_manager
+from app.config import get_settings
 import structlog
 
 log = structlog.get_logger()
 router = APIRouter()
 
 
+async def _authenticate_ws(ws: WebSocket) -> bool:
+    """Validate the JWT passed as ?token=. Rejects the handshake when invalid."""
+    token = ws.query_params.get("token", "")
+    if token:
+        try:
+            jwt.decode(token, get_settings().secret_key, algorithms=["HS256"])
+            return True
+        except JWTError:
+            pass
+    await ws.close(code=4401, reason="Authentication required")
+    return False
+
+
 @router.websocket("/runs/{run_id}")
 async def agent_run_ws(ws: WebSocket, run_id: str):
+    if not await _authenticate_ws(ws):
+        return
     await ws_manager.connect(ws, room=f"run:{run_id}")
     try:
         while True:
@@ -21,6 +39,8 @@ async def agent_run_ws(ws: WebSocket, run_id: str):
 
 @router.websocket("/scans/{scan_id}")
 async def scan_ws(ws: WebSocket, scan_id: str):
+    if not await _authenticate_ws(ws):
+        return
     await ws_manager.connect(ws, room=f"scan:{scan_id}")
     try:
         while True:
@@ -33,6 +53,8 @@ async def scan_ws(ws: WebSocket, scan_id: str):
 
 @router.websocket("/quotes")
 async def quotes_ws(ws: WebSocket):
+    if not await _authenticate_ws(ws):
+        return
     await ws_manager.connect(ws, room="quotes")
     try:
         while True:
@@ -48,6 +70,8 @@ async def quotes_ws(ws: WebSocket):
 
 @router.websocket("/portfolio")
 async def portfolio_ws(ws: WebSocket):
+    if not await _authenticate_ws(ws):
+        return
     await ws_manager.connect(ws, room="portfolio")
     try:
         while True:

@@ -101,7 +101,7 @@ DEFAULT_WATCHLIST = [
     "AVGO", "ORCL", "ASML", "TSM", "NFLX", "ADBE", "CRM", "COIN",
     "PLTR", "SNOW", "UBER", "SHOP", "JPM", "GS", "BAC", "V", "MA",
     "UNH", "LLY", "JNJ", "XOM", "CVX", "SMCI", "ARM", "QCOM", "TXN",
-    "INTC", "PYPL", "SQ", "ADBE", "MSTR", "HOOD",
+    "INTC", "PYPL", "XYZ", "MSTR", "HOOD",  # XYZ = Block (formerly SQ, delisted 2025)
 ]
 
 

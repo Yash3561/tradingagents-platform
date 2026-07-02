@@ -179,8 +179,7 @@ async def check_positions_once() -> list[dict]:
     Single check cycle across all connected users + legacy env account.
     Returns list of closed positions.
     """
-    from app.broker.credentials import connected_user_ids, get_client_for_user
-    from app.broker.alpaca_client import default_client
+    from app.broker.credentials import connected_user_ids, get_client_for_user, legacy_env_client
 
     closed: list[dict] = []
 
@@ -189,8 +188,8 @@ async def check_positions_once() -> list[dict]:
         if broker is not None:
             closed.extend(await _check_account(uid, broker))
 
-    legacy = default_client()
-    if legacy.configured:
+    legacy = await legacy_env_client()
+    if legacy is not None:
         closed.extend(await _check_account(None, legacy))
 
     return closed

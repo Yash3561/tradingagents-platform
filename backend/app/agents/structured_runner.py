@@ -987,6 +987,76 @@ def _run_full_pipeline(run_id: str, ticker: str, date: str, debate_rounds: int, 
     }
 
 
+async def _close_long_if_held(run_id: str, ticker: str, result: dict,
+                              broker, user_id: int | None, confidence: float):
+    """
+    SELL decision with long_only disabled: liquidate an existing long position.
+    Never opens a short — if we don't hold the ticker, do nothing.
+    """
+    import uuid
+    from app.db.models.trade import Trade
+
+    try:
+        existing = broker.get_position(ticker)
+        qty = float(existing.get("qty", 0)) if existing else 0
+        if qty <= 0:
+            log.info("broker.sell_no_position", run_id=run_id, ticker=ticker,
+                     reason="SELL signal but no long position held — no naked shorts")
+            await _emit(run_id, {
+                "type": "order_skipped",
+                "reason": "no_position_to_sell",
+                "message": f"SELL signal on {ticker}, but you hold no shares. Shorting is disabled.",
+            })
+            return
+
+        order = broker.submit_order(ticker, "sell", qty)
+
+        async with AsyncSessionLocal() as db:
+            trade = Trade(
+                id=str(uuid.uuid4()),
+                user_id=user_id,
+                agent_run_id=run_id,
+                alpaca_order_id=order.get("id"),
+                ticker=ticker,
+                side="sell",
+                qty=qty,
+                order_type="market",
+                status="submitted",
+                reasoning_json={
+                    "decision": "SELL",
+                    "confidence": confidence,
+                    "action": "close_long",
+                    "alpaca_order": order,
+                    "agent_summary": result.get("summary"),
+                },
+            )
+            db.add(trade)
+            await db.commit()
+
+        log.info("broker.position_closed_by_signal", run_id=run_id, ticker=ticker, qty=qty)
+        await _emit(run_id, {
+            "type": "order_placed",
+            "ticker": ticker,
+            "side": "sell",
+            "qty": qty,
+            "order_id": order.get("id"),
+            "status": order.get("status"),
+        })
+
+        from app.api.v1.notifications import save_notification
+        await save_notification(
+            type="trade_placed",
+            title=f"Trade placed — SELL {ticker}",
+            body=f"Agent SELL signal closed your {qty:g}-share {ticker} position. "
+                 f"Order ID: {order.get('id', 'N/A')}",
+            ticker=ticker,
+            user_id=user_id,
+        )
+    except Exception as e:
+        log.error("broker.sell_close_failed", run_id=run_id, ticker=ticker, error=str(e))
+        await _emit(run_id, {"type": "order_failed", "error": str(e)})
+
+
 async def _place_order_if_approved(run_id: str, ticker: str, result: dict,
                                    user_id: int | None = None):
     """
@@ -1023,6 +1093,8 @@ async def _place_order_if_approved(run_id: str, ticker: str, result: dict,
             log.info("broker.no_order", run_id=run_id, reason="no broker configured")
             return
 
+    from app.db.models.user_settings import get_user_setting
+
     final = result["reasoning_json"].get("final", {})
     decision = final.get("decision", "HOLD")
     risk_approved = final.get("risk_approved", False)
@@ -1033,10 +1105,26 @@ async def _place_order_if_approved(run_id: str, ticker: str, result: dict,
         log.info("broker.no_order", run_id=run_id, reason=f"decision={decision} approved={risk_approved}")
         return
 
-    # Long-only: never short-sell
+    # Confidence gate — user-configurable floor for auto-execution
+    min_confidence = float(await get_user_setting(user_id, "min_confidence_to_trade", 0.60))
+    if confidence < min_confidence:
+        log.info("broker.below_min_confidence", run_id=run_id, ticker=ticker,
+                 confidence=confidence, required=min_confidence)
+        await _emit(run_id, {
+            "type": "order_skipped",
+            "reason": "below_min_confidence",
+            "message": f"Confidence {confidence:.0%} is below your {min_confidence:.0%} auto-trade floor.",
+        })
+        return
+
     if decision == "SELL":
-        log.info("broker.skipping_short", run_id=run_id, ticker=ticker,
-                 reason="Long-only strategy — SELL signals skipped")
+        long_only = bool(await get_user_setting(user_id, "long_only", True))
+        if long_only:
+            log.info("broker.skipping_short", run_id=run_id, ticker=ticker,
+                     reason="Long-only strategy — SELL signals skipped")
+            return
+        # long_only off: SELL closes an existing long position — never a naked short
+        await _close_long_if_held(run_id, ticker, result, broker, user_id, confidence)
         return
 
     if decision != "BUY":
@@ -1046,7 +1134,7 @@ async def _place_order_if_approved(run_id: str, ticker: str, result: dict,
         # Check ticker-level circuit breakers (earnings blackout etc.)
         try:
             from app.workers.circuit_breakers import check_ticker_blocked
-            ticker_blocked, ticker_block_reason = await check_ticker_blocked(ticker)
+            ticker_blocked, ticker_block_reason = await check_ticker_blocked(ticker, user_id=user_id)
             if ticker_blocked:
                 log.warning("broker.ticker_blocked", run_id=run_id, ticker=ticker,
                             reason=ticker_block_reason)

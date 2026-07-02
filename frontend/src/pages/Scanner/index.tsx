@@ -2,7 +2,7 @@ import { useState, useEffect, useRef } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { Radar, Play, RefreshCw, Loader2, TrendingUp, TrendingDown, Minus, Zap, CheckCircle2, XCircle, Clock, BarChart2, Brain, SlidersHorizontal, ChevronDown } from "lucide-react";
 import { useNavigate } from "react-router-dom";
-import { api, WS_BASE } from "../../lib/api";
+import { api, wsUrl } from "../../lib/api";
 import { cn } from "../../lib/cn";
 import { TermTooltip } from "../../components/ui/Tooltip";
 
@@ -161,7 +161,7 @@ export default function Scanner() {
 
     addLog("Reconnecting to running scan...");
 
-    const ws = new WebSocket(`${WS_BASE}/scans/${scanId}`);
+    const ws = new WebSocket(wsUrl(`/scans/${scanId}`));
     wsRef.current = ws;
 
     ws.onopen = () => addLog("Reconnected — waiting for results...");
@@ -293,7 +293,7 @@ export default function Scanner() {
       addLog("Step 2: AI pipeline on top candidates...");
       addLog("⚡ You can freely navigate — scan runs in background!");
 
-      const ws = new WebSocket(`${WS_BASE}/scans/${scanId}`);
+      const ws = new WebSocket(wsUrl(`/scans/${scanId}`));
       wsRef.current = ws;
 
       ws.onmessage = (e) => {

@@ -31,3 +31,9 @@ api.interceptors.response.use(
 );
 
 export const WS_BASE = (import.meta.env.VITE_WS_URL ?? "ws://localhost:8000") + "/api/v1/ws";
+
+/** WebSocket URL with the auth token attached — the server rejects unauthenticated sockets. */
+export function wsUrl(path: string): string {
+  const token = getToken();
+  return `${WS_BASE}${path}${token ? `?token=${encodeURIComponent(token)}` : ""}`;
+}

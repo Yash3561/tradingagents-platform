@@ -380,11 +380,15 @@ docker compose up --build backend -d
 
 ## Known Issues / Watch Out (multi-tenant additions)
 
-- `/trades/export-csv` is registered AFTER `/trades/{trade_id}` → path shadowed, returns 404 (pre-existing; fix = move route above the dynamic one)
-- WebSocket endpoint is unauthenticated — rooms are unguessable UUIDs, acceptable for now, but add token auth before public launch
-- `position_monitor` + `scheduler` run in BOTH the backend lifespan and the worker container (pre-existing duplication — double order-close race possible)
-- Circuit breaker daily-drawdown check still uses the legacy env account, not per-user
 - market.py / backtest.py / price_feed use platform env Alpaca keys for market DATA (fine — data is not account-scoped)
+- ALL FIXED 2026-07-02: export-csv shadowing, WS auth (JWT via ?token=, frontend `wsUrl()`),
+  worker double-run (worker container = trade_sync + equity_tracker ONLY; backend lifespan
+  = position_monitor, scheduler, overnight, price_feed — never start a loop in both),
+  per-user circuit breakers, legacy env account deduped via `legacy_env_client()`
+- Settings keys are 1:1 frontend↔backend now (scan_enabled, long_only,
+  min_confidence_to_trade, intraday_monitor_enabled, overnight_agent_enabled,
+  scan_max_candidates, max_position_pct, daily_loss_limit_pct) — keep them in sync
+- long_only=false → SELL signals liquidate existing longs only; naked shorts are never placed
 
 ## Known Issues / Watch Out
 

@@ -2,7 +2,7 @@ import { useState, useRef, useCallback, useEffect } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { Play, RefreshCw, Loader2 } from "lucide-react";
 import { useSearchParams } from "react-router-dom";
-import { api, WS_BASE } from "../../lib/api";
+import { api, wsUrl } from "../../lib/api";
 import AgentFlow, { type FlowState, type AgentStatus } from "../../components/agent/AgentFlow";
 import DebateTimeline, { type DebateEntry } from "../../components/agent/DebateTimeline";
 import CandlestickChart from "../../components/charts/CandlestickChart";
@@ -106,7 +106,7 @@ export default function AgentHub() {
       runIdRef.current = data.run_id;
 
       // Open WebSocket for live events
-      const ws = new WebSocket(`${WS_BASE}/runs/${data.run_id}`);
+      const ws = new WebSocket(wsUrl(`/runs/${data.run_id}`));
       wsRef.current = ws;
 
       ws.onmessage = async (e) => {

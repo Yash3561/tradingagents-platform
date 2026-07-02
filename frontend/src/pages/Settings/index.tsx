@@ -87,26 +87,27 @@ function SliderField({
 
 // ── Default settings ───────────────────────────────────────────────────────────
 
+// Keys match the backend settings store 1:1 — every control here drives real behavior.
 const DEFAULTS = {
   // Risk Management
-  position_size_default: 3,
-  position_size_high_conf: 5,
+  position_size_pct: 5,
+  position_size_high_conf: 7,
   stop_loss_pct: 7,
-  take_profit_pct: 20,
-  max_single_position: 15,
-  daily_loss_limit: 3,
+  take_profit_pct: 15,
+  max_position_pct: 20,
+  daily_loss_limit_pct: 3,
   // AI Model
   llm_model: "deepseek-ai/deepseek-v4-flash",
   debate_rounds: 2,
-  min_confidence: 0.60,
+  min_confidence_to_trade: 0.60,
   // Scanner
-  ai_candidates: 8,
-  auto_morning_scan: true,
-  long_only_mode: true,
+  scan_max_candidates: 8,
+  scan_enabled: false,
+  long_only: true,
   // Autonomous Agents
-  intraday_monitor: false,
-  overnight_research: false,
-  earnings_blackout_days: 3,
+  intraday_monitor_enabled: true,
+  overnight_agent_enabled: true,
+  earnings_blackout_days: 5,
 };
 
 type Settings = typeof DEFAULTS;
@@ -511,10 +512,10 @@ export default function Settings() {
         <SliderField
           label="Position Size (default)"
           description="% of portfolio per trade"
-          value={settings.position_size_default}
+          value={settings.position_size_pct}
           min={1} max={10} step={0.5}
           format={v => `${v}% per trade`}
-          onChange={v => update("position_size_default", v)}
+          onChange={v => update("position_size_pct", v)}
         />
         <SliderField
           label="Position Size (high confidence ≥70%)"
@@ -542,19 +543,19 @@ export default function Settings() {
         />
         <SliderField
           label="Max Single Position"
-          description="Hard cap — no single stock can exceed this"
-          value={settings.max_single_position}
+          description="Concentration warning — no single stock should exceed this"
+          value={settings.max_position_pct}
           min={10} max={30} step={1}
           format={v => `${v}% max`}
-          onChange={v => update("max_single_position", v)}
+          onChange={v => update("max_position_pct", v)}
         />
         <SliderField
           label="Daily Loss Limit"
-          description="Pause trading if portfolio falls this much today"
-          value={settings.daily_loss_limit}
+          description="Circuit breaker — new trades halt if portfolio falls this much today"
+          value={settings.daily_loss_limit_pct}
           min={1} max={10} step={0.5}
           format={v => `−${v}% halts trading`}
-          onChange={v => update("daily_loss_limit", v)}
+          onChange={v => update("daily_loss_limit_pct", v)}
         />
       </Section>
 
@@ -588,10 +589,10 @@ export default function Settings() {
         <SliderField
           label="Min Confidence to Trade"
           description="AI must exceed this confidence to place any order"
-          value={settings.min_confidence}
-          min={0.40} max={0.70} step={0.02}
+          value={settings.min_confidence_to_trade}
+          min={0.40} max={0.90} step={0.02}
           format={v => `${Math.round(v * 100)}% confidence required`}
-          onChange={v => update("min_confidence", v)}
+          onChange={v => update("min_confidence_to_trade", v)}
         />
       </Section>
 
@@ -599,8 +600,8 @@ export default function Settings() {
       <Section title="Scanner">
         <Field label="AI Candidates" description="How many stocks pass through full AI analysis per scan">
           <select
-            value={settings.ai_candidates}
-            onChange={e => update("ai_candidates", parseInt(e.target.value))}
+            value={settings.scan_max_candidates}
+            onChange={e => update("scan_max_candidates", parseInt(e.target.value))}
             className="px-3 py-1.5 bg-bg-elevated border border-border rounded-lg text-sm text-text-primary
                        focus:outline-none focus:border-accent transition-colors"
           >
@@ -610,17 +611,17 @@ export default function Settings() {
           </select>
         </Field>
 
-        <Field label="Auto Morning Scan" description="Run full scan automatically at 9:35 AM ET">
+        <Field label="Scheduled Auto-Scans" description="Scan + trade automatically at 9:35 AM and 1:00 PM ET (uses AI credits)">
           <Toggle
-            enabled={settings.auto_morning_scan}
-            onChange={v => update("auto_morning_scan", v)}
+            enabled={settings.scan_enabled}
+            onChange={v => update("scan_enabled", v)}
           />
         </Field>
 
-        <Field label="Long-Only Mode" description="When off, agents may recommend short positions">
+        <Field label="Long-Only Mode" description="When off, SELL signals liquidate existing positions (never opens shorts)">
           <Toggle
-            enabled={settings.long_only_mode}
-            onChange={v => update("long_only_mode", v)}
+            enabled={settings.long_only}
+            onChange={v => update("long_only", v)}
           />
         </Field>
       </Section>
@@ -629,15 +630,15 @@ export default function Settings() {
       <Section title="Autonomous Agents">
         <Field label="Intraday Monitor" description="Watch open positions every 15 min during market hours">
           <Toggle
-            enabled={settings.intraday_monitor}
-            onChange={v => update("intraday_monitor", v)}
+            enabled={settings.intraday_monitor_enabled}
+            onChange={v => update("intraday_monitor_enabled", v)}
           />
         </Field>
 
-        <Field label="Overnight Research Agent" description="Run pre-market analysis at 8:30 AM ET on watchlist">
+        <Field label="Overnight Research Agent" description="Evening research brief at 4:30 PM ET on positions + watchlist">
           <Toggle
-            enabled={settings.overnight_research}
-            onChange={v => update("overnight_research", v)}
+            enabled={settings.overnight_agent_enabled}
+            onChange={v => update("overnight_agent_enabled", v)}
           />
         </Field>
 

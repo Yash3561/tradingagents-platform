@@ -20,14 +20,17 @@ _ET_OFFSET_HOURS = -4   # sensible default (EDT); overridden nowhere critical
 
 # ── Sync helpers (run in executor) ────────────────────────────────────────────
 
-def _fetch_account() -> dict:
-    from app.broker.alpaca_client import get_account
-    return get_account()
+async def _broker_for(user_id: int | None):
+    """User's Alpaca client, falling back to the env-configured legacy account."""
+    from app.broker.credentials import get_client_for_user
+    from app.broker.alpaca_client import default_client
 
-
-def _fetch_positions() -> list[dict]:
-    from app.broker.alpaca_client import get_positions
-    return get_positions()
+    if user_id is not None:
+        client = await get_client_for_user(user_id)
+        if client is not None:
+            return client
+    client = default_client()
+    return client if client.configured else None
 
 
 def _fetch_vix() -> float | None:
@@ -110,7 +113,7 @@ def _check_earnings_soon(ticker: str, days: int = 5) -> tuple[bool, str]:
 
 # ── Main circuit-breaker check ─────────────────────────────────────────────────
 
-async def check_circuit_breakers() -> dict:
+async def check_circuit_breakers(user_id: int | None = None) -> dict:
     """
     Returns {
         "blocked": bool,
@@ -119,8 +122,9 @@ async def check_circuit_breakers() -> dict:
         "ticker_blocks": dict[str, str],   # ticker → reason
     }
 
-    blocked=True means NO new trades should be placed globally.
-    ticker_blocks are per-ticker earnings blocks.
+    blocked=True means NO new trades should be placed for this user.
+    Account checks (daily loss, concentration) run against the user's own
+    Alpaca account; thresholds come from their settings (platform fallback).
     warnings are informational — reduce size but don't block.
     """
     from app.api.v1.notifications import save_notification
@@ -131,27 +135,31 @@ async def check_circuit_breakers() -> dict:
     warnings: list[str] = []
     ticker_blocks: dict[str, str] = {}
 
-    # ── Load thresholds from settings DB ──────────────────────────────────────
-    from app.db.models.settings import get_setting as _get_setting
-    daily_loss_limit_pct = float(await _get_setting("daily_loss_limit_pct", 3.0)) / 100.0
-    vix_warning_threshold = float(await _get_setting("vix_warning_threshold", 30.0))
-    vix_block_threshold = float(await _get_setting("vix_block_threshold", 40.0))
-    max_position_pct = float(await _get_setting("max_position_pct", 20.0)) / 100.0
+    # ── Load thresholds (user override → platform default) ────────────────────
+    from app.db.models.user_settings import get_user_setting as _get_setting
+    daily_loss_limit_pct = float(await _get_setting(user_id, "daily_loss_limit_pct", 3.0)) / 100.0
+    vix_warning_threshold = float(await _get_setting(user_id, "vix_warning_threshold", 30.0))
+    vix_block_threshold = float(await _get_setting(user_id, "vix_block_threshold", 40.0))
+    max_position_pct = float(await _get_setting(user_id, "max_position_pct", 20.0)) / 100.0
+
+    broker = await _broker_for(user_id)
 
     # ── 1. Daily loss limit ────────────────────────────────────────────────────
-    try:
-        account = await loop.run_in_executor(None, _fetch_account)
-        equity = float(account.get("equity", 0))
-        last_equity = float(account.get("last_equity", equity))
+    if broker is not None:
+        try:
+            account = await loop.run_in_executor(None, broker.get_account)
+            equity = float(account.get("equity", 0))
+            last_equity = float(account.get("last_equity", equity))
 
-        if last_equity > 0:
-            day_pnl_pct = (equity - last_equity) / last_equity
-            if day_pnl_pct < -daily_loss_limit_pct:
-                reason = f"Daily loss limit hit ({day_pnl_pct:.1%})"
-                reasons.append(reason)
-                log.warning("circuit_breaker.daily_loss", pct=round(day_pnl_pct * 100, 2))
-    except Exception as e:
-        log.warning("circuit_breaker.account_fetch_failed", error=str(e))
+            if last_equity > 0:
+                day_pnl_pct = (equity - last_equity) / last_equity
+                if day_pnl_pct < -daily_loss_limit_pct:
+                    reason = f"Daily loss limit hit ({day_pnl_pct:.1%})"
+                    reasons.append(reason)
+                    log.warning("circuit_breaker.daily_loss", user_id=user_id,
+                                pct=round(day_pnl_pct * 100, 2))
+        except Exception as e:
+            log.warning("circuit_breaker.account_fetch_failed", error=str(e))
 
     # ── 2. VIX check ──────────────────────────────────────────────────────────
     try:
@@ -169,24 +177,25 @@ async def check_circuit_breakers() -> dict:
         log.warning("circuit_breaker.vix_fetch_failed", error=str(e))
 
     # ── 3. Concentration check ─────────────────────────────────────────────────
-    try:
-        positions = await loop.run_in_executor(None, _fetch_positions)
-        if positions:
-            account_for_conc = await loop.run_in_executor(None, _fetch_account)
-            total_equity = float(account_for_conc.get("equity", 1))
+    if broker is not None:
+        try:
+            positions = await loop.run_in_executor(None, broker.get_positions)
+            if positions:
+                account_for_conc = await loop.run_in_executor(None, broker.get_account)
+                total_equity = float(account_for_conc.get("equity", 1))
 
-            for pos in positions:
-                ticker = pos.get("symbol") or pos.get("ticker", "")
-                market_val = float(pos.get("market_value", 0) or 0)
-                if total_equity > 0 and ticker:
-                    pct = market_val / total_equity
-                    if pct > max_position_pct:
-                        warn = f"Concentration risk: {ticker} is {pct:.0%} of portfolio"
-                        warnings.append(warn)
-                        log.warning("circuit_breaker.concentration",
-                                    ticker=ticker, pct=round(pct * 100, 1))
-    except Exception as e:
-        log.warning("circuit_breaker.concentration_check_failed", error=str(e))
+                for pos in positions:
+                    ticker = pos.get("symbol") or pos.get("ticker", "")
+                    market_val = float(pos.get("market_value", 0) or 0)
+                    if total_equity > 0 and ticker:
+                        pct = market_val / total_equity
+                        if pct > max_position_pct:
+                            warn = f"Concentration risk: {ticker} is {pct:.0%} of portfolio"
+                            warnings.append(warn)
+                            log.warning("circuit_breaker.concentration",
+                                        ticker=ticker, pct=round(pct * 100, 1))
+        except Exception as e:
+            log.warning("circuit_breaker.concentration_check_failed", error=str(e))
 
     # ── Fire notification if circuit breaker is triggered ─────────────────────
     blocked = len(reasons) > 0
@@ -198,6 +207,7 @@ async def check_circuit_breakers() -> dict:
                 type="circuit_breaker",
                 title="Circuit Breaker Alert" if blocked else "Circuit Breaker Warning",
                 body="; ".join(all_issues),
+                user_id=user_id,
             )
         except Exception as e:
             log.warning("circuit_breaker.notification_failed", error=str(e))
@@ -213,17 +223,17 @@ async def check_circuit_breakers() -> dict:
     return result
 
 
-async def check_ticker_blocked(ticker: str) -> tuple[bool, str]:
+async def check_ticker_blocked(ticker: str, user_id: int | None = None) -> tuple[bool, str]:
     """
     Returns (blocked, reason) for a specific ticker.
     Checks earnings blackout (within earnings_blackout_days trading days).
     """
     from app.api.v1.notifications import save_notification
-    from app.db.models.settings import get_setting as _get_setting
+    from app.db.models.user_settings import get_user_setting as _get_setting
 
     loop = asyncio.get_running_loop()
 
-    earnings_blackout_days = int(await _get_setting("earnings_blackout_days", 5))
+    earnings_blackout_days = int(await _get_setting(user_id, "earnings_blackout_days", 5))
 
     try:
         blocked, reason = await loop.run_in_executor(
@@ -238,6 +248,7 @@ async def check_ticker_blocked(ticker: str) -> tuple[bool, str]:
                     title=f"Earnings blackout — {ticker}",
                     body=reason,
                     ticker=ticker,
+                    user_id=user_id,
                 )
             except Exception:
                 pass

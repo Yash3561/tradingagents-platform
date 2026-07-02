@@ -395,7 +395,7 @@ async def run_market_scan(
     # ── Circuit breaker gate ───────────────────────────────────────────────────
     try:
         from app.workers.circuit_breakers import check_circuit_breakers
-        cb = await check_circuit_breakers()
+        cb = await check_circuit_breakers(user_id=user_id)
         if cb.get("blocked"):
             reasons = "; ".join(cb.get("reasons", ["Unknown"]))
             log.warning("scanner.circuit_breaker_blocked", reasons=reasons)

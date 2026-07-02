@@ -134,6 +134,24 @@ async def get_client_for_user(user_id: int | None) -> AlpacaClient | None:
     return client
 
 
+async def legacy_env_client():
+    """
+    Env-key client for the legacy single-tenant path — but None when those keys
+    already belong to a user's broker connection (post-adoption), so workers
+    never process the same Alpaca account twice.
+    """
+    from app.broker.alpaca_client import default_client
+
+    client = default_client()
+    if not client.configured:
+        return None
+    for uid in await connected_user_ids():
+        uc = await get_client_for_user(uid)
+        if uc is not None and uc.api_key == client.api_key:
+            return None
+    return client
+
+
 async def connected_user_ids() -> list[int]:
     """All users with an active broker connection — used by background workers."""
     from sqlalchemy import select

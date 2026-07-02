@@ -23,6 +23,36 @@ import {
 } from "lucide-react";
 import { cn } from "../../lib/cn";
 import { getUser } from "../../lib/auth";
+import { api } from "../../lib/api";
+
+function BrokerStatusCard() {
+  const [status, setStatus] = useState<{ connected: boolean; account_number?: string } | null>(null);
+
+  useEffect(() => {
+    const load = () =>
+      api.get("/broker/status").then(r => setStatus(r.data)).catch(() => setStatus(null));
+    load();
+    const t = setInterval(load, 60_000);
+    return () => clearInterval(t);
+  }, []);
+
+  const connected = status?.connected === true;
+  return (
+    <NavLink to="/settings" className="block mx-0 p-3 rounded-lg bg-bg-elevated border border-border hover:border-accent/40 transition-colors">
+      <div className="flex items-center gap-2 mb-1">
+        <div className={cn("w-2 h-2 rounded-full", connected ? "bg-gain animate-pulse-slow" : "bg-warn")} />
+        <span className="text-xs text-text-secondary">Paper Trading</span>
+      </div>
+      <p className="text-xs text-text-muted">
+        {status === null
+          ? "Checking broker..."
+          : connected
+            ? `Alpaca ${status.account_number ?? "connected"}`
+            : "No broker — click to connect"}
+      </p>
+    </NavLink>
+  );
+}
 
 const NAV_GROUPS = [
   {
@@ -147,13 +177,7 @@ export default function Sidebar({ onLogout }: SidebarProps) {
 
       {/* Bottom */}
       <div className="px-3 pb-4 border-t border-border pt-4 space-y-1">
-        <div className="mx-0 p-3 rounded-lg bg-bg-elevated border border-border">
-          <div className="flex items-center gap-2 mb-1">
-            <div className="w-2 h-2 rounded-full bg-gain animate-pulse-slow" />
-            <span className="text-xs text-text-secondary">Paper Trading</span>
-          </div>
-          <p className="text-xs text-text-muted">Alpaca connected</p>
-        </div>
+        <BrokerStatusCard />
 
         {/* User section */}
         <div className="mt-2 mx-0 p-3 rounded-lg bg-bg-elevated border border-border">

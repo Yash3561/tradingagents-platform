@@ -240,16 +240,15 @@ def _is_market_hours_et() -> bool:
 
 async def _all_accounts() -> list[tuple[int | None, object]]:
     """(user_id, broker) pairs for every connected user + the legacy env account."""
-    from app.broker.credentials import connected_user_ids, get_client_for_user
-    from app.broker.alpaca_client import default_client
+    from app.broker.credentials import connected_user_ids, get_client_for_user, legacy_env_client
 
     accounts: list[tuple[int | None, object]] = []
     for uid in await connected_user_ids():
         client = await get_client_for_user(uid)
         if client is not None:
             accounts.append((uid, client))
-    legacy = default_client()
-    if legacy.configured:
+    legacy = await legacy_env_client()
+    if legacy is not None:
         accounts.append((None, legacy))
     return accounts
 
@@ -340,6 +339,10 @@ async def run_intraday_monitor():
                 is_preclose = True
 
             for uid, account_broker in await _all_accounts():
+                # Per-user opt-out of intraday monitoring
+                from app.db.models.user_settings import get_user_setting
+                if not bool(await get_user_setting(uid, "intraday_monitor_enabled", True)):
+                    continue
                 try:
                     positions = await loop.run_in_executor(None, account_broker.get_positions)
                 except Exception as e:
