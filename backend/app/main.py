@@ -32,6 +32,13 @@ async def lifespan(app: FastAPI):
     from app.db.models.settings import seed_defaults
     await seed_defaults()
 
+    # One-time single-tenant → multi-tenant adoption (no-op once migrated)
+    from app.core.legacy_adoption import adopt_legacy_data
+    try:
+        await adopt_legacy_data()
+    except Exception as e:
+        log.warning("legacy_adoption.failed", error=str(e))
+
     # Start background workers as asyncio tasks
     from app.workers.position_monitor import run_position_monitor
     from app.workers.scheduler import run_scheduler

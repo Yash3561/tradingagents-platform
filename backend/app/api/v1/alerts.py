@@ -35,9 +35,11 @@ async def get_alerts(user=Depends(require_user),
     from sqlalchemy import select
 
     alerts = []
+    _empty_counts = {"critical": 0, "warning": 0, "info": 0}
 
     if broker is None:
-        return {"alerts": [], "scanned_at": datetime.now(UTC).isoformat(), "positions_checked": 0}
+        return {"alerts": [], "scanned_at": datetime.now(UTC).isoformat(),
+                "positions_checked": 0, "equity": 0, "alert_counts": _empty_counts}
 
     # ── Fetch positions from the user's Alpaca account ──────────────────────
     positions = []
@@ -50,10 +52,14 @@ async def get_alerts(user=Depends(require_user),
         )
     except Exception as e:
         log.warning("alerts.alpaca_failed", error=str(e))
-        return {"alerts": [], "scanned_at": datetime.now(UTC).isoformat(), "error": str(e)}
+        return {"alerts": [], "scanned_at": datetime.now(UTC).isoformat(),
+                "positions_checked": 0, "equity": 0, "alert_counts": _empty_counts,
+                "error": str(e)}
 
     if not positions:
-        return {"alerts": [], "scanned_at": datetime.now(UTC).isoformat(), "positions_checked": 0}
+        equity = float(account.get("equity", 0)) if account else 0
+        return {"alerts": [], "scanned_at": datetime.now(UTC).isoformat(),
+                "positions_checked": 0, "equity": equity, "alert_counts": _empty_counts}
 
     equity = float(account.get("equity", 100_000))
     total_market_value = sum(float(p.get("market_value", 0)) for p in positions)
