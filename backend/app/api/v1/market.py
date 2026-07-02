@@ -708,3 +708,195 @@ async def get_ticker_names(tickers: str = ""):
         result.update(fetched)
 
     return result
+
+
+@router.get("/ai-read/{ticker}")
+async def ai_chart_read(ticker: str, refresh: bool = False):
+    """
+    AI reading of a stock's chart: trend bias + confidence, key support/resistance
+    levels, and indicator-grounded reasoning. Every reason cites a real computed
+    value (RSI, MACD, MAs, volume, momentum) so the user can verify it on the chart.
+    Cached in Redis for 10 minutes per ticker (pass ?refresh=true to bypass).
+    """
+    import asyncio
+    import json as _json
+
+    symbol = ticker.upper().strip()
+    CACHE_KEY = f"ai_chart_read:{symbol}"
+
+    if not refresh:
+        try:
+            import redis as _redis
+            _r = _redis.from_url(settings.redis_url)
+            cached = _r.get(CACHE_KEY)
+            if cached:
+                return _json.loads(cached)
+        except Exception:
+            pass
+
+    # ── Compute technicals from 6 months of daily bars ─────────────────────────
+    def _compute():
+        import yfinance as yf
+        import numpy as np
+
+        t = yf.Ticker(symbol)
+        hist = t.history(period="6mo", interval="1d")
+        if hist.empty or len(hist) < 30:
+            raise ValueError(f"Not enough price history for {symbol}")
+
+        closes = hist["Close"]
+        highs = hist["High"]
+        lows = hist["Low"]
+        vols = hist["Volume"]
+        price = float(closes.iloc[-1])
+
+        # RSI-14
+        delta = closes.diff().dropna()
+        gain = delta.clip(lower=0).rolling(14).mean()
+        loss = (-delta.clip(upper=0)).rolling(14).mean()
+        rs = gain / loss.replace(0, float("nan"))
+        rsi = float((100 - 100 / (1 + rs)).iloc[-1])
+
+        # MACD
+        ema12 = closes.ewm(span=12).mean()
+        ema26 = closes.ewm(span=26).mean()
+        macd_line = ema12 - ema26
+        signal_line = macd_line.ewm(span=9).mean()
+        macd_bullish = bool(macd_line.iloc[-1] > signal_line.iloc[-1])
+        macd_histogram = float(macd_line.iloc[-1] - signal_line.iloc[-1])
+
+        # Moving averages
+        ma20 = float(closes.rolling(20).mean().iloc[-1])
+        ma50 = float(closes.rolling(50).mean().iloc[-1]) if len(closes) >= 50 else None
+        ma200 = float(closes.rolling(200).mean().iloc[-1]) if len(closes) >= 200 else None
+
+        # Momentum
+        mom_1w = float((closes.iloc[-1] / closes.iloc[-5] - 1) * 100) if len(closes) >= 5 else 0.0
+        mom_1m = float((closes.iloc[-1] / closes.iloc[-21] - 1) * 100) if len(closes) >= 21 else 0.0
+
+        # Volume trend
+        vol_ratio = float(vols.iloc[-5:].mean() / vols.iloc[-30:].mean()) if vols.iloc[-30:].mean() > 0 else 1.0
+
+        # Swing-pivot support/resistance (5-bar pivots, deduped within 1.5%)
+        def _pivots(series, window=5, find_high=True):
+            levels = []
+            vals = series.values
+            for i in range(window, len(vals) - window):
+                seg = vals[i - window:i + window + 1]
+                if (find_high and vals[i] == seg.max()) or (not find_high and vals[i] == seg.min()):
+                    levels.append(float(vals[i]))
+            deduped = []
+            for lv in sorted(levels):
+                if not deduped or abs(lv - deduped[-1]) / deduped[-1] > 0.015:
+                    deduped.append(lv)
+            return deduped
+
+        # Nearest levels first: supports just below price, resistances just above
+        supports = [lv for lv in _pivots(lows, find_high=False) if lv < price][-3:][::-1]
+        resistances = [lv for lv in _pivots(highs, find_high=True) if lv > price][:3]
+
+        return {
+            "price": round(price, 2),
+            "rsi_14": round(rsi, 1),
+            "macd_bullish": macd_bullish,
+            "macd_histogram": round(macd_histogram, 4),
+            "ma20": round(ma20, 2),
+            "ma50": round(ma50, 2) if ma50 else None,
+            "ma200": round(ma200, 2) if ma200 else None,
+            "above_ma20": price > ma20,
+            "above_ma50": bool(ma50 and price > ma50),
+            "above_ma200": bool(ma200 and price > ma200),
+            "momentum_1w_pct": round(mom_1w, 2),
+            "momentum_1m_pct": round(mom_1m, 2),
+            "volume_ratio_5d_vs_30d": round(vol_ratio, 2),
+            "support_levels": [round(s, 2) for s in supports],
+            "resistance_levels": [round(r, 2) for r in resistances],
+        }
+
+    loop = asyncio.get_running_loop()
+    try:
+        ta = await loop.run_in_executor(None, _compute)
+    except ValueError as e:
+        raise HTTPException(400, str(e))
+    except Exception as e:
+        raise HTTPException(502, f"Market data fetch failed: {e}")
+
+    # ── LLM synthesis with strict schema ────────────────────────────────────────
+    tool_schema = {
+        "name": "chart_read",
+        "description": "Structured technical chart reading",
+        "parameters": {
+            "type": "object",
+            "required": ["trend_bias", "confidence", "outlook", "reasons", "risks",
+                         "support_levels", "resistance_levels"],
+            "properties": {
+                "trend_bias": {"type": "string", "enum": ["BULLISH", "BEARISH", "NEUTRAL"]},
+                "confidence": {"type": "number", "description": "0.0-1.0"},
+                "outlook": {"type": "string", "description": "2-3 sentence outlook for the next 1-4 weeks"},
+                "reasons": {
+                    "type": "array", "items": {"type": "string"},
+                    "description": "3-5 reasons, EACH citing a specific indicator value from the data (e.g. 'RSI at 62 shows...')",
+                },
+                "risks": {"type": "array", "items": {"type": "string"},
+                          "description": "2-3 specific risks that would invalidate the thesis"},
+                "support_levels": {"type": "array", "items": {"type": "number"},
+                                   "description": "1-3 key support prices, most important first"},
+                "resistance_levels": {"type": "array", "items": {"type": "number"},
+                                      "description": "1-3 key resistance prices, most important first"},
+            },
+        },
+    }
+
+    def _call_ai():
+        from openai import OpenAI
+        client = OpenAI(api_key=settings.nvidia_api_key, base_url=settings.nvidia_base_url,
+                        timeout=90.0, max_retries=0)
+        response = client.chat.completions.create(
+            model=settings.llm_model or "deepseek-ai/deepseek-v4-flash",
+            max_tokens=900,
+            temperature=0.3,
+            messages=[
+                {"role": "system", "content": (
+                    "You are a veteran technical analyst reading a chart for a retail trader. "
+                    "Ground EVERY claim in the provided indicator values — cite the numbers. "
+                    "Use Wyckoff/ICT concepts where relevant (accumulation, liquidity sweeps, "
+                    "premium/discount vs the range). Be honest when signals conflict: say NEUTRAL. "
+                    "Pick support/resistance from the provided pivot levels (adjust only slightly if needed)."
+                )},
+                {"role": "user", "content": (
+                    f"Read the chart for {symbol}:\n{_json.dumps(ta, indent=2)}\n\n"
+                    "Give your structured chart read."
+                )},
+            ],
+            tools=[{"type": "function", "function": tool_schema}],
+            tool_choice="required",
+        )
+        msg = response.choices[0].message
+        if msg.tool_calls:
+            return _json.loads(msg.tool_calls[0].function.arguments)
+        import re
+        m = re.search(r"\{.*\}", msg.content or "", re.DOTALL)
+        if not m:
+            raise ValueError("No structured output from model")
+        return _json.loads(m.group())
+
+    try:
+        read = await loop.run_in_executor(None, _call_ai)
+    except Exception as e:
+        raise HTTPException(502, f"AI analysis failed: {e}")
+
+    result = {
+        "ticker": symbol,
+        "generated_at": datetime.now(UTC).isoformat(),
+        "technicals": ta,
+        "read": read,
+    }
+
+    try:
+        import redis as _redis
+        _r = _redis.from_url(settings.redis_url)
+        _r.setex(CACHE_KEY, 600, _json.dumps(result))
+    except Exception:
+        pass
+
+    return result

@@ -1,12 +1,27 @@
 import { useState, useEffect, useRef, useCallback } from "react";
-import { motion } from "framer-motion";
-import { Search, TrendingUp, TrendingDown, Loader2, ExternalLink } from "lucide-react";
-import { useNavigate } from "react-router-dom";
-import CandlestickChart from "../../components/charts/CandlestickChart";
+import { motion, AnimatePresence } from "framer-motion";
+import { Search, TrendingUp, TrendingDown, Loader2, ExternalLink, Brain, RefreshCw, ShieldAlert } from "lucide-react";
+import { useNavigate, useSearchParams } from "react-router-dom";
+import CandlestickChart, { ChartLevel } from "../../components/charts/CandlestickChart";
 import { api } from "../../lib/api";
 import { cn } from "../../lib/cn";
 
 interface SearchResult { symbol: string; name: string; sector: string; }
+
+interface AIRead {
+  ticker: string;
+  generated_at: string;
+  technicals: Record<string, number | boolean | number[] | null>;
+  read: {
+    trend_bias: "BULLISH" | "BEARISH" | "NEUTRAL";
+    confidence: number;
+    outlook: string;
+    reasons: string[];
+    risks: string[];
+    support_levels: number[];
+    resistance_levels: number[];
+  };
+}
 
 interface IndexData { symbol: string; label: string; price: number; change_pct: number; week_pct: number; }
 interface MoverData { symbol: string; price: number; change_pct: number; volume: number; }
@@ -37,8 +52,14 @@ function fmtLarge(n: number | null): string {
 
 export default function Markets() {
   const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
   const [search, setSearch] = useState("");
-  const [activeTicker, setActiveTicker] = useState("SPY");
+  const [activeTicker, setActiveTicker] = useState(
+    () => searchParams.get("ticker")?.toUpperCase() || "SPY"
+  );
+  const [aiRead, setAiRead] = useState<AIRead | null>(null);
+  const [aiLoading, setAiLoading] = useState(false);
+  const [aiError, setAiError] = useState<string | null>(null);
   const [indices, setIndices] = useState<IndexData[]>([]);
   const [gainers, setGainers] = useState<MoverData[]>([]);
   const [losers, setLosers] = useState<MoverData[]>([]);
@@ -93,14 +114,39 @@ export default function Markets() {
     }).catch(() => {}).finally(() => setOverviewLoading(false));
   }, []);
 
+  // React to ?ticker= navigation (e.g. Watchlist → Chart)
+  useEffect(() => {
+    const t = searchParams.get("ticker");
+    if (t && t.toUpperCase() !== activeTicker) setActiveTicker(t.toUpperCase());
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [searchParams]);
+
   useEffect(() => {
     setStatsLoading(true);
     setStats(null);
+    setAiRead(null);
+    setAiError(null);
     api.get(`/market/stats/${activeTicker}`)
       .then(r => setStats(r.data))
       .catch(() => {})
       .finally(() => setStatsLoading(false));
   }, [activeTicker]);
+
+  const fetchAiRead = (refresh = false) => {
+    setAiLoading(true);
+    setAiError(null);
+    api.get(`/market/ai-read/${activeTicker}${refresh ? "?refresh=true" : ""}`)
+      .then(r => setAiRead(r.data))
+      .catch(e => setAiError(e.response?.data?.detail ?? "AI read failed — try again"))
+      .finally(() => setAiLoading(false));
+  };
+
+  const chartLevels: ChartLevel[] = aiRead
+    ? [
+        ...aiRead.read.support_levels.map((p, i) => ({ price: p, label: `S${i + 1}`, kind: "support" as const })),
+        ...aiRead.read.resistance_levels.map((p, i) => ({ price: p, label: `R${i + 1}`, kind: "resistance" as const })),
+      ]
+    : [];
 
   const handleSearch = (e: React.FormEvent) => {
     e.preventDefault();
@@ -183,10 +229,10 @@ export default function Markets() {
       <div className="grid grid-cols-1 lg:grid-cols-4 gap-5">
         {/* Chart — takes 3 cols */}
         <div className="lg:col-span-3 space-y-3">
-          <CandlestickChart ticker={activeTicker} period="3mo" height={400} showControls={true} />
+          <CandlestickChart ticker={activeTicker} period="3mo" height={400} showControls={true} levels={chartLevels} />
 
-          {/* Quick ticker pills */}
-          <div className="flex flex-wrap gap-1.5">
+          {/* Quick ticker pills + AI Read trigger */}
+          <div className="flex flex-wrap items-center gap-1.5">
             {QUICK_TICKERS.map(t => (
               <button
                 key={t}
@@ -201,7 +247,104 @@ export default function Markets() {
                 {t}
               </button>
             ))}
+            <button
+              onClick={() => fetchAiRead(false)}
+              disabled={aiLoading}
+              className="ml-auto flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium
+                         bg-accent/10 hover:bg-accent/20 border border-accent/30 text-accent
+                         transition-colors disabled:opacity-50"
+            >
+              {aiLoading ? <Loader2 size={12} className="animate-spin" /> : <Brain size={12} />}
+              {aiLoading ? "Reading chart..." : `AI Read: ${activeTicker}`}
+            </button>
           </div>
+
+          {aiError && <p className="text-xs text-loss">{aiError}</p>}
+
+          {/* AI chart read panel */}
+          <AnimatePresence>
+            {aiRead && aiRead.ticker === activeTicker && (
+              <motion.div
+                initial={{ opacity: 0, y: 12 }}
+                animate={{ opacity: 1, y: 0 }}
+                exit={{ opacity: 0 }}
+                className="card p-5 space-y-4"
+              >
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-3">
+                    <Brain size={16} className="text-accent" />
+                    <h3 className="text-sm font-semibold text-white">AI Chart Read — {aiRead.ticker}</h3>
+                    <span className={cn(
+                      "px-2 py-0.5 rounded-full text-xs font-bold",
+                      aiRead.read.trend_bias === "BULLISH" && "bg-gain/15 text-gain",
+                      aiRead.read.trend_bias === "BEARISH" && "bg-loss/15 text-loss",
+                      aiRead.read.trend_bias === "NEUTRAL" && "bg-warn/15 text-warn",
+                    )}>
+                      {aiRead.read.trend_bias}
+                    </span>
+                    <span className="text-xs font-mono text-slate-400">
+                      {Math.round(aiRead.read.confidence * 100)}% confidence
+                    </span>
+                  </div>
+                  <button
+                    onClick={() => fetchAiRead(true)}
+                    disabled={aiLoading}
+                    title="Regenerate (bypasses 10-min cache)"
+                    className="p-1.5 rounded text-slate-400 hover:text-white transition-colors disabled:opacity-50"
+                  >
+                    <RefreshCw size={13} className={aiLoading ? "animate-spin" : ""} />
+                  </button>
+                </div>
+
+                <p className="text-sm text-slate-300 leading-relaxed">{aiRead.read.outlook}</p>
+
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <div>
+                    <h4 className="text-xs font-semibold text-slate-400 uppercase tracking-wider mb-2">
+                      Why the AI thinks this
+                    </h4>
+                    <ul className="space-y-1.5">
+                      {aiRead.read.reasons.map((r, i) => (
+                        <li key={i} className="text-xs text-slate-300 flex items-start gap-2">
+                          <span className="text-accent shrink-0 mt-0.5">▸</span>{r}
+                        </li>
+                      ))}
+                    </ul>
+                  </div>
+                  <div className="space-y-3">
+                    <div>
+                      <h4 className="text-xs font-semibold text-slate-400 uppercase tracking-wider mb-2">
+                        <ShieldAlert size={11} className="inline mr-1 -mt-0.5" />
+                        What would invalidate it
+                      </h4>
+                      <ul className="space-y-1.5">
+                        {aiRead.read.risks.map((r, i) => (
+                          <li key={i} className="text-xs text-slate-400 flex items-start gap-2">
+                            <span className="text-loss shrink-0 mt-0.5">▸</span>{r}
+                          </li>
+                        ))}
+                      </ul>
+                    </div>
+                    <div className="flex flex-wrap gap-2">
+                      {aiRead.read.support_levels.map((p, i) => (
+                        <span key={`s${i}`} className="text-xs font-mono px-2 py-0.5 rounded bg-gain/10 text-gain border border-gain/20">
+                          S{i + 1} ${p.toFixed(2)}
+                        </span>
+                      ))}
+                      {aiRead.read.resistance_levels.map((p, i) => (
+                        <span key={`r${i}`} className="text-xs font-mono px-2 py-0.5 rounded bg-loss/10 text-loss border border-loss/20">
+                          R{i + 1} ${p.toFixed(2)}
+                        </span>
+                      ))}
+                    </div>
+                    <p className="text-[10px] text-slate-500">
+                      Levels are drawn on the chart (green = support, red = resistance). Not financial advice.
+                    </p>
+                  </div>
+                </div>
+              </motion.div>
+            )}
+          </AnimatePresence>
         </div>
 
         {/* Stats panel — 1 col */}
