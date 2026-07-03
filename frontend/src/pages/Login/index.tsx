@@ -47,8 +47,8 @@ export default function Login({ onAuth, onGoSignup, onGoForgot }: Props) {
         transition={{ duration: 0.4 }}
         className="w-full max-w-md"
       >
-        {/* Logo */}
-        <div className="flex items-center gap-3 justify-center mb-8">
+        {/* Logo — links back to the landing page */}
+        <a href="/" className="flex items-center gap-3 justify-center mb-8">
           <div className="w-10 h-10 bg-accent rounded-lg flex items-center justify-center">
             <TrendingUp size={20} className="text-white" />
           </div>
@@ -56,7 +56,7 @@ export default function Login({ onAuth, onGoSignup, onGoForgot }: Props) {
             <h1 className="text-xl font-bold text-white">TradingAgents</h1>
             <p className="text-xs text-slate-500">AI-Powered Trading Platform</p>
           </div>
-        </div>
+        </a>
 
         {/* Card */}
         <div className="card p-8">

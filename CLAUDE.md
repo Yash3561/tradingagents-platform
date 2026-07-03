@@ -48,6 +48,7 @@ Live trading is a deliberate future product/legal decision — do not soften thi
   - Backend Dockerfile now has a CMD honoring `$PORT` (compose overrides it).
   - Production guard: `ENVIRONMENT=production` + default SECRET_KEY → refuses to start.
 - **Product analytics**: `analytics_events` table + `core/analytics.py::track()` (fire-and-forget, never raises). Events: signup, login, broker_connected, agent_run, scan_run, manual_order — keep this list in the module docstring current. `GET /admin/analytics` → daily series (zero-filled), 7d event mix, funnel (from source-of-truth tables so pre-analytics users count), WAU. Charts on Admin page.
+- **Landing page** (`pages/Landing/`): renders at `/` for logged-out visitors (App.tsx `initialUnauthedView`; deep links still go to login, `?invite=` to signup). Animated hero, cycling 7-agent pipeline, typewriter debate terminal, live stats from the public track-record endpoint, framework marquee (`animate-marquee` keyframes in tailwind.config), features/steps/CTA/disclaimer footer. Login/Signup logos link back to `/`.
 - **Public AI track record**: `GET /api/v1/track-record/` — UNAUTHENTICATED by design (the shareable proof page). Anonymized aggregates only: decision mix, win rate on closed AI trades (agent_run_id set), monthly series, recent 20 calls (ticker/decision/confidence, no user data). Redis-cached 5 min. Frontend `/track-record` renders standalone (public, with signup CTA) when logged out and inside the Shell when logged in; sidebar under Intelligence.
 
 ---
@@ -415,6 +416,10 @@ docker compose up --build backend -d
 
 ## Known Issues / Watch Out
 
+- Docker frontend on Windows does NOT hot-reload: bind-mount file events don't reach
+  Vite in the container. After frontend changes, `docker compose restart frontend`
+  (and hard-refresh the browser). To preview logged-out pages with a logged-in browser,
+  open http://127.0.0.1:5173 — different origin, no stored token (CORS-allowed in main.py).
 - `structured_runner.py` uses `asyncio.run_coroutine_threadsafe` for WS emit from thread executor
 - `tool_choice="required"` used for NIM — do NOT change to named function format
 - Alembic not auto-run on startup — run `docker exec tap_backend alembic upgrade head` after schema changes

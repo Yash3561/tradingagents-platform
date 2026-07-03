@@ -27,9 +27,10 @@ import ResetPassword from "./pages/Auth/ResetPassword";
 import VerifyEmail from "./pages/Auth/VerifyEmail";
 import Admin from "./pages/Admin";
 import TrackRecord from "./pages/TrackRecord";
+import Landing from "./pages/Landing";
 import { isAuthenticated, clearAuth, getUser } from "./lib/auth";
 
-type UnauthedView = "login" | "signup" | "forgot" | "reset" | "verify";
+type UnauthedView = "landing" | "login" | "signup" | "forgot" | "reset" | "verify";
 
 /** Email links land on real URLs — map them to views before the router mounts. */
 function initialUnauthedView(): UnauthedView {
@@ -38,6 +39,8 @@ function initialUnauthedView(): UnauthedView {
   if (path === "/verify-email") return "verify";
   // Invite links (/?invite=CODE) land straight on signup with the code pre-filled
   if (new URLSearchParams(window.location.search).has("invite")) return "signup";
+  // Marketing page for fresh visitors; deep links (bookmarked app pages) go to login
+  if (path === "/") return "landing";
   return "login";
 }
 
@@ -72,6 +75,14 @@ export default function App() {
 
   // Verify-email links work signed in or out — let the router handle them when authed
   if (!authed || (view === "verify" && window.location.pathname === "/verify-email")) {
+    if (view === "landing") {
+      return (
+        <Landing
+          onGetStarted={() => setView("signup")}
+          onSignIn={() => setView("login")}
+        />
+      );
+    }
     if (view === "signup") {
       return <Signup onAuth={handleAuth} onGoLogin={() => setView("login")} />;
     }
