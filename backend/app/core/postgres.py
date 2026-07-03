@@ -1,11 +1,38 @@
+from urllib.parse import urlsplit, urlunsplit, parse_qsl, urlencode
+
 from sqlalchemy.ext.asyncio import create_async_engine, async_sessionmaker, AsyncSession
 from sqlalchemy.orm import DeclarativeBase
 from app.config import get_settings
 
 settings = get_settings()
 
+
+def normalize_database_url(url: str) -> str:
+    """
+    Accept connection strings as hosted Postgres providers hand them out
+    (Neon, Heroku, etc.) and translate to what SQLAlchemy+asyncpg expects:
+    scheme postgresql+asyncpg://, ssl= instead of libpq's sslmode=, and no
+    channel_binding (asyncpg raises TypeError on unknown kwargs).
+    """
+    if url.startswith("postgres://"):
+        url = "postgresql://" + url[len("postgres://"):]
+    if url.startswith("postgresql://"):
+        url = "postgresql+asyncpg://" + url[len("postgresql://"):]
+
+    parts = urlsplit(url)
+    query = []
+    for key, value in parse_qsl(parts.query, keep_blank_values=True):
+        if key == "sslmode":
+            query.append(("ssl", value))
+        elif key == "channel_binding":
+            continue
+        else:
+            query.append((key, value))
+    return urlunsplit((parts.scheme, parts.netloc, parts.path, urlencode(query), parts.fragment))
+
+
 engine = create_async_engine(
-    settings.database_url,
+    normalize_database_url(settings.database_url),
     pool_size=10,
     max_overflow=20,
     echo=settings.environment == "development",
