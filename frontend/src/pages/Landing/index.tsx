@@ -242,6 +242,10 @@ function LiveStats() {
   const discipline = useCountUp(total ? Math.round((holds / total) * 100) : 0, inView && !!data);
   const confidence = useCountUp(data?.avg_confidence ? Math.round(data.avg_confidence * 100) : 0, inView && !!data);
 
+  // A fresh platform bragging about zeros undermines the pitch — show nothing
+  // until there's a real number to stand behind.
+  if (!data || data.total_analyses === 0) return <div ref={ref} />;
+
   return (
     <div ref={ref} className="grid grid-cols-3 gap-4 md:gap-6">
       {[
@@ -561,9 +565,9 @@ export default function Landing({ onGetStarted, onSignIn }: Props) {
               whileInView={{ opacity: 1, y: 0 }}
               viewport={{ once: true, margin: "-60px" }}
               transition={{ delay: i * 0.12, duration: 0.5 }}
-              className="relative card p-6 pt-8"
+              className="card p-6"
             >
-              <span className="absolute -top-4 left-6 font-mono text-3xl font-bold text-accent/30">{s.n}</span>
+              <span className="block font-mono text-3xl font-bold text-accent/30 mb-3">{s.n}</span>
               <h3 className="text-sm font-semibold text-text-primary mb-2">{s.title}</h3>
               <p className="text-sm text-text-secondary leading-relaxed">{s.body}</p>
             </motion.div>
