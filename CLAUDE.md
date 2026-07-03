@@ -1,7 +1,7 @@
 # TradingAgents Platform — Session Checkpoint
 
 > Rally race co-driver notes. Read this before touching anything.
-> Last updated: 2026-07-03 (real-user readiness: password reset, email verify, admin, rate limits)
+> Last updated: 2026-07-03 (launch prep: free-tier deploy packaging, product analytics, public track record)
 
 ---
 
@@ -39,6 +39,16 @@ Live trading is a deliberate future product/legal decision — do not soften thi
 - **DB invite codes**: `invite_codes` table — max_uses/used_count/expires_at/revoked; signup accepts env `SIGNUP_INVITE_CODE` (master gate) OR a usable DB code. Invite links: `/?invite=CODE` pre-fills signup. Env code unset = open signup (DB codes then optional).
 - **Frontend**: `pages/Auth/` (ForgotPassword, ResetPassword, VerifyEmail share AuthCard), `pages/Admin/`, Settings → Account Security (change password), `VerifyEmailBanner` in Shell (refreshes `/auth/me` → updates cached user incl. is_admin). Unauthed URL handling in App.tsx maps `/reset-password` + `/verify-email` + `/?invite=` to views (auth pages live outside the router).
 - **Verified 2026-07-03**: full e2e via curl — signup→verify link logged→verify (reuse rejected), forgot→reset→old token 401→old password 401, change-password revokes prior tokens (same-second tokens survive by design), invite create→consume→reuse 403→bogus 403→revoke, disabled user login 403, self-disable 400, login rate limit tripped at 6th attempt, forgot-password 429 at 4th.
+
+## Launch Prep (added 2026-07-03, same night)
+
+- **Free-tier deploy** ($0/mo): Vercel (frontend) + Render free web service (backend) + Neon (Postgres) + Upstash (Redis) + UptimeRobot keep-awake. Full walkthrough in **DEPLOY.md**; `render.yaml` blueprint + `frontend/vercel.json` (SPA rewrites) committed.
+  - `RUN_ALL_WORKERS=true` → trade_sync + equity_tracker run inside the API process (Render free has no worker services). NEVER set while the worker container also runs.
+  - `PRICE_FEED_ENABLED=false` on free deploys — the tick stream's per-tick Redis SET would burn Upstash's 500K/mo quota.
+  - Backend Dockerfile now has a CMD honoring `$PORT` (compose overrides it).
+  - Production guard: `ENVIRONMENT=production` + default SECRET_KEY → refuses to start.
+- **Product analytics**: `analytics_events` table + `core/analytics.py::track()` (fire-and-forget, never raises). Events: signup, login, broker_connected, agent_run, scan_run, manual_order — keep this list in the module docstring current. `GET /admin/analytics` → daily series (zero-filled), 7d event mix, funnel (from source-of-truth tables so pre-analytics users count), WAU. Charts on Admin page.
+- **Public AI track record**: `GET /api/v1/track-record/` — UNAUTHENTICATED by design (the shareable proof page). Anonymized aggregates only: decision mix, win rate on closed AI trades (agent_run_id set), monthly series, recent 20 calls (ticker/decision/confidence, no user data). Redis-cached 5 min. Frontend `/track-record` renders standalone (public, with signup CTA) when logged out and inside the Shell when logged in; sidebar under Intelligence.
 
 ---
 

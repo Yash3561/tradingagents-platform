@@ -53,6 +53,14 @@ class Settings(BaseSettings):
     # CORS
     frontend_url: str = ""    # e.g. https://your-app.vercel.app
 
+    # Deployment shape
+    # True = run trade_sync + equity_tracker inside the API process too
+    # (single-container free-tier deploys with no separate worker service)
+    run_all_workers: bool = False
+    # False = skip the Alpaca tick stream (protects Upstash free-tier Redis
+    # quota — one SET per tick adds up fast; frontend price polling still works)
+    price_feed_enabled: bool = True
+
 
 @lru_cache
 def get_settings() -> Settings:

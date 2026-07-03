@@ -14,7 +14,17 @@ import {
   Plus,
   UserCheck,
   UserX,
+  Activity,
 } from "lucide-react";
+import {
+  ResponsiveContainer,
+  BarChart,
+  Bar,
+  XAxis,
+  YAxis,
+  Tooltip,
+  CartesianGrid,
+} from "recharts";
 import { api } from "../../lib/api";
 import { cn } from "../../lib/cn";
 
@@ -41,11 +51,125 @@ interface Invite {
   created_at: string;
 }
 
+interface Analytics {
+  daily: { date: string; active_users: number; events: number; signups: number }[];
+  events_7d: { event: string; count: number }[];
+  funnel: {
+    signed_up: number;
+    connected_broker: number;
+    ran_analysis: number;
+    placed_trade: number;
+  };
+  wau: number;
+}
+
 function StatCard({ label, value }: { label: string; value: number | string }) {
   return (
     <div className="card p-4">
       <p className="metric-label">{label}</p>
       <p className="metric-value text-xl">{value}</p>
+    </div>
+  );
+}
+
+function FunnelStep({
+  label,
+  value,
+  base,
+}: {
+  label: string;
+  value: number;
+  base: number;
+}) {
+  const pct = base > 0 ? Math.round((value / base) * 100) : 0;
+  return (
+    <div className="flex-1 min-w-[120px]">
+      <p className="text-xs text-text-muted">{label}</p>
+      <p className="font-mono text-lg text-text-primary">{value}</p>
+      <div className="h-1.5 bg-bg-elevated rounded-full mt-1 overflow-hidden">
+        <div className="h-full bg-accent rounded-full" style={{ width: `${pct}%` }} />
+      </div>
+      <p className="text-2xs text-text-muted mt-0.5">{pct}% of signups</p>
+    </div>
+  );
+}
+
+function ProductAnalytics() {
+  const { data } = useQuery<Analytics>({
+    queryKey: ["admin", "analytics"],
+    queryFn: () => api.get("/admin/analytics").then((r) => r.data),
+  });
+
+  if (!data) return null;
+  const f = data.funnel;
+
+  return (
+    <div className="card p-6 space-y-5">
+      <div className="flex items-center justify-between border-b border-border pb-3">
+        <div className="flex items-center gap-2">
+          <Activity size={15} className="text-accent" />
+          <h2 className="text-sm font-semibold text-text-primary">Product Analytics</h2>
+        </div>
+        <span className="text-xs text-text-muted">
+          WAU <span className="font-mono text-text-primary">{data.wau}</span>
+        </span>
+      </div>
+
+      {/* Funnel */}
+      <div className="flex gap-4 flex-wrap">
+        <FunnelStep label="Signed up" value={f.signed_up} base={f.signed_up} />
+        <FunnelStep label="Connected broker" value={f.connected_broker} base={f.signed_up} />
+        <FunnelStep label="Ran analysis" value={f.ran_analysis} base={f.signed_up} />
+        <FunnelStep label="Placed trade" value={f.placed_trade} base={f.signed_up} />
+      </div>
+
+      {/* Daily activity */}
+      <div className="h-44">
+        <ResponsiveContainer width="100%" height="100%">
+          <BarChart data={data.daily} margin={{ top: 4, right: 4, bottom: 0, left: -24 }}>
+            <CartesianGrid strokeDasharray="3 3" stroke="#1A2540" vertical={false} />
+            <XAxis
+              dataKey="date"
+              tick={{ fontSize: 10, fill: "#64748b" }}
+              tickFormatter={(d: string) => d.slice(5)}
+              axisLine={false}
+              tickLine={false}
+            />
+            <YAxis
+              allowDecimals={false}
+              tick={{ fontSize: 10, fill: "#64748b" }}
+              axisLine={false}
+              tickLine={false}
+            />
+            <Tooltip
+              contentStyle={{
+                background: "#141D30",
+                border: "1px solid #1A2540",
+                borderRadius: 8,
+                fontSize: 12,
+              }}
+              labelStyle={{ color: "#94a3b8" }}
+            />
+            <Bar dataKey="active_users" name="Active users" fill="#2D7DD2" radius={[3, 3, 0, 0]} />
+            <Bar dataKey="signups" name="Signups" fill="#00E676" radius={[3, 3, 0, 0]} />
+          </BarChart>
+        </ResponsiveContainer>
+      </div>
+
+      {/* Event mix */}
+      {data.events_7d.length > 0 && (
+        <div className="flex flex-wrap gap-2">
+          {data.events_7d.map((e) => (
+            <span
+              key={e.event}
+              className="text-xs px-2.5 py-1 rounded-full bg-bg-elevated border border-border text-text-muted"
+            >
+              {e.event} <span className="font-mono text-text-primary">{e.count}</span>
+              <span className="text-2xs"> /7d</span>
+            </span>
+          ))}
+        </div>
+      )}
     </div>
   );
 }
@@ -136,6 +260,9 @@ export default function Admin() {
         <StatCard label="Email Verified" value={stats?.verified_users ?? "—"} />
         <StatCard label="Broker Connected" value={stats?.broker_connected ?? "—"} />
       </div>
+
+      {/* Product analytics */}
+      <ProductAnalytics />
 
       {/* Invites */}
       <div className="card p-6 space-y-4">

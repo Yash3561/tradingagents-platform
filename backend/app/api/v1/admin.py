@@ -15,6 +15,9 @@ from app.core.auth import require_admin
 from app.db.models.user import User
 from app.db.models.invite_code import InviteCode
 from app.db.models.broker_connection import BrokerConnection
+from app.db.models.analytics_event import AnalyticsEvent
+from app.db.models.agent_run import AgentRun
+from app.db.models.trade import Trade
 
 router = APIRouter()
 
@@ -119,6 +122,95 @@ async def revoke_invite(
     invite.revoked = True
     await db.commit()
     return {"ok": True}
+
+
+@router.get("/analytics")
+async def product_analytics(
+    days: int = 14, admin=Depends(require_admin), db: AsyncSession = Depends(get_db)
+):
+    """Daily activity series + acquisition funnel for the admin dashboard."""
+    days = max(1, min(days, 90))
+    since = datetime.now(UTC) - timedelta(days=days)
+    day = func.date_trunc("day", AnalyticsEvent.created_at).label("day")
+
+    # Daily: distinct active users + signups + total events
+    rows = (
+        await db.execute(
+            select(
+                day,
+                func.count(func.distinct(AnalyticsEvent.user_id)).label("active_users"),
+                func.count(AnalyticsEvent.id).label("events"),
+                func.count(AnalyticsEvent.id)
+                .filter(AnalyticsEvent.event == "signup")
+                .label("signups"),
+            )
+            .where(AnalyticsEvent.created_at >= since)
+            .group_by(day)
+            .order_by(day)
+        )
+    ).all()
+    by_day = {
+        r.day.date().isoformat(): {
+            "active_users": r.active_users,
+            "events": r.events,
+            "signups": r.signups,
+        }
+        for r in rows
+    }
+    # Zero-fill so charts show the quiet days too
+    daily = []
+    for i in range(days - 1, -1, -1):
+        d = (datetime.now(UTC) - timedelta(days=i)).date().isoformat()
+        daily.append({"date": d, **by_day.get(d, {"active_users": 0, "events": 0, "signups": 0})})
+
+    # Event mix (last 7 days)
+    week_ago = datetime.now(UTC) - timedelta(days=7)
+    event_rows = (
+        await db.execute(
+            select(AnalyticsEvent.event, func.count(AnalyticsEvent.id))
+            .where(AnalyticsEvent.created_at >= week_ago)
+            .group_by(AnalyticsEvent.event)
+            .order_by(func.count(AnalyticsEvent.id).desc())
+        )
+    ).all()
+
+    # Funnel from source-of-truth tables (covers users predating analytics)
+    total_users = (await db.execute(select(func.count(User.id)))).scalar() or 0
+    broker_users = (
+        await db.execute(select(func.count(func.distinct(BrokerConnection.user_id))))
+    ).scalar() or 0
+    analysis_users = (
+        await db.execute(
+            select(func.count(func.distinct(AgentRun.user_id))).where(
+                AgentRun.user_id.is_not(None)
+            )
+        )
+    ).scalar() or 0
+    trading_users = (
+        await db.execute(
+            select(func.count(func.distinct(Trade.user_id))).where(Trade.user_id.is_not(None))
+        )
+    ).scalar() or 0
+    # Active in the last 7 days (any tracked event)
+    wau = (
+        await db.execute(
+            select(func.count(func.distinct(AnalyticsEvent.user_id))).where(
+                AnalyticsEvent.created_at >= week_ago, AnalyticsEvent.user_id.is_not(None)
+            )
+        )
+    ).scalar() or 0
+
+    return {
+        "daily": daily,
+        "events_7d": [{"event": e, "count": c} for e, c in event_rows],
+        "funnel": {
+            "signed_up": total_users,
+            "connected_broker": broker_users,
+            "ran_analysis": analysis_users,
+            "placed_trade": trading_users,
+        },
+        "wau": wau,
+    }
 
 
 @router.get("/stats")

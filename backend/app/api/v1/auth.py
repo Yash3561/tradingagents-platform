@@ -19,6 +19,7 @@ from app.core.auth import (
 from app.core.rate_limit import enforce_rate_limit, client_ip
 from app.core.redis_client import get_redis
 from app.core import mailer
+from app.core.analytics import track
 from app.db.models.user import User
 from app.db.models.invite_code import InviteCode
 
@@ -162,6 +163,7 @@ async def signup(body: SignupRequest, request: Request, db: AsyncSession = Depen
 
     await _maybe_promote_admin(user, db)
     await _send_verification(user)
+    await track("signup", user.id, invited=invite is not None)
     return _token_response(user)
 
 
@@ -182,6 +184,7 @@ async def _login(email: str, password: str, request: Request, db: AsyncSession) 
         raise HTTPException(status_code=403, detail="Account disabled")
 
     await _maybe_promote_admin(user, db)
+    await track("login", user.id)
     return _token_response(user)
 
 

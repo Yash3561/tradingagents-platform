@@ -17,6 +17,7 @@ import app.db.models.user            # noqa: F401
 import app.db.models.user_settings    # noqa: F401
 import app.db.models.broker_connection  # noqa: F401
 import app.db.models.invite_code      # noqa: F401
+import app.db.models.analytics_event  # noqa: F401
 from app.core.redis_client import get_redis
 from app.api.router import api_router
 
@@ -27,6 +28,11 @@ settings = get_settings()
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     log.info("startup", env=settings.environment)
+    if settings.environment == "production" and settings.secret_key == "change_this_in_production":
+        raise RuntimeError(
+            "SECRET_KEY is still the default — set a real one before running in production "
+            "(it signs JWTs and encrypts stored broker keys)."
+        )
     await init_db()
 
     # Seed default settings on first startup (no-op if already seeded)
@@ -47,20 +53,34 @@ async def lifespan(app: FastAPI):
     from app.workers.circuit_breakers import check_circuit_breakers  # noqa: F401 — warm import
     from app.workers.price_feed import run_price_feed
 
-    monitor_task = asyncio.create_task(run_position_monitor())
-    scheduler_task = asyncio.create_task(run_scheduler())
-    overnight_task = asyncio.create_task(run_overnight_agent())
-    price_feed_task = asyncio.create_task(run_price_feed())
-    log.info("background_workers.started",
-             workers=["position_monitor", "scheduler", "overnight_agent", "price_feed"])
+    tasks = [
+        asyncio.create_task(run_position_monitor()),
+        asyncio.create_task(run_scheduler()),
+        asyncio.create_task(run_overnight_agent()),
+    ]
+    workers = ["position_monitor", "scheduler", "overnight_agent"]
+
+    if settings.price_feed_enabled:
+        tasks.append(asyncio.create_task(run_price_feed()))
+        workers.append("price_feed")
+
+    # Single-container deploys (no separate worker service): the loops the
+    # worker container would own run here instead. Never enable this while
+    # the worker container is also running — loops must not run twice.
+    if settings.run_all_workers:
+        from app.workers.trade_sync import run_trade_sync
+        from app.workers.equity_tracker import run_equity_tracker
+        tasks.append(asyncio.create_task(run_trade_sync()))
+        tasks.append(asyncio.create_task(run_equity_tracker()))
+        workers += ["trade_sync", "equity_tracker"]
+
+    log.info("background_workers.started", workers=workers)
 
     yield
 
     # Cancel background tasks on shutdown
-    monitor_task.cancel()
-    scheduler_task.cancel()
-    overnight_task.cancel()
-    price_feed_task.cancel()
+    for t in tasks:
+        t.cancel()
     log.info("shutdown")
 
 

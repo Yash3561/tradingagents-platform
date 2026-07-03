@@ -127,6 +127,9 @@ async def place_order(
         db.add(trade)
         await db.commit()
 
+    from app.core.analytics import track
+    await track("manual_order", user.id, ticker=ticker, side=side)
+
     try:
         from app.api.v1.notifications import save_notification
         from app.api.v1.activity import log_activity

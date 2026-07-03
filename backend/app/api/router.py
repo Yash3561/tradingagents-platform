@@ -9,12 +9,15 @@ from app.api.v1 import alerts
 from app.api.v1 import orders
 from app.api.v1 import broker
 from app.api.v1 import admin
+from app.api.v1 import track_record
 
 api_router = APIRouter()
 
 # Public: login/register + WebSocket (rooms are unguessable UUIDs)
+# + anonymized AI track record (the shareable proof page)
 api_router.include_router(auth.router, prefix="/auth", tags=["auth"])
 api_router.include_router(websockets.router, prefix="/ws", tags=["websockets"])
+api_router.include_router(track_record.router, prefix="/track-record", tags=["track-record"])
 
 # Everything else requires a valid JWT
 AUTH = [Depends(require_user)]

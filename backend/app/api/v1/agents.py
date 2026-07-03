@@ -56,6 +56,9 @@ async def trigger_run(
         body.debate_rounds, body.model, body.senior_model, user.id,
     )
 
+    from app.core.analytics import track
+    await track("agent_run", user.id, ticker=body.ticker.upper())
+
     return RunResponse(
         run_id=run_id,
         ticker=body.ticker.upper(),
@@ -163,6 +166,9 @@ async def trigger_scan(body: ScanRequest, background_tasks: BackgroundTasks,
     """
     import uuid as _uuid
     scan_id = str(_uuid.uuid4())
+
+    from app.core.analytics import track
+    await track("scan_run", user.id, max_candidates=body.max_candidates)
 
     async def _run():
         from app.workers.scanner import run_market_scan

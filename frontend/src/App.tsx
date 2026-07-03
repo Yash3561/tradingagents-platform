@@ -26,6 +26,7 @@ import ForgotPassword from "./pages/Auth/ForgotPassword";
 import ResetPassword from "./pages/Auth/ResetPassword";
 import VerifyEmail from "./pages/Auth/VerifyEmail";
 import Admin from "./pages/Admin";
+import TrackRecord from "./pages/TrackRecord";
 import { isAuthenticated, clearAuth, getUser } from "./lib/auth";
 
 type UnauthedView = "login" | "signup" | "forgot" | "reset" | "verify";
@@ -51,6 +52,11 @@ function AdminRoute() {
 export default function App() {
   const [authed, setAuthed] = useState(isAuthenticated());
   const [view, setView] = useState<UnauthedView>(initialUnauthedView);
+
+  // Public shareable page — no login required
+  if (!authed && window.location.pathname === "/track-record") {
+    return <TrackRecord standalone />;
+  }
 
   const handleAuth = () => setAuthed(true);
   const handleLogout = () => {
@@ -110,6 +116,7 @@ export default function App() {
               <Route path="/calendar" element={<EconomicCalendar />} />
               <Route path="/learn" element={<Learn />} />
               <Route path="/strategy" element={<Strategy />} />
+              <Route path="/track-record" element={<TrackRecord />} />
               <Route path="/settings" element={<Settings />} />
               <Route path="/admin" element={<AdminRoute />} />
               <Route path="*" element={<Navigate to="/dashboard" replace />} />

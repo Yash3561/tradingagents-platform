@@ -66,6 +66,9 @@ async def connect_broker(
     except ValueError as e:
         raise HTTPException(400, str(e))
 
+    from app.core.analytics import track
+    await track("broker_connected", user.id)
+
     return {
         "connected": True,
         "account_number": conn.account_number,

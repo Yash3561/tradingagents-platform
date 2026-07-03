@@ -1,0 +1,37 @@
+# Render blueprint — free-tier single-service deploy.
+# Backend + all worker loops run in one container (RUN_ALL_WORKERS=true).
+# Postgres lives on Neon, Redis on Upstash — both free tier. See DEPLOY.md.
+services:
+  - type: web
+    name: tradingagents-backend
+    runtime: docker
+    plan: free
+    rootDir: backend
+    healthCheckPath: /health
+    envVars:
+      - key: ENVIRONMENT
+        value: production
+      - key: RUN_ALL_WORKERS
+        value: "true"
+      - key: PRICE_FEED_ENABLED
+        value: "false"   # protect Upstash free-tier quota
+      - key: SECRET_KEY
+        generateValue: true   # signs JWTs + encrypts broker keys — never rotate casually
+      - key: DATABASE_URL
+        sync: false   # Neon: postgresql+asyncpg://...neon.tech/trading?ssl=require
+      - key: REDIS_URL
+        sync: false   # Upstash: rediss://default:...@....upstash.io:6379
+      - key: FRONTEND_URL
+        sync: false   # your Vercel URL, e.g. https://tradingagents.vercel.app
+      - key: ANTHROPIC_API_KEY
+        sync: false
+      - key: NVIDIA_API_KEY
+        sync: false
+      - key: ALPACA_API_KEY
+        sync: false   # platform keys — market DATA only; users connect their own accounts
+      - key: ALPACA_API_SECRET
+        sync: false
+      - key: SIGNUP_INVITE_CODE
+        sync: false   # optional signup gate
+      - key: ADMIN_EMAIL
+        sync: false   # your email — auto-promoted to admin
