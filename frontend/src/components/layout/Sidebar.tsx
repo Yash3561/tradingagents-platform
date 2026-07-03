@@ -115,9 +115,12 @@ function useScanRunning() {
 
 interface SidebarProps {
   onLogout?: () => void;
+  /** Mobile drawer state — below lg the sidebar is an overlay */
+  mobileOpen?: boolean;
+  onMobileClose?: () => void;
 }
 
-export default function Sidebar({ onLogout }: SidebarProps) {
+export default function Sidebar({ onLogout, mobileOpen = false, onMobileClose }: SidebarProps) {
   const scanRunning = useScanRunning();
   const user = getUser();
 
@@ -138,7 +141,21 @@ export default function Sidebar({ onLogout }: SidebarProps) {
     : NAV_GROUPS;
 
   return (
-    <aside className="flex flex-col w-60 h-full bg-bg-surface border-r border-border shrink-0">
+    <>
+      {/* Mobile backdrop */}
+      {mobileOpen && (
+        <div
+          className="fixed inset-0 bg-black/60 z-40 lg:hidden"
+          onClick={onMobileClose}
+        />
+      )}
+      <aside
+        className={cn(
+          "flex flex-col w-60 h-full bg-bg-surface border-r border-border shrink-0",
+          "fixed inset-y-0 left-0 z-50 transition-transform duration-200 lg:static lg:translate-x-0",
+          mobileOpen ? "translate-x-0" : "-translate-x-full"
+        )}
+      >
       {/* Logo */}
       <div className="flex items-center gap-3 px-5 py-5 border-b border-border">
         <div className="relative w-8 h-8">
@@ -161,7 +178,7 @@ export default function Sidebar({ onLogout }: SidebarProps) {
               {group.label}
             </p>
             {group.items.map(({ to, icon: Icon, label }) => (
-              <NavLink key={to} to={to}>
+              <NavLink key={to} to={to} onClick={onMobileClose}>
                 {({ isActive }) => (
                   <motion.div
                     whileHover={{ x: 2 }}
@@ -216,5 +233,6 @@ export default function Sidebar({ onLogout }: SidebarProps) {
         </div>
       </div>
     </aside>
+    </>
   );
 }

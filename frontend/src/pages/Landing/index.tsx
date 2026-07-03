@@ -247,7 +247,7 @@ function LiveStats() {
   if (!data || data.total_analyses === 0) return <div ref={ref} />;
 
   return (
-    <div ref={ref} className="grid grid-cols-3 gap-4 md:gap-6">
+    <div ref={ref} className="grid grid-cols-1 gap-8 sm:grid-cols-3 sm:gap-6">
       {[
         { v: analyses.toLocaleString(), label: "Multi-agent analyses run", suffix: "" },
         { v: discipline, label: "of calls are HOLD — discipline, not gambling", suffix: "%" },

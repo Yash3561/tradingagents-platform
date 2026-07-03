@@ -25,23 +25,24 @@ export default function StatusBar() {
   }, []);
 
   return (
-    <footer className="flex items-center gap-6 px-6 py-1.5 bg-bg-surface border-t border-border text-2xs text-text-muted shrink-0">
+    <footer className="flex items-center gap-4 sm:gap-6 px-3 sm:px-6 py-1.5 bg-bg-surface border-t border-border text-2xs text-text-muted shrink-0">
       <div className="flex items-center gap-1.5">
         <Wifi size={10} className={online ? "text-gain" : "text-loss"} />
         <span>API: {online ? "Online" : "Offline"}</span>
       </div>
       <div className="flex items-center gap-1.5">
         <Database size={10} className="text-accent" />
-        <span>Alpaca Paper — simulated money</span>
+        <span className="hidden sm:inline">Alpaca Paper — simulated money</span>
+        <span className="sm:hidden">Paper</span>
       </div>
       {latencyMs != null && (
-        <div className="flex items-center gap-1.5">
+        <div className="hidden sm:flex items-center gap-1.5">
           <Activity size={10} className={latencyMs < 200 ? "text-gain" : "text-warn"} />
           <span>Latency: {latencyMs}ms</span>
         </div>
       )}
       <div className="ml-auto flex items-center gap-4">
-        <span>Educational platform — not financial advice</span>
+        <span className="hidden md:inline">Educational platform — not financial advice</span>
         <span>TradingAgents · v1.0</span>
       </div>
     </footer>

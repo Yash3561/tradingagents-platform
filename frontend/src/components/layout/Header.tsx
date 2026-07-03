@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState, useCallback } from "react";
-import { Bell, Search, X, CheckCheck, TrendingUp, TrendingDown, AlertTriangle, Zap, Calendar, BarChart2 } from "lucide-react";
+import { Bell, Search, X, CheckCheck, TrendingUp, TrendingDown, AlertTriangle, Zap, Calendar, BarChart2, Menu } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 import { fmt } from "../../lib/formatters";
 import { api } from "../../lib/api";
@@ -61,7 +61,7 @@ function TickerSearch() {
         onKeyDown={handleKeyDown}
         onFocus={() => setOpen(true)}
         placeholder="Search ticker..."
-        className="w-48 pl-8 pr-3 py-1.5 text-xs bg-bg-elevated border border-border rounded-lg
+        className="w-28 sm:w-48 pl-8 pr-3 py-1.5 text-xs bg-bg-elevated border border-border rounded-lg
                    text-text-primary placeholder:text-text-muted uppercase
                    focus:outline-none focus:border-accent focus:ring-1 focus:ring-accent/30
                    transition-colors font-mono"
@@ -312,7 +312,7 @@ function PortfolioValue() {
 
 // ── Header ────────────────────────────────────────────────────────────────────
 
-export default function Header() {
+export default function Header({ onMenuClick }: { onMenuClick?: () => void }) {
   const [unreadCount, setUnreadCount] = useState(0);
   const [dropdownOpen, setDropdownOpen] = useState(false);
   const [drawerOpen, setDrawerOpen] = useState(false);
@@ -348,13 +348,27 @@ export default function Header() {
   };
 
   return (
-    <header className="flex items-center gap-4 px-6 py-3 bg-bg-surface border-b border-border shrink-0">
-      <LiveIndices />
+    <header className="flex items-center gap-2 sm:gap-4 px-3 sm:px-6 py-3 bg-bg-surface border-b border-border shrink-0">
+      {/* Mobile nav toggle */}
+      <button
+        onClick={onMenuClick}
+        className="lg:hidden p-2 -ml-1 rounded-lg text-text-secondary hover:bg-bg-elevated transition-colors"
+        aria-label="Open navigation"
+      >
+        <Menu size={18} />
+      </button>
+
+      <div className="hidden md:flex flex-1 min-w-0">
+        <LiveIndices />
+      </div>
+      <div className="flex-1 md:hidden" />
 
       {/* Search */}
       <TickerSearch />
 
-      <MarketClock />
+      <div className="hidden sm:block">
+        <MarketClock />
+      </div>
 
       {/* Bell with notification badge and dropdown */}
       <div className="relative" ref={dropdownRef}>
@@ -382,7 +396,9 @@ export default function Header() {
         )}
       </div>
 
-      <PortfolioValue />
+      <div className="hidden sm:block">
+        <PortfolioValue />
+      </div>
 
       <NotificationsDrawer
         open={drawerOpen}
