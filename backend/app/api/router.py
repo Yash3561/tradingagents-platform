@@ -8,6 +8,7 @@ from app.api.v1 import analytics
 from app.api.v1 import alerts
 from app.api.v1 import orders
 from app.api.v1 import broker
+from app.api.v1 import admin
 
 api_router = APIRouter()
 
@@ -30,3 +31,5 @@ api_router.include_router(activity.router, prefix="/activity", tags=["activity"]
 api_router.include_router(analytics.router, prefix="/analytics", tags=["analytics"], dependencies=AUTH)
 api_router.include_router(alerts.router, prefix="/alerts", tags=["alerts"], dependencies=AUTH)
 api_router.include_router(broker.router, prefix="/broker", tags=["broker"], dependencies=AUTH)
+# Admin-only (each endpoint also depends on require_admin)
+api_router.include_router(admin.router, prefix="/admin", tags=["admin"], dependencies=AUTH)

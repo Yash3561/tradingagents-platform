@@ -31,6 +31,10 @@ _SCHEMA_UPGRADES = [
     "CREATE INDEX IF NOT EXISTS ix_notifications_user_id ON notifications (user_id)",
     "ALTER TABLE activity_logs ADD COLUMN IF NOT EXISTS user_id INTEGER",
     "CREATE INDEX IF NOT EXISTS ix_activity_logs_user_id ON activity_logs (user_id)",
+    # Real-user readiness (2026-07-03)
+    "ALTER TABLE users ADD COLUMN IF NOT EXISTS is_admin BOOLEAN DEFAULT FALSE",
+    "ALTER TABLE users ADD COLUMN IF NOT EXISTS email_verified BOOLEAN DEFAULT FALSE",
+    "ALTER TABLE users ADD COLUMN IF NOT EXISTS password_changed_at TIMESTAMPTZ",
 ]
 
 

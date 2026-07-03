@@ -22,23 +22,69 @@ import Learn from "./pages/Learn";
 import Strategy from "./pages/Strategy";
 import Login from "./pages/Login";
 import Signup from "./pages/Signup";
-import { isAuthenticated, clearAuth } from "./lib/auth";
+import ForgotPassword from "./pages/Auth/ForgotPassword";
+import ResetPassword from "./pages/Auth/ResetPassword";
+import VerifyEmail from "./pages/Auth/VerifyEmail";
+import Admin from "./pages/Admin";
+import { isAuthenticated, clearAuth, getUser } from "./lib/auth";
+
+type UnauthedView = "login" | "signup" | "forgot" | "reset" | "verify";
+
+/** Email links land on real URLs — map them to views before the router mounts. */
+function initialUnauthedView(): UnauthedView {
+  const path = window.location.pathname;
+  if (path === "/reset-password") return "reset";
+  if (path === "/verify-email") return "verify";
+  // Invite links (/?invite=CODE) land straight on signup with the code pre-filled
+  if (new URLSearchParams(window.location.search).has("invite")) return "signup";
+  return "login";
+}
+
+function urlToken(): string {
+  return new URLSearchParams(window.location.search).get("token") ?? "";
+}
+
+function AdminRoute() {
+  return getUser()?.is_admin ? <Admin /> : <Navigate to="/dashboard" replace />;
+}
 
 export default function App() {
   const [authed, setAuthed] = useState(isAuthenticated());
-  const [showSignup, setShowSignup] = useState(false);
+  const [view, setView] = useState<UnauthedView>(initialUnauthedView);
 
   const handleAuth = () => setAuthed(true);
   const handleLogout = () => {
     clearAuth();
+    setView("login");
     setAuthed(false);
   };
+  const goLogin = () => {
+    // Clear any /reset-password or /verify-email path from the email link
+    window.history.replaceState(null, "", "/");
+    setView("login");
+  };
 
-  if (!authed) {
-    if (showSignup) {
-      return <Signup onAuth={handleAuth} onGoLogin={() => setShowSignup(false)} />;
+  // Verify-email links work signed in or out — let the router handle them when authed
+  if (!authed || (view === "verify" && window.location.pathname === "/verify-email")) {
+    if (view === "signup") {
+      return <Signup onAuth={handleAuth} onGoLogin={() => setView("login")} />;
     }
-    return <Login onAuth={handleAuth} onGoSignup={() => setShowSignup(true)} />;
+    if (view === "forgot") {
+      return <ForgotPassword onGoLogin={() => setView("login")} />;
+    }
+    if (view === "reset") {
+      return <ResetPassword token={urlToken()} onGoLogin={goLogin} />;
+    }
+    if (view === "verify") {
+      return <VerifyEmail token={urlToken()} onDone={goLogin} />;
+    }
+    return (
+      <Login
+        onAuth={handleAuth}
+        onGoSignup={() => setView("signup")}
+        onGoForgot={() => setView("forgot")}
+      />
+    );
   }
 
   return (
@@ -65,6 +111,7 @@ export default function App() {
               <Route path="/learn" element={<Learn />} />
               <Route path="/strategy" element={<Strategy />} />
               <Route path="/settings" element={<Settings />} />
+              <Route path="/admin" element={<AdminRoute />} />
               <Route path="*" element={<Navigate to="/dashboard" replace />} />
             </Routes>
           </AnimatePresence>

@@ -16,6 +16,7 @@ import app.db.models.settings         # noqa: F401
 import app.db.models.user            # noqa: F401
 import app.db.models.user_settings    # noqa: F401
 import app.db.models.broker_connection  # noqa: F401
+import app.db.models.invite_code      # noqa: F401
 from app.core.redis_client import get_redis
 from app.api.router import api_router
 

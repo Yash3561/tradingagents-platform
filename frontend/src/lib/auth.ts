@@ -7,6 +7,8 @@ export interface AuthUser {
   user_id: number;
   email: string;
   full_name: string | null;
+  is_admin?: boolean;
+  email_verified?: boolean;
 }
 
 export function getToken(): string | null {
@@ -25,6 +27,13 @@ export function getUser(): AuthUser | null {
 export function saveAuth(token: string, user: AuthUser): void {
   localStorage.setItem(TOKEN_KEY, token);
   localStorage.setItem(USER_KEY, JSON.stringify(user));
+}
+
+export function updateUser(patch: Partial<AuthUser>): void {
+  const current = getUser();
+  if (current) {
+    localStorage.setItem(USER_KEY, JSON.stringify({ ...current, ...patch }));
+  }
 }
 
 export function clearAuth(): void {

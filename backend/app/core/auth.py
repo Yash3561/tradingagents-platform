@@ -5,7 +5,6 @@ Token lifetime: 30 days (long-lived for a personal trading tool — no forced re
 from datetime import datetime, timedelta, UTC
 from typing import Optional
 from jose import JWTError, jwt
-from passlib.context import CryptContext
 from fastapi import Depends, HTTPException, status
 from fastapi.security import OAuth2PasswordBearer
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -15,7 +14,6 @@ from app.config import get_settings
 from app.core.postgres import get_db
 
 settings = get_settings()
-pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/api/v1/auth/token", auto_error=False)
 
 ALGORITHM = "HS256"
@@ -34,8 +32,9 @@ def verify_password(plain: str, hashed: str) -> bool:
 
 
 def create_access_token(user_id: int, email: str) -> str:
-    expire = datetime.now(UTC) + timedelta(days=ACCESS_TOKEN_EXPIRE_DAYS)
-    payload = {"sub": str(user_id), "email": email, "exp": expire}
+    now = datetime.now(UTC)
+    expire = now + timedelta(days=ACCESS_TOKEN_EXPIRE_DAYS)
+    payload = {"sub": str(user_id), "email": email, "iat": now, "exp": expire}
     return jwt.encode(payload, settings.secret_key, algorithm=ALGORITHM)
 
 
@@ -56,7 +55,8 @@ async def get_current_user(
     try:
         payload = jwt.decode(token, settings.secret_key, algorithms=[ALGORITHM])
         user_id = int(payload.get("sub", 0))
-    except (JWTError, ValueError):
+        issued_at = float(payload.get("iat", 0))
+    except (JWTError, ValueError, TypeError):
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Invalid or expired token",
@@ -67,6 +67,19 @@ async def get_current_user(
     user = result.scalar_one_or_none()
     if not user or not user.is_active:
         raise HTTPException(status_code=401, detail="User not found or inactive")
+
+    # Tokens issued before the last password change are revoked
+    # (pre-iat legacy tokens have iat=0 and die on first password change).
+    if user.password_changed_at is not None:
+        changed = user.password_changed_at
+        if changed.tzinfo is None:
+            changed = changed.replace(tzinfo=UTC)
+        if issued_at < changed.timestamp():
+            raise HTTPException(
+                status_code=401,
+                detail="Session expired — please sign in again",
+                headers={"WWW-Authenticate": "Bearer"},
+            )
     return user
 
 
@@ -78,4 +91,11 @@ async def require_user(user=Depends(get_current_user)):
             detail="Authentication required",
             headers={"WWW-Authenticate": "Bearer"},
         )
+    return user
+
+
+async def require_admin(user=Depends(require_user)):
+    """Admin-only endpoints."""
+    if not user.is_admin:
+        raise HTTPException(status_code=403, detail="Admin access required")
     return user

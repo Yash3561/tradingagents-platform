@@ -1,7 +1,7 @@
 # TradingAgents Platform — Session Checkpoint
 
 > Rally race co-driver notes. Read this before touching anything.
-> Last updated: 2026-07-02 (multi-tenant SaaS conversion)
+> Last updated: 2026-07-03 (real-user readiness: password reset, email verify, admin, rate limits)
 
 ---
 
@@ -26,6 +26,19 @@ Live trading is a deliberate future product/legal decision — do not soften thi
 - **Workers**: trade_sync groups trades by user; position_monitor / equity_tracker / intraday monitor loop `connected_user_ids()` + legacy env account; scheduled scans run **only for users with explicit `scan_enabled=true` user setting** (LLM cost control).
 - **Order flow**: `run_structured_agent_analysis(..., user_id)` → `_place_order_if_approved` uses the user's client; no broker connected → emits `order_skipped` WS event, analysis-only.
 - **Verified 2026-07-02**: two-user isolation test passed (401 unauth, cross-user trade fetch 404, watchlist isolation, fake Alpaca keys rejected with 400).
+
+## Real-User Readiness (added 2026-07-03)
+
+- **Rate limiting**: `core/rate_limit.py` — Redis sliding window, fails OPEN if Redis is down.
+  login 10/15min per IP + 5/15min per email; signup 5/hr per IP; forgot-password 3/hr per email + 10/hr per IP; resend-verify 3/hr per user.
+- **Password reset**: `POST /auth/forgot-password` (never reveals if email exists) → token in Redis (`pwreset:{sha256}`, 30min TTL) → `POST /auth/reset-password`. Reset revokes ALL sessions.
+- **Email verification (soft)**: signup sends verify link (`verify:{sha256}` in Redis, 48h). `users.email_verified` — banner in Shell until verified, never blocks usage.
+- **Mailer**: `core/mailer.py` — SMTP via env (`SMTP_HOST` etc.); unset host = link logged at WARNING (dev mode). Links use `FRONTEND_URL` (fallback localhost:5173).
+- **Session revocation**: JWTs carry `iat`; `users.password_changed_at` (stored with microsecond=0 — iat is second-granularity) rejects older tokens in `get_current_user`. `POST /auth/change-password` returns a fresh token. Legacy tokens without iat die on first password change.
+- **Admin**: `users.is_admin` — bootstrap via `ADMIN_EMAIL` env (auto-promoted on signup/login). `api/v1/admin.py`: users list, toggle-active (guards: not self, not other admins), invite CRUD, stats. `require_admin` dep in `core/auth.py`.
+- **DB invite codes**: `invite_codes` table — max_uses/used_count/expires_at/revoked; signup accepts env `SIGNUP_INVITE_CODE` (master gate) OR a usable DB code. Invite links: `/?invite=CODE` pre-fills signup. Env code unset = open signup (DB codes then optional).
+- **Frontend**: `pages/Auth/` (ForgotPassword, ResetPassword, VerifyEmail share AuthCard), `pages/Admin/`, Settings → Account Security (change password), `VerifyEmailBanner` in Shell (refreshes `/auth/me` → updates cached user incl. is_admin). Unauthed URL handling in App.tsx maps `/reset-password` + `/verify-email` + `/?invite=` to views (auth pages live outside the router).
+- **Verified 2026-07-03**: full e2e via curl — signup→verify link logged→verify (reuse rejected), forgot→reset→old token 401→old password 401, change-password revokes prior tokens (same-second tokens survive by design), invite create→consume→reuse 403→bogus 403→revoke, disabled user login 403, self-disable 400, login rate limit tripped at 6th attempt, forgot-password 429 at 4th.
 
 ---
 

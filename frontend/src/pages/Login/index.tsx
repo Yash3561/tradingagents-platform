@@ -7,9 +7,10 @@ import { saveAuth } from "../../lib/auth";
 interface Props {
   onAuth: () => void;
   onGoSignup: () => void;
+  onGoForgot: () => void;
 }
 
-export default function Login({ onAuth, onGoSignup }: Props) {
+export default function Login({ onAuth, onGoSignup, onGoForgot }: Props) {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [showPw, setShowPw] = useState(false);
@@ -27,6 +28,8 @@ export default function Login({ onAuth, onGoSignup }: Props) {
         user_id: data.user_id,
         email: data.email,
         full_name: data.full_name,
+        is_admin: data.is_admin,
+        email_verified: data.email_verified,
       });
       onAuth();
     } catch (err: any) {
@@ -82,7 +85,16 @@ export default function Login({ onAuth, onGoSignup }: Props) {
             </div>
 
             <div>
-              <label className="block text-xs font-medium text-slate-400 mb-1.5">Password</label>
+              <div className="flex items-center justify-between mb-1.5">
+                <label className="block text-xs font-medium text-slate-400">Password</label>
+                <button
+                  type="button"
+                  onClick={onGoForgot}
+                  className="text-xs text-accent hover:underline"
+                >
+                  Forgot password?
+                </button>
+              </div>
               <div className="relative">
                 <input
                   type={showPw ? "text" : "password"}

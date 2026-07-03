@@ -9,8 +9,18 @@ class Settings(BaseSettings):
     environment: str = "development"
     secret_key: str = "change_this_in_production"
     log_level: str = "INFO"
-    # When set, new signups must supply this code (gate a public deployment)
+    # When set, new signups must supply this code (gate a public deployment).
+    # DB-backed invite codes (admin-issued) are accepted as an alternative.
     signup_invite_code: str = ""
+    # User with this email is auto-promoted to admin on signup/login
+    admin_email: str = ""
+
+    # SMTP (optional — unset host = reset/verify links are logged, not emailed)
+    smtp_host: str = ""
+    smtp_port: int = 587
+    smtp_user: str = ""
+    smtp_password: str = ""
+    smtp_from: str = ""
 
     # Database
     database_url: str = "postgresql+asyncpg://tap:tap_secret@localhost:5432/trading"

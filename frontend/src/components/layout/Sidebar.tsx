@@ -20,6 +20,7 @@ import {
   ClipboardList,
   CalendarDays,
   BookOpen,
+  ShieldCheck,
 } from "lucide-react";
 import { cn } from "../../lib/cn";
 import { getUser } from "../../lib/auth";
@@ -122,6 +123,19 @@ export default function Sidebar({ onLogout }: SidebarProps) {
   const displayName = user?.full_name || user?.email || "Account";
   const displaySub = user?.full_name ? user.email : null;
 
+  const navGroups = user?.is_admin
+    ? [
+        ...NAV_GROUPS.slice(0, -1),
+        {
+          ...NAV_GROUPS[NAV_GROUPS.length - 1],
+          items: [
+            ...NAV_GROUPS[NAV_GROUPS.length - 1].items,
+            { to: "/admin", icon: ShieldCheck, label: "Admin" },
+          ],
+        },
+      ]
+    : NAV_GROUPS;
+
   return (
     <aside className="flex flex-col w-60 h-full bg-bg-surface border-r border-border shrink-0">
       {/* Logo */}
@@ -140,7 +154,7 @@ export default function Sidebar({ onLogout }: SidebarProps) {
 
       {/* Nav */}
       <nav className="flex-1 px-3 py-4 overflow-y-auto">
-        {NAV_GROUPS.map((group) => (
+        {navGroups.map((group) => (
           <div key={group.label} className="mb-4">
             <p className="px-3 mb-1 text-[10px] font-semibold uppercase tracking-widest text-slate-600">
               {group.label}

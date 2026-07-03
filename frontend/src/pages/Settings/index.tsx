@@ -1,8 +1,9 @@
 import { motion, AnimatePresence } from "framer-motion";
 import { useState, useEffect, useRef, useCallback } from "react";
-import { CheckCircle, Link2, Loader2, ShieldAlert, ShieldCheck, ShieldX, Unplug } from "lucide-react";
+import { CheckCircle, KeyRound, Link2, Loader2, ShieldAlert, ShieldCheck, ShieldX, Unplug } from "lucide-react";
 import { api } from "../../lib/api";
 import { cn } from "../../lib/cn";
+import { saveAuth } from "../../lib/auth";
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
@@ -656,6 +657,115 @@ export default function Settings() {
       <Section title="Circuit Breakers">
         <CircuitBreakers />
       </Section>
+
+      {/* ── Account Security ─────────────────────────────────────────────────── */}
+      <Section title="Account Security">
+        <ChangePassword />
+      </Section>
     </motion.div>
+  );
+}
+
+// ── Change Password ───────────────────────────────────────────────────────────
+
+function ChangePassword() {
+  const [current, setCurrent] = useState("");
+  const [next, setNext] = useState("");
+  const [confirm, setConfirm] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [msg, setMsg] = useState<{ ok: boolean; text: string } | null>(null);
+
+  const inputCls =
+    "w-full bg-bg-elevated border border-border rounded-lg px-3 py-2 text-sm text-text-primary " +
+    "placeholder-slate-500 focus:outline-none focus:border-accent transition-colors";
+
+  const submit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setMsg(null);
+    if (next.length < 8) {
+      setMsg({ ok: false, text: "New password must be at least 8 characters" });
+      return;
+    }
+    if (next !== confirm) {
+      setMsg({ ok: false, text: "New passwords don't match" });
+      return;
+    }
+    setBusy(true);
+    try {
+      const { data } = await api.post("/auth/change-password", {
+        current_password: current,
+        new_password: next,
+      });
+      // Old tokens are revoked server-side — swap in the fresh one
+      saveAuth(data.access_token, {
+        user_id: data.user_id,
+        email: data.email,
+        full_name: data.full_name,
+        is_admin: data.is_admin,
+        email_verified: data.email_verified,
+      });
+      setCurrent("");
+      setNext("");
+      setConfirm("");
+      setMsg({ ok: true, text: "Password changed — other sessions were signed out" });
+    } catch (err: any) {
+      setMsg({ ok: false, text: err.response?.data?.detail ?? "Password change failed" });
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <form onSubmit={submit} className="space-y-3">
+      <div className="flex items-start gap-2 text-xs text-text-muted">
+        <KeyRound size={13} className="mt-0.5 shrink-0" />
+        <p>Changing your password signs out every other device and session.</p>
+      </div>
+      <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+        <input
+          type="password"
+          value={current}
+          onChange={e => setCurrent(e.target.value)}
+          placeholder="Current password"
+          className={inputCls}
+          autoComplete="current-password"
+          required
+        />
+        <input
+          type="password"
+          value={next}
+          onChange={e => setNext(e.target.value)}
+          placeholder="New password"
+          className={inputCls}
+          autoComplete="new-password"
+          required
+        />
+        <input
+          type="password"
+          value={confirm}
+          onChange={e => setConfirm(e.target.value)}
+          placeholder="Confirm new password"
+          className={inputCls}
+          autoComplete="new-password"
+          required
+        />
+      </div>
+      <div className="flex items-center justify-between gap-4">
+        {msg ? (
+          <p className={cn("text-xs", msg.ok ? "text-gain" : "text-loss")}>{msg.text}</p>
+        ) : (
+          <span />
+        )}
+        <button
+          type="submit"
+          disabled={busy || !current || !next || !confirm}
+          className="shrink-0 px-4 py-2 bg-accent hover:bg-accent/90 text-white text-sm font-medium
+                     rounded-lg transition-colors flex items-center gap-2 disabled:opacity-50"
+        >
+          {busy && <Loader2 size={13} className="animate-spin" />}
+          Change Password
+        </button>
+      </div>
+    </form>
   );
 }

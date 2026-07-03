@@ -17,7 +17,9 @@ export default function Signup({ onAuth, onGoLogin }: Props) {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [inviteRequired, setInviteRequired] = useState(false);
-  const [inviteCode, setInviteCode] = useState("");
+  const [inviteCode, setInviteCode] = useState(
+    () => new URLSearchParams(window.location.search).get("invite") ?? ""
+  );
 
   useEffect(() => {
     api.get("/auth/signup-policy")
@@ -45,6 +47,8 @@ export default function Signup({ onAuth, onGoLogin }: Props) {
         user_id: data.user_id,
         email: data.email,
         full_name: data.full_name,
+        is_admin: data.is_admin,
+        email_verified: data.email_verified,
       });
       onAuth();
     } catch (err: any) {
