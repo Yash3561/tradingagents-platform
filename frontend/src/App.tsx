@@ -28,6 +28,7 @@ import VerifyEmail from "./pages/Auth/VerifyEmail";
 import Admin from "./pages/Admin";
 import TrackRecord from "./pages/TrackRecord";
 import Landing from "./pages/Landing";
+import { Terms, Privacy } from "./pages/Legal";
 import { isAuthenticated, clearAuth, getUser } from "./lib/auth";
 
 type UnauthedView = "landing" | "login" | "signup" | "forgot" | "reset" | "verify";
@@ -56,10 +57,12 @@ export default function App() {
   const [authed, setAuthed] = useState(isAuthenticated());
   const [view, setView] = useState<UnauthedView>(initialUnauthedView);
 
-  // Public shareable page — no login required
+  // Public pages — no login required
   if (!authed && window.location.pathname === "/track-record") {
     return <TrackRecord standalone />;
   }
+  if (window.location.pathname === "/terms") return <Terms />;
+  if (window.location.pathname === "/privacy") return <Privacy />;
 
   const handleAuth = () => setAuthed(true);
   const handleLogout = () => {

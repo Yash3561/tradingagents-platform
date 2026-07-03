@@ -207,6 +207,9 @@ export default function Signup({ onAuth, onGoLogin }: Props) {
           <p className="text-[10px] text-slate-600 mt-4 leading-relaxed">
             TradingAgents is a paper-trading simulation platform for educational purposes.
             Trades use virtual money via Alpaca's paper API. AI analysis is not financial advice.
+            By creating an account you agree to the{" "}
+            <a href="/terms" className="underline hover:text-slate-400">Terms</a> and{" "}
+            <a href="/privacy" className="underline hover:text-slate-400">Privacy Policy</a>.
           </p>
 
           <p className="text-center text-sm text-slate-500 mt-6">

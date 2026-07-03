@@ -6,7 +6,7 @@ from fastapi import APIRouter, Depends, HTTPException, Request, status
 from fastapi.security import OAuth2PasswordRequestForm
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
-from pydantic import BaseModel
+from pydantic import BaseModel, EmailStr
 
 from app.core.postgres import get_db
 from app.core.auth import (
@@ -30,7 +30,7 @@ VERIFY_TOKEN_TTL = 48 * 3600     # 48 hours
 
 
 class SignupRequest(BaseModel):
-    email: str
+    email: EmailStr
     password: str
     full_name: str = ""
     invite_code: str = ""
@@ -47,7 +47,7 @@ class TokenResponse(BaseModel):
 
 
 class ForgotPasswordRequest(BaseModel):
-    email: str
+    email: EmailStr
 
 
 class ResetPasswordRequest(BaseModel):

@@ -606,11 +606,15 @@ export default function Landing({ onGetStarted, onSignIn }: Props) {
       {/* Footer */}
       <footer className="border-t border-border-subtle">
         <div className="max-w-6xl mx-auto px-5 py-8 flex flex-col md:flex-row items-center justify-between gap-4">
-          <div className="flex items-center gap-2 text-sm text-text-muted">
-            <div className="w-6 h-6 bg-accent/80 rounded-md flex items-center justify-center">
-              <TrendingUp size={12} className="text-white" />
+          <div className="flex items-center gap-4">
+            <div className="flex items-center gap-2 text-sm text-text-muted">
+              <div className="w-6 h-6 bg-accent/80 rounded-md flex items-center justify-center">
+                <TrendingUp size={12} className="text-white" />
+              </div>
+              TradingAgents
             </div>
-            TradingAgents
+            <a href="/terms" className="text-2xs text-text-muted hover:text-text-secondary transition-colors">Terms</a>
+            <a href="/privacy" className="text-2xs text-text-muted hover:text-text-secondary transition-colors">Privacy</a>
           </div>
           <p className="text-2xs text-text-muted max-w-lg text-center md:text-right leading-relaxed">
             TradingAgents is a paper-trading simulation platform for educational purposes.
