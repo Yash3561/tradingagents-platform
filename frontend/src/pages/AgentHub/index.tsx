@@ -290,9 +290,9 @@ export default function AgentHub() {
       {/* Price chart — shown once a ticker is set */}
       <CandlestickChart ticker={ticker} period="3mo" height={340} showControls={true} />
 
-      <div className="grid grid-cols-5 gap-4">
+      <div className="grid grid-cols-1 gap-4 lg:grid-cols-5">
         {/* Agent Flow diagram */}
-        <div className="col-span-2 card p-5">
+        <div className="lg:col-span-2 card p-5">
           <h2 className="text-sm font-semibold text-text-primary mb-1">Agent Pipeline</h2>
           <p className="text-xs text-text-muted mb-4">
             {status === "idle" && "Waiting for analysis"}

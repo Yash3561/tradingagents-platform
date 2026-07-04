@@ -471,7 +471,7 @@ export default function Dashboard() {
       )}
 
       {/* KPI Row */}
-      <div className="grid grid-cols-4 gap-4">
+      <div className="grid grid-cols-2 gap-3 lg:grid-cols-4 lg:gap-4">
         <MetricCard
           label="Portfolio Value"
           value={summary ? fmt.usd(summary.equity) : "—"}
@@ -506,16 +506,16 @@ export default function Dashboard() {
       <MarketBriefCard data={brief} loading={briefLoading} />
 
       {/* System Status + Market Pulse row */}
-      <div className="grid grid-cols-5 gap-4">
-        <div className="col-span-2">
+      <div className="grid grid-cols-1 gap-4 lg:grid-cols-5">
+        <div className="lg:col-span-2">
           <SystemStatus />
         </div>
 
         {/* Market Pulse */}
-        <motion.div {...FADE_UP} transition={{ delay: 0.1, duration: 0.4 }} className="card p-5 col-span-3">
+        <motion.div {...FADE_UP} transition={{ delay: 0.1, duration: 0.4 }} className="card p-5 lg:col-span-3">
           <h2 className="text-sm font-semibold text-text-primary mb-4">Market Pulse</h2>
           {pulse.length > 0 ? (
-            <div className="grid grid-cols-3 gap-3">
+            <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
               {pulse.map(({ label, value, change }: any) => (
                 <div key={label} className="flex flex-col gap-1 p-3 rounded-lg bg-bg-elevated border border-border">
                   <span className="text-2xs text-text-muted font-medium">{label}</span>
@@ -579,9 +579,9 @@ export default function Dashboard() {
         <CandlestickChart ticker={chartTicker} period="3mo" height={300} showControls={true} />
       </div>
 
-      <div className="grid grid-cols-5 gap-4">
+      <div className="grid grid-cols-1 gap-4 lg:grid-cols-5">
         {/* Live Positions */}
-        <motion.div {...FADE_UP} transition={{ delay: 0.15, duration: 0.4 }} className="card p-5 col-span-3">
+        <motion.div {...FADE_UP} transition={{ delay: 0.15, duration: 0.4 }} className="card p-5 lg:col-span-3">
           <div className="flex items-center justify-between mb-4">
             <h2 className="text-sm font-semibold text-text-primary">Live Positions</h2>
             <a href="/portfolio" className="text-xs text-accent-bright hover:underline">View all →</a>
@@ -638,7 +638,7 @@ export default function Dashboard() {
         </motion.div>
 
         {/* Agent Activity Feed */}
-        <motion.div {...FADE_UP} transition={{ delay: 0.2, duration: 0.4 }} className="card p-5 col-span-2">
+        <motion.div {...FADE_UP} transition={{ delay: 0.2, duration: 0.4 }} className="card p-5 lg:col-span-2">
           <div className="flex items-center justify-between mb-4">
             <h2 className="text-sm font-semibold text-text-primary">Agent Activity</h2>
             <a href="/agents" className="text-xs text-accent-bright hover:underline">Agent Hub →</a>

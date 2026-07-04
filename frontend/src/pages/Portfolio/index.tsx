@@ -146,7 +146,7 @@ export default function Portfolio() {
 
       {/* Top KPIs */}
       {metrics && (
-        <div className="grid grid-cols-4 gap-3">
+        <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
           <StatCard
             label="Portfolio Equity"
             value={fmt.usd(metrics.equity)}
@@ -215,7 +215,7 @@ export default function Portfolio() {
         </div>
       )}
 
-      <div className="grid grid-cols-3 gap-4">
+      <div className="grid grid-cols-1 gap-4 lg:grid-cols-3">
         {/* Allocation pie */}
         <div className="card p-5">
           <h2 className="text-sm font-semibold text-text-primary mb-4">Allocation</h2>

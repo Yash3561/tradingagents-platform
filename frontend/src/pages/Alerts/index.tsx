@@ -138,7 +138,7 @@ export default function Alerts() {
 
       {/* Summary row */}
       {data && (
-        <div className="grid grid-cols-3 gap-4">
+        <div className="grid grid-cols-3 gap-2 sm:gap-4">
           {[
             { label: "Critical", count: data.alert_counts.critical, color: "text-loss", bg: "bg-loss/10 border-loss/20" },
             { label: "Warning", count: data.alert_counts.warning, color: "text-warn", bg: "bg-warn/10 border-warn/20" },

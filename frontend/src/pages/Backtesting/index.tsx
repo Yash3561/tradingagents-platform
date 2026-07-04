@@ -186,7 +186,7 @@ export default function Backtesting() {
           </div>
 
           {/* Metrics */}
-          <div className="grid grid-cols-6 gap-3">
+          <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-6">
             <MetricCard
               label="Total Return"
               value={`${m.total_return_pct >= 0 ? "+" : ""}${m.total_return_pct.toFixed(2)}%`}
