@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState, useCallback } from "react";
-import { createChart, ColorType, LineStyle, IPriceLine, UTCTimestamp } from "lightweight-charts";
+import { createChart, ColorType, LineStyle, IPriceLine, UTCTimestamp, TickMarkType } from "lightweight-charts";
 import { api } from "../../lib/api";
 import { Loader2, TrendingUp, CandlestickChart as CandleIcon, LineChart, AreaChart, Pencil, Minus, Eraser } from "lucide-react";
 import { cn } from "../../lib/cn";
@@ -11,6 +11,33 @@ interface Bar {
   low: number;
   close: number;
   volume: number;
+}
+
+// lightweight-charts renders raw UTC on the time scale — format axis ticks and
+// the crosshair label in the viewer's local timezone instead. Data stays UTC,
+// so persisted drawings keep their coordinates.
+function formatTick(time: number, type: TickMarkType): string {
+  const d = new Date(time * 1000);
+  if (type === TickMarkType.Year) {
+    return d.toLocaleDateString(undefined, { year: "numeric" });
+  }
+  if (type === TickMarkType.Month) {
+    return d.toLocaleDateString(undefined, { month: "short" });
+  }
+  if (type === TickMarkType.DayOfMonth) {
+    return d.toLocaleDateString(undefined, { month: "short", day: "numeric" });
+  }
+  return d.toLocaleTimeString(undefined, { hour: "2-digit", minute: "2-digit" });
+}
+
+function formatCrosshairTime(time: number): string {
+  const d = new Date(time * 1000);
+  return d.toLocaleString(undefined, {
+    month: "short",
+    day: "numeric",
+    hour: "2-digit",
+    minute: "2-digit",
+  });
 }
 
 export interface ChartLevel {
@@ -262,7 +289,15 @@ export default function CandlestickChart({
       },
       crosshair: { mode: 1 },
       rightPriceScale: { borderColor: "#1A2540" },
-      timeScale: { borderColor: "#1A2540", timeVisible: true, secondsVisible: false },
+      timeScale: {
+        borderColor: "#1A2540",
+        timeVisible: true,
+        secondsVisible: false,
+        tickMarkFormatter: (time: number, type: TickMarkType) => formatTick(time, type),
+      },
+      localization: {
+        timeFormatter: (time: number) => formatCrosshairTime(time),
+      },
       width: containerRef.current.clientWidth,
       height: height,
     });
