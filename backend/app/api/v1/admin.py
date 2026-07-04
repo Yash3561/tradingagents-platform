@@ -18,6 +18,8 @@ from app.db.models.broker_connection import BrokerConnection
 from app.db.models.analytics_event import AnalyticsEvent
 from app.db.models.agent_run import AgentRun
 from app.db.models.trade import Trade
+from app.db.models.equity_snapshot import EquitySnapshot
+from app.db.models.user_settings import UserSettings
 
 router = APIRouter()
 
@@ -211,6 +213,110 @@ async def product_analytics(
         },
         "wau": wau,
     }
+
+
+STRATEGY_KEYS = [
+    "scan_enabled", "long_only", "min_confidence_to_trade",
+    "position_size_pct", "stop_loss_pct", "take_profit_pct",
+    "scan_max_candidates", "custom_watchlist",
+]
+
+
+@router.get("/strategy-lab")
+async def strategy_lab(
+    days: int = 60, admin=Depends(require_admin), db: AsyncSession = Depends(get_db)
+):
+    """
+    Compare all broker-connected accounts side by side: equity curve
+    (% change from each account's first snapshot in range), trade stats,
+    and the strategy-relevant settings each account runs with.
+    """
+    days = max(7, min(days, 365))
+    since = datetime.now(UTC) - timedelta(days=days)
+
+    connected = (
+        await db.execute(
+            select(User)
+            .join(BrokerConnection, BrokerConnection.user_id == User.id)
+            .order_by(User.id)
+        )
+    ).scalars().all()
+
+    accounts = []
+    for u in connected:
+        snaps = (
+            await db.execute(
+                select(EquitySnapshot.timestamp, EquitySnapshot.equity)
+                .where(EquitySnapshot.user_id == u.id, EquitySnapshot.timestamp >= since)
+                .order_by(EquitySnapshot.timestamp)
+            )
+        ).all()
+        base = snaps[0].equity if snaps and snaps[0].equity else None
+        # Downsample to ~200 points so charts stay light with 15-min snapshots
+        step = max(1, len(snaps) // 200)
+        curve = [
+            {
+                "t": s.timestamp.isoformat(),
+                "pct": round((s.equity / base - 1) * 100, 3) if base else 0.0,
+                "equity": round(s.equity, 2),
+            }
+            for s in snaps[::step]
+        ]
+
+        tstats = (
+            await db.execute(
+                select(
+                    func.count(Trade.id).label("total"),
+                    func.count(Trade.id).filter(Trade.closed_at.is_not(None)).label("closed"),
+                    func.count(Trade.id)
+                    .filter(Trade.pnl.is_not(None), Trade.pnl > 0)
+                    .label("wins"),
+                    func.coalesce(func.sum(Trade.pnl), 0).label("pnl"),
+                ).where(Trade.user_id == u.id)
+            )
+        ).one()
+        runs = (
+            await db.execute(
+                select(func.count(AgentRun.id)).where(AgentRun.user_id == u.id)
+            )
+        ).scalar() or 0
+
+        srows = (
+            await db.execute(
+                select(UserSettings.key, UserSettings.value).where(
+                    UserSettings.user_id == u.id, UserSettings.key.in_(STRATEGY_KEYS)
+                )
+            )
+        ).all()
+        import json as _json
+        settings_map = {}
+        for k, v in srows:
+            try:
+                settings_map[k] = _json.loads(v)
+            except Exception:
+                settings_map[k] = v
+        watchlist = settings_map.pop("custom_watchlist", None)
+
+        accounts.append(
+            {
+                "user_id": u.id,
+                "email": u.email,
+                "label": (u.full_name or u.email.split("@")[0]),
+                "curve": curve,
+                "return_pct": curve[-1]["pct"] if curve else None,
+                "equity": curve[-1]["equity"] if curve else None,
+                "trades_total": tstats.total,
+                "trades_closed": tstats.closed,
+                "wins": tstats.wins,
+                "win_rate": round(tstats.wins / tstats.closed, 3) if tstats.closed else None,
+                "total_pnl": round(float(tstats.pnl), 2),
+                "agent_runs": runs,
+                "settings": settings_map,
+                "watchlist_size": len(watchlist) if isinstance(watchlist, list) else None,
+            }
+        )
+
+    return {"days": days, "accounts": accounts}
 
 
 @router.get("/stats")

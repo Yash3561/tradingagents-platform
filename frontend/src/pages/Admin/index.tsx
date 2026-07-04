@@ -24,6 +24,9 @@ import {
   YAxis,
   Tooltip,
   CartesianGrid,
+  LineChart,
+  Line,
+  Legend,
 } from "recharts";
 import { api } from "../../lib/api";
 import { cn } from "../../lib/cn";
@@ -61,6 +64,168 @@ interface Analytics {
     placed_trade: number;
   };
   wau: number;
+}
+
+interface LabAccount {
+  user_id: number;
+  email: string;
+  label: string;
+  curve: { t: string; pct: number; equity: number }[];
+  return_pct: number | null;
+  equity: number | null;
+  trades_total: number;
+  trades_closed: number;
+  wins: number;
+  win_rate: number | null;
+  total_pnl: number;
+  agent_runs: number;
+  settings: Record<string, unknown>;
+  watchlist_size: number | null;
+}
+
+const LAB_COLORS = ["#2D7DD2", "#00E676", "#FFB740", "#FF3D57", "#A78BFA", "#22D3EE"];
+
+function StrategyLab() {
+  const { data } = useQuery<{ days: number; accounts: LabAccount[] }>({
+    queryKey: ["admin", "strategy-lab"],
+    queryFn: () => api.get("/admin/strategy-lab").then((r) => r.data),
+    refetchInterval: 5 * 60 * 1000,
+  });
+
+  if (!data || data.accounts.length === 0) return null;
+  const accounts = data.accounts;
+
+  // Merge curves onto one time axis (sparse merge keyed by timestamp)
+  const byTime = new Map<string, Record<string, number | string>>();
+  accounts.forEach((a) => {
+    a.curve.forEach((p) => {
+      const key = p.t;
+      if (!byTime.has(key)) byTime.set(key, { t: key });
+      byTime.get(key)![a.label] = p.pct;
+    });
+  });
+  const merged = [...byTime.values()].sort((a, b) =>
+    String(a.t).localeCompare(String(b.t))
+  );
+
+  const fmtSetting = (a: LabAccount, key: string, suffix = "") => {
+    const v = a.settings[key];
+    if (v === undefined || v === null) return "default";
+    if (typeof v === "boolean") return v ? "on" : "off";
+    return `${v}${suffix}`;
+  };
+
+  return (
+    <div className="card p-6 space-y-5">
+      <div className="flex items-center justify-between border-b border-border pb-3">
+        <h2 className="text-sm font-semibold text-text-primary">
+          Strategy Lab — account comparison
+        </h2>
+        <span className="text-xs text-text-muted">last {data.days} days · % from start</span>
+      </div>
+
+      {merged.length > 1 && (
+        <div className="h-56">
+          <ResponsiveContainer width="100%" height="100%">
+            <LineChart data={merged} margin={{ top: 4, right: 8, bottom: 0, left: -16 }}>
+              <CartesianGrid strokeDasharray="3 3" stroke="#1A2540" vertical={false} />
+              <XAxis
+                dataKey="t"
+                tick={{ fontSize: 10, fill: "#64748b" }}
+                tickFormatter={(t: string) => t.slice(5, 10)}
+                axisLine={false}
+                tickLine={false}
+                minTickGap={40}
+              />
+              <YAxis
+                tick={{ fontSize: 10, fill: "#64748b" }}
+                tickFormatter={(v: number) => `${v}%`}
+                axisLine={false}
+                tickLine={false}
+              />
+              <Tooltip
+                contentStyle={{ background: "#141D30", border: "1px solid #1A2540", borderRadius: 8, fontSize: 12 }}
+                labelFormatter={(t: string) => new Date(t).toLocaleString()}
+                formatter={(v: number, name: string) => [`${v}%`, name]}
+              />
+              <Legend wrapperStyle={{ fontSize: 11 }} />
+              {accounts.map((a, i) => (
+                <Line
+                  key={a.user_id}
+                  dataKey={a.label}
+                  stroke={LAB_COLORS[i % LAB_COLORS.length]}
+                  strokeWidth={2}
+                  dot={false}
+                  connectNulls
+                />
+              ))}
+            </LineChart>
+          </ResponsiveContainer>
+        </div>
+      )}
+
+      <div className="overflow-x-auto">
+        <table className="w-full text-sm">
+          <thead>
+            <tr className="text-left text-xs text-text-muted border-b border-border">
+              <th className="py-2 pr-4 font-medium">Account</th>
+              <th className="py-2 pr-4 font-medium">Return</th>
+              <th className="py-2 pr-4 font-medium">Trades</th>
+              <th className="py-2 pr-4 font-medium">Win rate</th>
+              <th className="py-2 pr-4 font-medium">P&L</th>
+              <th className="py-2 pr-4 font-medium">Conf. gate</th>
+              <th className="py-2 pr-4 font-medium">Size</th>
+              <th className="py-2 pr-4 font-medium">Stop/TP</th>
+              <th className="py-2 font-medium">Scans</th>
+            </tr>
+          </thead>
+          <tbody>
+            {accounts.map((a, i) => (
+              <tr key={a.user_id} className="border-b border-border/50">
+                <td className="py-2.5 pr-4">
+                  <span className="inline-flex items-center gap-2">
+                    <span
+                      className="w-2 h-2 rounded-full"
+                      style={{ background: LAB_COLORS[i % LAB_COLORS.length] }}
+                    />
+                    <span className="text-text-primary">{a.label}</span>
+                  </span>
+                </td>
+                <td className={cn("py-2.5 pr-4 font-mono text-xs", (a.return_pct ?? 0) >= 0 ? "text-gain" : "text-loss")}>
+                  {a.return_pct != null ? `${a.return_pct >= 0 ? "+" : ""}${a.return_pct}%` : "—"}
+                </td>
+                <td className="py-2.5 pr-4 font-mono text-xs">
+                  {a.trades_closed}/{a.trades_total}
+                </td>
+                <td className="py-2.5 pr-4 font-mono text-xs">
+                  {a.win_rate != null ? `${Math.round(a.win_rate * 100)}%` : "—"}
+                </td>
+                <td className={cn("py-2.5 pr-4 font-mono text-xs", a.total_pnl >= 0 ? "text-gain" : "text-loss")}>
+                  {a.total_pnl >= 0 ? "+" : ""}${a.total_pnl}
+                </td>
+                <td className="py-2.5 pr-4 text-xs text-text-muted">
+                  {fmtSetting(a, "min_confidence_to_trade")}
+                </td>
+                <td className="py-2.5 pr-4 text-xs text-text-muted">
+                  {fmtSetting(a, "position_size_pct", "%")}
+                </td>
+                <td className="py-2.5 pr-4 text-xs text-text-muted">
+                  {fmtSetting(a, "stop_loss_pct", "%")} / {fmtSetting(a, "take_profit_pct", "%")}
+                </td>
+                <td className="py-2.5 text-xs text-text-muted">
+                  {fmtSetting(a, "scan_enabled")}
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+      <p className="text-2xs text-text-muted">
+        Curves are % change from each account's first snapshot in range — accounts with
+        different starting equity stay comparable.
+      </p>
+    </div>
+  );
 }
 
 function StatCard({ label, value }: { label: string; value: number | string }) {
@@ -263,6 +428,9 @@ export default function Admin() {
 
       {/* Product analytics */}
       <ProductAnalytics />
+
+      {/* Strategy Lab */}
+      <StrategyLab />
 
       {/* Invites */}
       <div className="card p-6 space-y-4">
