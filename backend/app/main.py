@@ -84,31 +84,56 @@ async def lifespan(app: FastAPI):
     log.info("shutdown")
 
 
+_is_production = settings.environment == "production"
+
 app = FastAPI(
     title="TradingAgents Platform",
     version="1.0.0",
     description="Professional multi-agent trading platform powered by Claude",
     lifespan=lifespan,
+    # Interactive API docs are a recon gift in production
+    docs_url=None if _is_production else "/docs",
+    redoc_url=None if _is_production else "/redoc",
+    openapi_url=None if _is_production else "/openapi.json",
 )
 
 ALLOWED_ORIGINS = [
     "http://localhost:5173",
     "http://127.0.0.1:5173",
     "http://localhost:3000",
-    # Vercel preview URLs
-    "https://*.vercel.app",
     # Your production domain (set via env var)
-    *([settings.frontend_url] if hasattr(settings, "frontend_url") and settings.frontend_url else []),
+    *([settings.frontend_url] if settings.frontend_url else []),
 ]
+
+# In production only the explicit FRONTEND_URL is allowed. The wildcard
+# vercel.app regex would let ANY Vercel-hosted site call the API with
+# credentials — opt back in for preview deploys via CORS_ALLOW_VERCEL_PREVIEWS.
+_preview_regex = r"https://.*\.vercel\.app"
+_origin_regex = None if (_is_production and not settings.cors_allow_vercel_previews) else _preview_regex
 
 app.add_middleware(
     CORSMiddleware,
     allow_origins=ALLOWED_ORIGINS,
-    allow_origin_regex=r"https://.*\.vercel\.app",
+    allow_origin_regex=_origin_regex,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+
+@app.middleware("http")
+async def security_headers(request, call_next):
+    response = await call_next(request)
+    response.headers.setdefault("X-Content-Type-Options", "nosniff")
+    response.headers.setdefault("X-Frame-Options", "DENY")
+    response.headers.setdefault("Referrer-Policy", "no-referrer")
+    response.headers.setdefault("Permissions-Policy", "camera=(), microphone=(), geolocation=()")
+    if request.url.path.startswith("/api/"):
+        response.headers.setdefault("Cache-Control", "no-store")
+    if _is_production:
+        response.headers.setdefault("Strict-Transport-Security",
+                                    "max-age=31536000; includeSubDomains")
+    return response
 
 app.include_router(api_router, prefix="/api/v1")
 

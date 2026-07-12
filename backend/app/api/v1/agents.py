@@ -2,10 +2,11 @@ import uuid
 from datetime import datetime, UTC
 from fastapi import APIRouter, Depends, HTTPException, BackgroundTasks
 from sqlalchemy.ext.asyncio import AsyncSession
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 from app.core.postgres import get_db
 from app.core.auth import require_user
+from app.core.rate_limit import enforce_rate_limit
 from app.db.models.agent_run import AgentRun
 from app.agents.structured_runner import run_structured_agent_analysis
 from app.agents.contracts import get_all_schemas, get_contract_schema
@@ -13,11 +14,18 @@ from app.core.websocket_manager import ws_manager
 
 router = APIRouter()
 
+# Per-user quotas on LLM-spending endpoints (sliding 1h window)
+RUNS_PER_HOUR = 30
+SCANS_PER_HOUR = 6
+OPTIONS_PER_HOUR = 30
+
+TICKER_PATTERN = r"^[A-Za-z][A-Za-z0-9.\-]{0,9}$"
+
 
 class RunRequest(BaseModel):
-    ticker: str
+    ticker: str = Field(pattern=TICKER_PATTERN)
     date: str | None = None        # defaults to today
-    debate_rounds: int = 2
+    debate_rounds: int = Field(default=2, ge=0, le=3)
     model: str = "deepseek-ai/deepseek-v4-flash"
     senior_model: str | None = "deepseek-ai/deepseek-v4-flash"
     strategy: str | None = None    # "agents" | "quant"; None = user's strategy_mode setting
@@ -37,6 +45,8 @@ async def trigger_run(
     db: AsyncSession = Depends(get_db),
     user=Depends(require_user),
 ):
+    await enforce_rate_limit(f"agent_run:{user.id}", RUNS_PER_HOUR, 3600)
+
     run_id = str(uuid.uuid4())
     analysis_date = body.date or datetime.now(UTC).strftime("%Y-%m-%d")
 
@@ -160,8 +170,8 @@ class ScanCriteria(BaseModel):
 class ScanRequest(BaseModel):
     model: str = "deepseek-ai/deepseek-v4-flash"
     senior_model: str | None = "deepseek-ai/deepseek-v4-flash"
-    max_candidates: int = 8
-    watchlist: list[str] | None = None
+    max_candidates: int = Field(default=8, ge=1, le=10)
+    watchlist: list[str] | None = Field(default=None, max_length=60)
     criteria: ScanCriteria | None = None
 
 
@@ -175,6 +185,8 @@ async def trigger_scan(body: ScanRequest, background_tasks: BackgroundTasks,
     3. Auto-execute approved trades on Alpaca paper account
     Returns scan_id for polling or use SSE to track progress.
     """
+    await enforce_rate_limit(f"agent_scan:{user.id}", SCANS_PER_HOUR, 3600)
+
     import uuid as _uuid
     scan_id = str(_uuid.uuid4())
 
@@ -232,18 +244,20 @@ async def prescreen_only():
 
 
 class OptionsRequest(BaseModel):
-    ticker: str
+    ticker: str = Field(pattern=TICKER_PATTERN)
     strategy: str = "directional"       # "directional", "earnings", "hedge"
     expiry_preference: str = "2weeks"   # "1week", "2weeks", "1month", "3months"
 
 
 @router.post("/options/analyze")
-async def analyze_options(body: OptionsRequest, background_tasks: BackgroundTasks):
+async def analyze_options(body: OptionsRequest, background_tasks: BackgroundTasks,
+                          user=Depends(require_user)):
     """
     Options analysis endpoint.
     Fetches market data (yfinance), then runs a structured AI analysis via NIM/DeepSeek
     to recommend CALL, PUT, or NO_PLAY with full risk/greek details.
     """
+    await enforce_rate_limit(f"options_analyze:{user.id}", OPTIONS_PER_HOUR, 3600)
     import json as _json
     import math
     from concurrent.futures import ThreadPoolExecutor

@@ -28,6 +28,44 @@ PLATFORM_KEY_ENV_MAP = {
     "nvidia_api_key": "NVIDIA_API_KEY",
 }
 
+# Server-side bounds for numeric user settings. Values outside are clamped —
+# these gate LLM spend (debate_rounds, scan_max_candidates) and risk limits,
+# so the client is never trusted to pick them freely.
+NUMERIC_BOUNDS: dict[str, tuple[float, float, bool]] = {
+    # key: (min, max, is_int)
+    "debate_rounds": (0, 3, True),
+    "scan_max_candidates": (1, 10, True),
+    "min_confidence_to_trade": (0.0, 1.0, False),
+    "max_position_pct": (0.5, 50.0, False),
+    "position_size_pct": (0.5, 20.0, False),
+    "stop_loss_pct": (1.0, 50.0, False),
+    "take_profit_pct": (1.0, 100.0, False),
+    "daily_loss_limit_pct": (0.5, 50.0, False),
+    "earnings_blackout_days": (0, 30, True),
+}
+
+ENUM_VALUES: dict[str, set[str]] = {
+    "strategy_mode": {"agents", "quant"},
+}
+
+
+def _validate_setting(key: str, val):
+    """Clamp numerics to safe bounds, reject invalid enum values."""
+    if key in NUMERIC_BOUNDS:
+        lo, hi, is_int = NUMERIC_BOUNDS[key]
+        try:
+            num = float(val)
+        except (TypeError, ValueError):
+            raise HTTPException(status_code=400, detail=f"{key} must be a number")
+        num = min(max(num, lo), hi)
+        return int(num) if is_int else num
+    if key in ENUM_VALUES and val not in ENUM_VALUES[key]:
+        raise HTTPException(
+            status_code=400,
+            detail=f"{key} must be one of {sorted(ENUM_VALUES[key])}",
+        )
+    return val
+
 
 def _decode(value: str) -> object:
     try:
@@ -68,6 +106,11 @@ async def upsert_settings(body: dict, db: AsyncSession = Depends(get_db),
 
     for key, val in body.items():
         if key in PLATFORM_KEY_ENV_MAP:
+            if not user.is_admin:
+                raise HTTPException(
+                    status_code=403,
+                    detail=f"{key} is a platform-level setting — admin only",
+                )
             row = await db.get(PlatformSettings, key)
             if row is None:
                 db.add(PlatformSettings(key=key, value=json.dumps(val)))
@@ -82,7 +125,7 @@ async def upsert_settings(body: dict, db: AsyncSession = Depends(get_db),
             # Broker keys moved to /broker/connect — ignore silently so old UI payloads don't error
             continue
         else:
-            await set_user_setting(db, user.id, key, val)
+            await set_user_setting(db, user.id, key, _validate_setting(key, val))
         updated.append(key)
 
     await db.commit()

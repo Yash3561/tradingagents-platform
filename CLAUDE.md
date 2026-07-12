@@ -1,7 +1,7 @@
 # TradingAgents Platform — Session Checkpoint
 
 > Rally race co-driver notes. Read this before touching anything.
-> Last updated: 2026-07-12 (post-launch: Strategy Lab, mobile responsiveness, chart timezone fix, quant baseline engine, MACD signal-line fix)
+> Last updated: 2026-07-12 (post-launch: Strategy Lab, mobile responsiveness, chart timezone fix, quant baseline engine, MACD signal-line fix, security hardening)
 
 ---
 
@@ -58,6 +58,18 @@ Live trading is a deliberate future product/legal decision — do not soften thi
 - **Chart timezones**: `CandlestickChart.tsx` formats bar times in the viewer's local timezone (was rendering exchange/UTC times).
 - **Quant Baseline engine** (added 2026-07-12): `app/agents/quant_baseline.py` — deterministic, zero-LLM control strategy (trend-follow + mean-reversion entries, MA200-break/RSI≥78 exits, 2×ATR stops, 2:1 R:R, regime-gated). Selected per user via `strategy_mode` setting (`"agents"` | `"quant"`, in `DEFAULTS`) or explicit `strategy` in `POST /agents/run`; scheduled scans respect it (`scanner.py`). Same lifecycle as the agent pipeline (AgentRun row, `run:{id}` WS events, `_place_order_if_approved`), tagged `llm_model="quant-baseline"` so Strategy Lab (Engine column) compares apples-to-apples. Purpose: if agents can't beat these rules, the product story is explainability, not alpha. Settings → AI Model has the engine dropdown.
 - **MACD signal-line fix** (2026-07-12): `structured_runner._fetch_market_data`, `scanner.py`, `backtest.py` computed the signal line as EMA9 of *price* instead of EMA9 of the MACD series — `macd_bullish` was effectively always false (agents got bad data; quant trend rule could never fire). All three now match the correct implementations in `market.py`/`agents.py`. `overnight_agent.py` intentionally uses `ema12 > ema26` (MACD>0), left as-is.
+
+## Security Hardening (added 2026-07-12)
+
+- **Platform LLM keys are admin-only**: `POST /settings/` rejects `PLATFORM_KEY_ENV_MAP` keys (anthropic/nvidia) with 403 for non-admins — previously ANY user could overwrite them + os.environ. Reads were already blocked.
+- **Server-side setting bounds**: `NUMERIC_BOUNDS` + `ENUM_VALUES` in `api/v1/settings.py` clamp cost/risk settings at write (debate_rounds ≤3, scan_max_candidates ≤10, confidence 0-1, etc.); `strategy_mode` must be agents|quant. Scanner also hard-caps `max_candidates` to 10 at read. Add new cost-sensitive settings to NUMERIC_BOUNDS.
+- **Per-user quotas on LLM endpoints** (sliding 1h, Redis, fails open): `/agents/run` 30/hr, `/agents/scan` 6/hr, `/agents/options/analyze` 30/hr. Constants at top of `agents.py`. Ticker inputs validated against `TICKER_PATTERN`; ScanRequest max_candidates ≤10, watchlist ≤60.
+- **WS run-room ownership**: `/ws/runs/{run_id}` closes 4403 unless the token's user owns the run (legacy NULL-user runs stay open). `_authenticate_ws` now returns the user id.
+- **CORS**: production allows ONLY `FRONTEND_URL` — the `*.vercel.app` wildcard regex is dev-only unless `CORS_ALLOW_VERCEL_PREVIEWS=true` (it admits any Vercel-hosted site). Dead literal `"https://*.vercel.app"` removed.
+- **API docs disabled in production** (`/docs`, `/redoc`, `/openapi.json` → 404 when `ENVIRONMENT=production`).
+- **Security headers**: backend middleware (nosniff, X-Frame-Options DENY, Referrer-Policy, Permissions-Policy, HSTS in prod, `Cache-Control: no-store` on /api). `vercel.json` adds the same + enforced CSP subset (frame-ancestors/object-src/base-uri) + full CSP in **Report-Only** — check browser console for violations, then promote it to enforced.
+- Verified 2026-07-12 via curl/websockets: non-admin platform-key write 403, clamps applied, 422 on out-of-range run/scan params + bad tickers, WS attacker/no-token rejected + owner connects, 31st run in an hour → 429, `npm audit --omit=dev` clean.
+- **Still open (bigger changes, decide later)**: 30-day JWTs in localStorage (short-lived + refresh tokens would be the big-tech way), no model-id allowlist on run/scan requests, run `error` column stores tracebacks (owner-visible file paths).
 
 ---
 

@@ -375,6 +375,8 @@ async def run_market_scan(
         model = str(await _get_setting("llm_model", "deepseek-ai/deepseek-v4-flash"))
     if max_candidates is None:
         max_candidates = int(await _get_setting("scan_max_candidates", MAX_AI_CANDIDATES))
+    # Hard server-side cap regardless of source — each candidate is a full LLM pipeline
+    max_candidates = min(max(max_candidates, 1), 10)
 
     # Respect scan_enabled flag
     scan_enabled = await _get_setting("scan_enabled", True)

@@ -52,6 +52,9 @@ class Settings(BaseSettings):
 
     # CORS
     frontend_url: str = ""    # e.g. https://your-app.vercel.app
+    # Allow any *.vercel.app origin in production (preview deploys).
+    # Off by default — the wildcard admits every Vercel-hosted site.
+    cors_allow_vercel_previews: bool = False
 
     # Deployment shape
     # True = run trade_sync + equity_tracker inside the API process too
