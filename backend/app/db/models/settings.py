@@ -34,6 +34,8 @@ DEFAULTS: dict = {
     "long_only": True,
     "min_confidence_to_trade": 0.48,
     "earnings_blackout_days": 5,
+    # "agents" = LLM pipeline, "quant" = deterministic baseline (no LLM cost)
+    "strategy_mode": "agents",
 }
 
 

@@ -20,6 +20,7 @@ class RunRequest(BaseModel):
     debate_rounds: int = 2
     model: str = "deepseek-ai/deepseek-v4-flash"
     senior_model: str | None = "deepseek-ai/deepseek-v4-flash"
+    strategy: str | None = None    # "agents" | "quant"; None = user's strategy_mode setting
 
 
 class RunResponse(BaseModel):
@@ -39,22 +40,32 @@ async def trigger_run(
     run_id = str(uuid.uuid4())
     analysis_date = body.date or datetime.now(UTC).strftime("%Y-%m-%d")
 
+    from app.db.models.user_settings import get_user_setting
+    from app.agents.quant_baseline import run_quant_baseline_analysis, QUANT_MODEL_LABEL
+    strategy = body.strategy or await get_user_setting(user.id, "strategy_mode", "agents")
+    use_quant = strategy == "quant"
+
     run = AgentRun(
         id=run_id,
         user_id=user.id,
         ticker=body.ticker.upper(),
         analysis_date=analysis_date,
         status="pending",
-        llm_model=body.model,
-        debate_rounds=body.debate_rounds,
+        llm_model=QUANT_MODEL_LABEL if use_quant else body.model,
+        debate_rounds=0 if use_quant else body.debate_rounds,
     )
     db.add(run)
     await db.commit()
 
-    background_tasks.add_task(
-        run_structured_agent_analysis, run_id, body.ticker.upper(), analysis_date,
-        body.debate_rounds, body.model, body.senior_model, user.id,
-    )
+    if use_quant:
+        background_tasks.add_task(
+            run_quant_baseline_analysis, run_id, body.ticker.upper(), analysis_date, user.id,
+        )
+    else:
+        background_tasks.add_task(
+            run_structured_agent_analysis, run_id, body.ticker.upper(), analysis_date,
+            body.debate_rounds, body.model, body.senior_model, user.id,
+        )
 
     from app.core.analytics import track
     await track("agent_run", user.id, ticker=body.ticker.upper())

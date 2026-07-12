@@ -360,6 +360,7 @@ async def run_market_scan(
     Returns scan summary.
     """
     from app.agents.structured_runner import run_structured_agent_analysis
+    from app.agents.quant_baseline import run_quant_baseline_analysis, QUANT_MODEL_LABEL
     from app.core.postgres import AsyncSessionLocal
     from app.db.models.agent_run import AgentRun
     from app.api.v1.notifications import save_notification
@@ -390,6 +391,12 @@ async def run_market_scan(
     scan_watchlist = watchlist or await get_active_watchlist(user_id)
     scan_start = datetime.now(UTC)
     debate_rounds_setting = int(await _get_setting("debate_rounds", 2))
+
+    # Strategy engine: "agents" = LLM pipeline, "quant" = deterministic baseline
+    use_quant = str(await _get_setting("strategy_mode", "agents")) == "quant"
+    if use_quant:
+        model = QUANT_MODEL_LABEL
+        debate_rounds_setting = 0
 
     # ── Circuit breaker gate ───────────────────────────────────────────────────
     try:
@@ -520,15 +527,23 @@ async def run_market_scan(
                 "total": len(run_ids),
             })
         try:
-            await run_structured_agent_analysis(
-                run_id=run_id,
-                ticker=ticker,
-                analysis_date=analysis_date,
-                debate_rounds=debate_rounds_setting,
-                model=model,
-                senior_model=senior_model,
-                user_id=user_id,
-            )
+            if use_quant:
+                await run_quant_baseline_analysis(
+                    run_id=run_id,
+                    ticker=ticker,
+                    analysis_date=analysis_date,
+                    user_id=user_id,
+                )
+            else:
+                await run_structured_agent_analysis(
+                    run_id=run_id,
+                    ticker=ticker,
+                    analysis_date=analysis_date,
+                    debate_rounds=debate_rounds_setting,
+                    model=model,
+                    senior_model=senior_model,
+                    user_id=user_id,
+                )
             r = {"ticker": ticker, "run_id": run_id, "status": "completed"}
         except Exception as e:
             log.error("scanner.pipeline_failed", ticker=ticker, error=str(e))

@@ -1,7 +1,7 @@
 # TradingAgents Platform — Session Checkpoint
 
 > Rally race co-driver notes. Read this before touching anything.
-> Last updated: 2026-07-03 (launch prep: free-tier deploy packaging, product analytics, public track record)
+> Last updated: 2026-07-12 (post-launch: Strategy Lab, mobile responsiveness, chart timezone fix, quant baseline engine, MACD signal-line fix)
 
 ---
 
@@ -50,6 +50,14 @@ Live trading is a deliberate future product/legal decision — do not soften thi
 - **Product analytics**: `analytics_events` table + `core/analytics.py::track()` (fire-and-forget, never raises). Events: signup, login, broker_connected, agent_run, scan_run, manual_order — keep this list in the module docstring current. `GET /admin/analytics` → daily series (zero-filled), 7d event mix, funnel (from source-of-truth tables so pre-analytics users count), WAU. Charts on Admin page.
 - **Landing page** (`pages/Landing/`): renders at `/` for logged-out visitors (App.tsx `initialUnauthedView`; deep links still go to login, `?invite=` to signup). Animated hero, cycling 7-agent pipeline, typewriter debate terminal, live stats from the public track-record endpoint, framework marquee (`animate-marquee` keyframes in tailwind.config), features/steps/CTA/disclaimer footer. Login/Signup logos link back to `/`.
 - **Public AI track record**: `GET /api/v1/track-record/` — UNAUTHENTICATED by design (the shareable proof page). Anonymized aggregates only: decision mix, win rate on closed AI trades (agent_run_id set), monthly series, recent 20 calls (ticker/decision/confidence, no user data). Redis-cached 5 min. Frontend `/track-record` renders standalone (public, with signup CTA) when logged out and inside the Shell when logged in; sidebar under Intelligence.
+
+## Post-Launch (added 2026-07-04)
+
+- **Strategy Lab** (`GET /admin/strategy-lab`, section on Admin page): compares all broker-connected accounts side by side — equity curve as **% change from each account's first snapshot in range** (downsampled to ~200 pts), trade stats, agent run count, and the strategy-relevant per-user settings (`STRATEGY_KEYS` in `admin.py`: confidence gate, sizing, stops, scan flags, watchlist). Built for running multiple paper accounts with different strategy profiles to see which policies actually work. Overlaid % curves + comparison table in `pages/Admin/index.tsx`.
+- **Mobile responsiveness**: Sidebar becomes a drawer below `lg` (hamburger in Header, overlay in Shell); Header/StatusBar condense on small screens. Page grids (Dashboard, AgentHub, Portfolio, Scanner, Alerts, Backtesting) stack below `lg` instead of crushing columns — keep new pages following this pattern.
+- **Chart timezones**: `CandlestickChart.tsx` formats bar times in the viewer's local timezone (was rendering exchange/UTC times).
+- **Quant Baseline engine** (added 2026-07-12): `app/agents/quant_baseline.py` — deterministic, zero-LLM control strategy (trend-follow + mean-reversion entries, MA200-break/RSI≥78 exits, 2×ATR stops, 2:1 R:R, regime-gated). Selected per user via `strategy_mode` setting (`"agents"` | `"quant"`, in `DEFAULTS`) or explicit `strategy` in `POST /agents/run`; scheduled scans respect it (`scanner.py`). Same lifecycle as the agent pipeline (AgentRun row, `run:{id}` WS events, `_place_order_if_approved`), tagged `llm_model="quant-baseline"` so Strategy Lab (Engine column) compares apples-to-apples. Purpose: if agents can't beat these rules, the product story is explainability, not alpha. Settings → AI Model has the engine dropdown.
+- **MACD signal-line fix** (2026-07-12): `structured_runner._fetch_market_data`, `scanner.py`, `backtest.py` computed the signal line as EMA9 of *price* instead of EMA9 of the MACD series — `macd_bullish` was effectively always false (agents got bad data; quant trend rule could never fire). All three now match the correct implementations in `market.py`/`agents.py`. `overnight_agent.py` intentionally uses `ema12 > ema26` (MACD>0), left as-is.
 
 ---
 

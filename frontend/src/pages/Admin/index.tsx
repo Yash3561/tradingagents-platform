@@ -169,6 +169,7 @@ function StrategyLab() {
           <thead>
             <tr className="text-left text-xs text-text-muted border-b border-border">
               <th className="py-2 pr-4 font-medium">Account</th>
+              <th className="py-2 pr-4 font-medium">Engine</th>
               <th className="py-2 pr-4 font-medium">Return</th>
               <th className="py-2 pr-4 font-medium">Trades</th>
               <th className="py-2 pr-4 font-medium">Win rate</th>
@@ -189,6 +190,16 @@ function StrategyLab() {
                       style={{ background: LAB_COLORS[i % LAB_COLORS.length] }}
                     />
                     <span className="text-text-primary">{a.label}</span>
+                  </span>
+                </td>
+                <td className="py-2.5 pr-4 text-xs">
+                  <span className={cn(
+                    "px-1.5 py-0.5 rounded font-medium",
+                    a.settings.strategy_mode === "quant"
+                      ? "bg-warn/10 text-warn"
+                      : "bg-accent/10 text-accent"
+                  )}>
+                    {a.settings.strategy_mode === "quant" ? "Quant" : "Agents"}
                   </span>
                 </td>
                 <td className={cn("py-2.5 pr-4 font-mono text-xs", (a.return_pct ?? 0) >= 0 ? "text-gain" : "text-loss")}>

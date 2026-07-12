@@ -97,6 +97,8 @@ const DEFAULTS = {
   take_profit_pct: 15,
   max_position_pct: 20,
   daily_loss_limit_pct: 3,
+  // Strategy Engine
+  strategy_mode: "agents",
   // AI Model
   llm_model: "deepseek-ai/deepseek-v4-flash",
   debate_rounds: 2,
@@ -562,6 +564,21 @@ export default function Settings() {
 
       {/* ── AI Model ────────────────────────────────────────────────────────── */}
       <Section title="AI Model">
+        <Field
+          label="Strategy Engine"
+          description="AI Agents = full LLM debate pipeline. Quant Baseline = deterministic regime-filtered trend + mean-reversion rules (no AI credits) — the control group the agents must beat."
+        >
+          <select
+            value={settings.strategy_mode}
+            onChange={e => update("strategy_mode", e.target.value)}
+            className="px-3 py-1.5 bg-bg-elevated border border-border rounded-lg text-sm text-text-primary
+                       focus:outline-none focus:border-accent transition-colors"
+          >
+            <option value="agents">AI Agents (LLM pipeline)</option>
+            <option value="quant">Quant Baseline (rules only, free)</option>
+          </select>
+        </Field>
+
         <Field label="Model" description="LLM used for all agent reasoning">
           <select
             value={settings.llm_model}

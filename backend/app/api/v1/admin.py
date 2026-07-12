@@ -216,6 +216,7 @@ async def product_analytics(
 
 
 STRATEGY_KEYS = [
+    "strategy_mode",
     "scan_enabled", "long_only", "min_confidence_to_trade",
     "position_size_pct", "stop_loss_pct", "take_profit_pct",
     "scan_max_candidates", "custom_watchlist",
