@@ -101,8 +101,9 @@ ALLOWED_ORIGINS = [
     "http://localhost:5173",
     "http://127.0.0.1:5173",
     "http://localhost:3000",
-    # Your production domain (set via env var)
-    *([settings.frontend_url] if settings.frontend_url else []),
+    # Your production domain (set via env var) — origins never have a
+    # trailing slash, so tolerate one in the env value
+    *([settings.frontend_url.rstrip("/")] if settings.frontend_url else []),
 ]
 
 # In production only the explicit FRONTEND_URL is allowed. The wildcard
