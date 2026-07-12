@@ -38,6 +38,15 @@ DEFAULTS: dict = {
     "strategy_mode": "agents",
 }
 
+# The only model ids users may select — anything else is rejected. The platform
+# pays for inference, so arbitrary model strings must never reach the LLM client.
+ALLOWED_LLM_MODELS = {
+    "deepseek-ai/deepseek-v4-flash",
+    "deepseek-ai/deepseek-v4-pro",
+    "claude-sonnet-4-6",
+    "claude-opus-4-6",
+}
+
 
 async def get_setting(key: str, default=None):
     """Read a single setting from DB. Returns Python-typed value or default."""

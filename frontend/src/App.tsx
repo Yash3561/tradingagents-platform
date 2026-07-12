@@ -29,7 +29,8 @@ import Admin from "./pages/Admin";
 import TrackRecord from "./pages/TrackRecord";
 import Landing from "./pages/Landing";
 import { Terms, Privacy } from "./pages/Legal";
-import { isAuthenticated, clearAuth, getUser } from "./lib/auth";
+import { isAuthenticated, clearAuth, getUser, getRefreshToken } from "./lib/auth";
+import { api } from "./lib/api";
 
 type UnauthedView = "landing" | "login" | "signup" | "forgot" | "reset" | "verify";
 
@@ -66,6 +67,11 @@ export default function App() {
 
   const handleAuth = () => setAuthed(true);
   const handleLogout = () => {
+    // Best-effort server-side revocation of the refresh-token family
+    const refreshToken = getRefreshToken();
+    if (refreshToken) {
+      api.post("/auth/logout", { refresh_token: refreshToken }).catch(() => {});
+    }
     clearAuth();
     setView("login");
     setAuthed(false);

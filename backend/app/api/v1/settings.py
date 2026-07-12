@@ -14,7 +14,7 @@ from sqlalchemy import select
 
 from app.core.postgres import get_db
 from app.core.auth import require_user
-from app.db.models.settings import PlatformSettings, DEFAULTS
+from app.db.models.settings import PlatformSettings, DEFAULTS, ALLOWED_LLM_MODELS
 from app.db.models.user_settings import UserSettings, set_user_setting
 
 router = APIRouter()
@@ -46,6 +46,7 @@ NUMERIC_BOUNDS: dict[str, tuple[float, float, bool]] = {
 
 ENUM_VALUES: dict[str, set[str]] = {
     "strategy_mode": {"agents", "quant"},
+    "llm_model": ALLOWED_LLM_MODELS,
 }
 
 

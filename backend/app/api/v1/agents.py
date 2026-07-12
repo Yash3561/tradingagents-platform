@@ -2,12 +2,13 @@ import uuid
 from datetime import datetime, UTC
 from fastapi import APIRouter, Depends, HTTPException, BackgroundTasks
 from sqlalchemy.ext.asyncio import AsyncSession
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 
 from app.core.postgres import get_db
 from app.core.auth import require_user
 from app.core.rate_limit import enforce_rate_limit
 from app.db.models.agent_run import AgentRun
+from app.db.models.settings import ALLOWED_LLM_MODELS
 from app.agents.structured_runner import run_structured_agent_analysis
 from app.agents.contracts import get_all_schemas, get_contract_schema
 from app.core.websocket_manager import ws_manager
@@ -22,6 +23,12 @@ OPTIONS_PER_HOUR = 30
 TICKER_PATTERN = r"^[A-Za-z][A-Za-z0-9.\-]{0,9}$"
 
 
+def _check_model(v: str | None) -> str | None:
+    if v is not None and v not in ALLOWED_LLM_MODELS:
+        raise ValueError(f"model must be one of {sorted(ALLOWED_LLM_MODELS)}")
+    return v
+
+
 class RunRequest(BaseModel):
     ticker: str = Field(pattern=TICKER_PATTERN)
     date: str | None = None        # defaults to today
@@ -29,6 +36,8 @@ class RunRequest(BaseModel):
     model: str = "deepseek-ai/deepseek-v4-flash"
     senior_model: str | None = "deepseek-ai/deepseek-v4-flash"
     strategy: str | None = None    # "agents" | "quant"; None = user's strategy_mode setting
+
+    _models_ok = field_validator("model", "senior_model")(_check_model)
 
 
 class RunResponse(BaseModel):
@@ -173,6 +182,8 @@ class ScanRequest(BaseModel):
     max_candidates: int = Field(default=8, ge=1, le=10)
     watchlist: list[str] | None = Field(default=None, max_length=60)
     criteria: ScanCriteria | None = None
+
+    _models_ok = field_validator("model", "senior_model")(_check_model)
 
 
 @router.post("/scan")

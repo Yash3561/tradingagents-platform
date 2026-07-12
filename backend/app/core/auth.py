@@ -1,6 +1,9 @@
 """
 JWT authentication utilities.
-Token lifetime: 30 days (long-lived for a personal trading tool — no forced re-login).
+
+Access tokens are short-lived (30 min); sessions persist via rotating refresh
+tokens (db/models/refresh_token.py, exchanged at POST /auth/refresh). Tokens
+issued before this change carried 30-day lifetimes and stay valid until expiry.
 """
 from datetime import datetime, timedelta, UTC
 from typing import Optional
@@ -17,7 +20,7 @@ settings = get_settings()
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/api/v1/auth/token", auto_error=False)
 
 ALGORITHM = "HS256"
-ACCESS_TOKEN_EXPIRE_DAYS = 30
+ACCESS_TOKEN_EXPIRE_MINUTES = 30
 
 
 def hash_password(password: str) -> str:
@@ -33,7 +36,7 @@ def verify_password(plain: str, hashed: str) -> bool:
 
 def create_access_token(user_id: int, email: str) -> str:
     now = datetime.now(UTC)
-    expire = now + timedelta(days=ACCESS_TOKEN_EXPIRE_DAYS)
+    expire = now + timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES)
     payload = {"sub": str(user_id), "email": email, "iat": now, "exp": expire}
     return jwt.encode(payload, settings.secret_key, algorithm=ALGORITHM)
 

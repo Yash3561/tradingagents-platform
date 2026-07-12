@@ -22,6 +22,14 @@ from app.core import mailer
 from app.core.analytics import track
 from app.db.models.user import User
 from app.db.models.invite_code import InviteCode
+from app.db.models.refresh_token import (
+    RefreshToken,
+    hash_refresh_token,
+    issue_refresh_token,
+    revoke_family,
+    revoke_all_for_user,
+    prune_expired,
+)
 
 router = APIRouter()
 
@@ -38,12 +46,21 @@ class SignupRequest(BaseModel):
 
 class TokenResponse(BaseModel):
     access_token: str
+    refresh_token: str | None = None
     token_type: str = "bearer"
     user_id: int
     email: str
     full_name: str | None
     is_admin: bool = False
     email_verified: bool = False
+
+
+class RefreshRequest(BaseModel):
+    refresh_token: str
+
+
+class LogoutRequest(BaseModel):
+    refresh_token: str = ""
 
 
 class ForgotPasswordRequest(BaseModel):
@@ -64,9 +81,13 @@ class VerifyEmailRequest(BaseModel):
     token: str
 
 
-def _token_response(user: User) -> TokenResponse:
+async def _token_response(user: User, db: AsyncSession) -> TokenResponse:
+    refresh = await issue_refresh_token(db, user.id)
+    await prune_expired(db, user.id)
+    await db.commit()
     return TokenResponse(
         access_token=create_access_token(user.id, user.email),
+        refresh_token=refresh,
         user_id=user.id,
         email=user.email,
         full_name=user.full_name,
@@ -164,7 +185,7 @@ async def signup(body: SignupRequest, request: Request, db: AsyncSession = Depen
     await _maybe_promote_admin(user, db)
     await _send_verification(user)
     await track("signup", user.id, invited=invite is not None)
-    return _token_response(user)
+    return await _token_response(user, db)
 
 
 async def _login(email: str, password: str, request: Request, db: AsyncSession) -> TokenResponse:
@@ -185,7 +206,7 @@ async def _login(email: str, password: str, request: Request, db: AsyncSession) 
 
     await _maybe_promote_admin(user, db)
     await track("login", user.id)
-    return _token_response(user)
+    return await _token_response(user, db)
 
 
 @router.post("/token", response_model=TokenResponse)
@@ -202,6 +223,70 @@ async def login(
 async def login_json(body: SignupRequest, request: Request, db: AsyncSession = Depends(get_db)):
     """JSON login (alternative to form-based /token). Frontend uses this."""
     return await _login(body.email, body.password, request, db)
+
+
+@router.post("/refresh", response_model=TokenResponse)
+async def refresh_session(
+    body: RefreshRequest, request: Request, db: AsyncSession = Depends(get_db)
+):
+    """
+    Exchange a refresh token for a new access + refresh pair (rotation).
+    A refresh token works exactly once — replaying a rotated token revokes
+    its whole family (stolen-token detection).
+    """
+    await enforce_rate_limit(f"refresh:ip:{client_ip(request)}", limit=60, window_seconds=900)
+
+    token_hash = hash_refresh_token(body.refresh_token.strip())
+    result = await db.execute(
+        select(RefreshToken).where(RefreshToken.token_hash == token_hash)
+    )
+    rt = result.scalar_one_or_none()
+    if rt is None:
+        raise HTTPException(status_code=401, detail="Invalid refresh token")
+
+    if rt.revoked:
+        raise HTTPException(status_code=401, detail="Session revoked — please sign in again")
+
+    if rt.used:
+        # Replay of a rotated token: someone else holds a copy. Kill the family.
+        await revoke_family(db, rt.family_id)
+        await db.commit()
+        import structlog
+        structlog.get_logger().warning("auth.refresh_token_reuse",
+                                       user_id=rt.user_id, family_id=rt.family_id)
+        raise HTTPException(status_code=401, detail="Session revoked — please sign in again")
+
+    expires = rt.expires_at if rt.expires_at.tzinfo else rt.expires_at.replace(tzinfo=UTC)
+    if expires < datetime.now(UTC):
+        raise HTTPException(status_code=401, detail="Session expired — please sign in again")
+
+    result = await db.execute(select(User).where(User.id == rt.user_id))
+    user = result.scalar_one_or_none()
+    if not user or not user.is_active:
+        raise HTTPException(status_code=401, detail="User not found or inactive")
+
+    # Password changed after this token was minted → session is dead
+    if user.password_changed_at is not None:
+        changed = user.password_changed_at
+        if changed.tzinfo is None:
+            changed = changed.replace(tzinfo=UTC)
+        created = rt.created_at if rt.created_at.tzinfo else rt.created_at.replace(tzinfo=UTC)
+        if created < changed:
+            raise HTTPException(status_code=401, detail="Session expired — please sign in again")
+
+    rt.used = True
+    new_refresh = await issue_refresh_token(db, user.id, family_id=rt.family_id)
+    await db.commit()
+
+    return TokenResponse(
+        access_token=create_access_token(user.id, user.email),
+        refresh_token=new_refresh,
+        user_id=user.id,
+        email=user.email,
+        full_name=user.full_name,
+        is_admin=user.is_admin,
+        email_verified=user.email_verified,
+    )
 
 
 @router.post("/forgot-password")
@@ -247,6 +332,7 @@ async def reset_password(body: ResetPasswordRequest, db: AsyncSession = Depends(
     user.hashed_password = hash_password(body.new_password)
     # Whole seconds: JWT iat truncates to the second, and same-second tokens must survive
     user.password_changed_at = datetime.now(UTC).replace(microsecond=0)
+    await revoke_all_for_user(db, user.id)
     await db.commit()
 
     return {"ok": True, "message": "Password updated — sign in with your new password."}
@@ -268,10 +354,11 @@ async def change_password(
 
     user.hashed_password = hash_password(body.new_password)
     user.password_changed_at = datetime.now(UTC).replace(microsecond=0)
+    await revoke_all_for_user(db, user.id)
     await db.commit()
     await db.refresh(user)
 
-    return _token_response(user)
+    return await _token_response(user, db)
 
 
 @router.post("/verify-email")
@@ -319,6 +406,18 @@ async def get_me(user=Depends(get_current_user)):
 
 
 @router.post("/logout")
-async def logout():
-    """Client-side logout — just tells frontend to clear the token."""
-    return {"ok": True, "message": "Token cleared on client side"}
+async def logout(body: LogoutRequest | None = None, db: AsyncSession = Depends(get_db)):
+    """
+    Revoke the session's refresh-token family server-side. The access JWT
+    stays valid until its (30 min) expiry — the client discards it.
+    """
+    if body and body.refresh_token.strip():
+        token_hash = hash_refresh_token(body.refresh_token.strip())
+        result = await db.execute(
+            select(RefreshToken).where(RefreshToken.token_hash == token_hash)
+        )
+        rt = result.scalar_one_or_none()
+        if rt is not None:
+            await revoke_family(db, rt.family_id)
+            await db.commit()
+    return {"ok": True, "message": "Session revoked"}

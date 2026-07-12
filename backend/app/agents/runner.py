@@ -73,13 +73,14 @@ async def run_agent_analysis(
         })
 
     except Exception as exc:
-        log.error("agent.run.error", run_id=run_id, error=str(exc))
-        tb = traceback.format_exc()
+        log.error("agent.run.error", run_id=run_id, error=str(exc),
+                  traceback=traceback.format_exc())
 
         async with AsyncSessionLocal() as db:
             run = await db.get(AgentRun, run_id)
             run.status = "failed"
-            run.error = f"{exc}\n{tb}"
+            # Message only — tracebacks (file paths, internals) stay in server logs
+            run.error = str(exc)
             run.completed_at = datetime.now(UTC)
             await db.commit()
 

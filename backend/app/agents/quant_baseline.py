@@ -299,11 +299,13 @@ async def run_quant_baseline_analysis(
 
     except Exception as exc:
         import traceback
-        log.error("quant_baseline.run.error", run_id=run_id, error=str(exc))
+        log.error("quant_baseline.run.error", run_id=run_id, error=str(exc),
+                  traceback=traceback.format_exc())
         async with AsyncSessionLocal() as db:
             run = await db.get(AgentRun, run_id)
             run.status = "failed"
-            run.error = f"{exc}\n{traceback.format_exc()}"
+            # Message only — tracebacks (file paths, internals) stay in server logs
+            run.error = str(exc)
             run.completed_at = datetime.now(UTC)
             await db.commit()
         await _emit(run_id, {"type": "error", "error": str(exc)})

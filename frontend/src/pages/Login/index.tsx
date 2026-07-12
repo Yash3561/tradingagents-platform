@@ -30,7 +30,7 @@ export default function Login({ onAuth, onGoSignup, onGoForgot }: Props) {
         full_name: data.full_name,
         is_admin: data.is_admin,
         email_verified: data.email_verified,
-      });
+      }, data.refresh_token);
       onAuth();
     } catch (err: any) {
       setError(err.response?.data?.detail ?? "Login failed");

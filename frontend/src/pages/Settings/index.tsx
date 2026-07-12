@@ -713,14 +713,14 @@ function ChangePassword() {
         current_password: current,
         new_password: next,
       });
-      // Old tokens are revoked server-side — swap in the fresh one
+      // Old tokens are revoked server-side — swap in the fresh pair
       saveAuth(data.access_token, {
         user_id: data.user_id,
         email: data.email,
         full_name: data.full_name,
         is_admin: data.is_admin,
         email_verified: data.email_verified,
-      });
+      }, data.refresh_token);
       setCurrent("");
       setNext("");
       setConfirm("");

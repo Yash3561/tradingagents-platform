@@ -1309,12 +1309,14 @@ async def run_structured_agent_analysis(
 
     except Exception as exc:
         import traceback
-        log.error("structured_agent.run.error", run_id=run_id, error=str(exc))
+        log.error("structured_agent.run.error", run_id=run_id, error=str(exc),
+                  traceback=traceback.format_exc())
 
         async with AsyncSessionLocal() as db:
             run = await db.get(AgentRun, run_id)
             run.status = "failed"
-            run.error = f"{exc}\n{traceback.format_exc()}"
+            # Message only — tracebacks (file paths, internals) stay in server logs
+            run.error = str(exc)
             run.completed_at = datetime.now(UTC)
             await db.commit()
 
