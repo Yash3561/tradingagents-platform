@@ -66,10 +66,9 @@ def _fetch_market_data(ticker: str) -> dict:
         rsi = round(100 - (100 / (1 + gain / loss)), 1) if loss != 0 else 50.0
 
         # MACD
-        ema12 = float(close.ewm(span=12, adjust=False).mean().iloc[-1])
-        ema26 = float(close.ewm(span=26, adjust=False).mean().iloc[-1])
-        macd_line = round(ema12 - ema26, 3)
-        signal_line = round(float(close.ewm(span=9, adjust=False).mean().iloc[-1]), 3)
+        macd_series = close.ewm(span=12, adjust=False).mean() - close.ewm(span=26, adjust=False).mean()
+        macd_line = round(float(macd_series.iloc[-1]), 3)
+        signal_line = round(float(macd_series.ewm(span=9, adjust=False).mean().iloc[-1]), 3)
 
         # ATR-14 (Average True Range) for dynamic stop sizing
         high_s = hist["High"]

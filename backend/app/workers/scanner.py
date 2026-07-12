@@ -99,10 +99,9 @@ def _screen_ticker(ticker: str) -> dict | None:
         vol_ratio = today_vol / avg_vol if avg_vol else 1.0
 
         # MACD
-        ema12 = float(close.ewm(span=12, adjust=False).mean().iloc[-1])
-        ema26 = float(close.ewm(span=26, adjust=False).mean().iloc[-1])
-        macd = ema12 - ema26
-        signal = float(close.ewm(span=9, adjust=False).mean().iloc[-1])
+        macd_series = close.ewm(span=12, adjust=False).mean() - close.ewm(span=26, adjust=False).mean()
+        macd = float(macd_series.iloc[-1])
+        signal = float(macd_series.ewm(span=9, adjust=False).mean().iloc[-1])
         macd_bullish = macd > signal
 
         # ── Multi-factor model (world-class additions) ─────────────────

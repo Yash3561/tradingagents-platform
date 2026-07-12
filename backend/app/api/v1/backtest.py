@@ -67,10 +67,9 @@ def _compute_score(close, volume, i: int) -> float:
     vol_ratio = today_vol / avg_vol if avg_vol else 1.0
 
     # MACD
-    ema12 = float(window.ewm(span=12, adjust=False).mean().iloc[-1])
-    ema26 = float(window.ewm(span=26, adjust=False).mean().iloc[-1])
-    macd = ema12 - ema26
-    signal_ema = float(window.ewm(span=9, adjust=False).mean().iloc[-1])
+    macd_series = window.ewm(span=12, adjust=False).mean() - window.ewm(span=26, adjust=False).mean()
+    macd = float(macd_series.iloc[-1])
+    signal_ema = float(macd_series.ewm(span=9, adjust=False).mean().iloc[-1])
     macd_bullish = macd > signal_ema
 
     score = 50.0
