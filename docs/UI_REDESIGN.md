@@ -12,6 +12,13 @@ breathable, deliberate motion, zero layout jank. **Trust is the product** —
 users hand over API keys and watch AI trade; every sloppy pixel costs
 credibility. Retention comes from the product feeling engineered.
 
+Reference discipline (user request): Google/Material's SYSTEM, not its look —
+one elevation logic everywhere, motion that explains spatial relationships
+(things enter from where they conceptually live), a single component answers
+a given need across all 18 pages, and predictable interaction patterns so
+users never re-learn the interface. Material's visual language itself (bright
+surfaces, FABs, ripples) does not fit a dark trading terminal — skip it.
+
 ## What already exists (don't rebuild, refine)
 
 - Dark theme tokens in `tailwind.config.ts`: bg-base `#0A0E1A`, bg-surface

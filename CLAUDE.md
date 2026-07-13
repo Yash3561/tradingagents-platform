@@ -39,6 +39,16 @@ Live trading is a deliberate future product/legal decision — do not soften thi
 
 **Winner profile DEPLOYED to prod Quant account (2026-07-13 night)**: trend 40-65, require_macd=false, 3×ATR stops, rr 3, regime_gate=false — verified via settings API. From the next scheduled scan the Quant arm trades the tournament-validated policy. Existing AAPL position (opened under old params) keeps its original bracket.
 
+**RELIABILITY & TRUST BACKLOG** (user: "one mistake and we're doomed" — correct; ordered by blast radius):
+1. **DB backups** — nightly Neon `pg_dump` (GitHub Action → private artifact). The track record + user data ARE the company; currently one provider incident from gone.
+2. **Error alerting** — Sentry free tier, backend + frontend. Right now production errors are only visible if someone reads Render logs.
+3. **Operator kill switch** — platform-level `trading_halted` flag (admin endpoint + banner) checked by scheduler/scans/order placement. Circuit breakers exist per-strategy; this is the human big-red-button for "something looks wrong, stop everything now".
+4. **Order seatbelts** — final pre-submit assertions independent of strategy logic: max orders/account/day, max notional per order vs equity, reject duplicate order for same run_id. Cheap, catches the "bug places 500 orders" class of doom.
+5. **Deploy discipline** — no deploys during market hours (9:30–16:00 ET) once real users trade; today's mid-market deploy train was acceptable only because arms were brand new.
+6. **Post-deploy smoke test** — GitHub Action after Render deploy: /health, login, one authed GET. Catches broken deploys before users do.
+7. **Track-record methodology page** — public page explaining exactly how win rate/returns are computed from immutable trade rows. Pre-empts the "your numbers are fake" attack, which is the actual reputational kill shot in this space.
+8. **Incident notes in repo** — especially: rotating SECRET_KEY invalidates ALL stored broker credentials (Fernet key derivation) → every user must re-paste Alpaca keys. Document before it's discovered at 2am.
+
 **NEXT UP — ★ UI REDESIGN (the immediate next session)**: full brief in **docs/UI_REDESIGN.md** — read it and execute phase by phase (motion tokens + skeletons first, then Landing/Dashboard/AgentHub). Learn-page sticky bug fixed 2026-07-13 (Shell padding insets sticky constraints — pattern documented in the brief); Space Grotesk headings + Inter feature glyphs shipped. After the redesign: intraday stock research round (Alpaca minute bars — backtestable), options as a forward-only third arm (no free historical chains; minute-scale options scalping vetoed — unrealistic paper fills). Parallel low-effort: SMTP env vars, Neon pg_dump backups, weekly tournament cron, strip model chain-of-thought from risk rejection_reason (UI truncation covered in redesign brief), Settings UI fields for quant_* profile (in redesign brief, page 7).
 
 ## Multi-Tenancy (★ read this first)
