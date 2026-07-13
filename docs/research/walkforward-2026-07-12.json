@@ -1,0 +1,320 @@
+{
+  "meta": {
+    "span": "2013-01-02..2026-07-10",
+    "universe_size": 58,
+    "policies_tested": 650,
+    "policies_qualified": 650,
+    "folds": [
+      "2014-01-02..2018-01-02 / test 2018-01-03..2019-01-02",
+      "2015-01-02..2019-01-02 / test 2019-01-03..2020-01-02",
+      "2016-01-02..2020-01-02 / test 2020-01-03..2021-01-02",
+      "2017-01-02..2021-01-02 / test 2021-01-03..2022-01-02",
+      "2018-01-02..2022-01-02 / test 2022-01-03..2023-01-02",
+      "2019-01-02..2023-01-02 / test 2023-01-03..2024-01-02",
+      "2020-01-02..2024-01-02 / test 2024-01-03..2025-01-02"
+    ],
+    "holdout": "2025-07-11..2026-07-10",
+    "spy_test_period_return_pct": 159.75757307804716,
+    "elapsed_s": 814.3,
+    "caveats": [
+      "survivorship-biased universe (picked today) \u2014 rankings are meaningful, absolute returns optimistic",
+      "daily bars, 5bps slippage, stops fill at stop price (conservative within-bar assumption)",
+      "LLM agent strategies are NOT backtestable (model knowledge contaminates history); this tournament covers the deterministic policy family only"
+    ]
+  },
+  "leaderboard": [
+    {
+      "label": "trend[40-65] mr[<=32] exit[rsi>=78] stop[3.0xATR,rr3.0] nogate pos5%x8",
+      "policy": {
+        "trend_rsi_min": 40.0,
+        "trend_rsi_max": 65.0,
+        "require_macd": false,
+        "meanrev_rsi_max": 32.0,
+        "allow_trend": true,
+        "allow_meanrev": true,
+        "exit_rsi": 78.0,
+        "exit_on_ma200_break": true,
+        "stop_atr_mult": 3.0,
+        "rr_ratio": 3.0,
+        "regime_gate": false,
+        "position_pct": 5.0,
+        "max_positions": 8
+      },
+      "train_sharpe": 0.89,
+      "test_sharpe": 0.93,
+      "overfit_gap": -0.04,
+      "test_cagr_pct": 5.07,
+      "test_maxdd_pct": -4.86,
+      "test_trades_per_fold": 110.9,
+      "test_win_rate_pct": 37.4
+    },
+    {
+      "label": "trend[40-70] mr[<=32] exit[rsi>=78] stop[3.0xATR,rr3.0] nogate pos5%x8",
+      "policy": {
+        "trend_rsi_min": 40.0,
+        "trend_rsi_max": 70.0,
+        "require_macd": false,
+        "meanrev_rsi_max": 32.0,
+        "allow_trend": true,
+        "allow_meanrev": true,
+        "exit_rsi": 78.0,
+        "exit_on_ma200_break": true,
+        "stop_atr_mult": 3.0,
+        "rr_ratio": 3.0,
+        "regime_gate": false,
+        "position_pct": 5.0,
+        "max_positions": 8
+      },
+      "train_sharpe": 0.87,
+      "test_sharpe": 0.91,
+      "overfit_gap": -0.04,
+      "test_cagr_pct": 4.94,
+      "test_maxdd_pct": -4.9,
+      "test_trades_per_fold": 112.9,
+      "test_win_rate_pct": 38.1
+    },
+    {
+      "label": "trend[45-65] mr[<=36] exit[rsi>=78] stop[3.0xATR,rr3.0] nogate pos5%x8",
+      "policy": {
+        "trend_rsi_min": 45.0,
+        "trend_rsi_max": 65.0,
+        "require_macd": false,
+        "meanrev_rsi_max": 36.0,
+        "allow_trend": true,
+        "allow_meanrev": true,
+        "exit_rsi": 78.0,
+        "exit_on_ma200_break": true,
+        "stop_atr_mult": 3.0,
+        "rr_ratio": 3.0,
+        "regime_gate": false,
+        "position_pct": 5.0,
+        "max_positions": 8
+      },
+      "train_sharpe": 0.85,
+      "test_sharpe": 0.87,
+      "overfit_gap": -0.02,
+      "test_cagr_pct": 4.4,
+      "test_maxdd_pct": -4.94,
+      "test_trades_per_fold": 113.7,
+      "test_win_rate_pct": 34.6
+    },
+    {
+      "label": "trend[45-70] mr[<=36] exit[rsi>=78] stop[3.0xATR,rr3.0] nogate pos5%x8",
+      "policy": {
+        "trend_rsi_min": 45.0,
+        "trend_rsi_max": 70.0,
+        "require_macd": false,
+        "meanrev_rsi_max": 36.0,
+        "allow_trend": true,
+        "allow_meanrev": true,
+        "exit_rsi": 78.0,
+        "exit_on_ma200_break": true,
+        "stop_atr_mult": 3.0,
+        "rr_ratio": 3.0,
+        "regime_gate": false,
+        "position_pct": 5.0,
+        "max_positions": 8
+      },
+      "train_sharpe": 0.94,
+      "test_sharpe": 0.87,
+      "overfit_gap": 0.06,
+      "test_cagr_pct": 4.51,
+      "test_maxdd_pct": -4.97,
+      "test_trades_per_fold": 116.4,
+      "test_win_rate_pct": 35.2
+    },
+    {
+      "label": "trend[40-65] mr[<=36] exit[rsi>=78] stop[3.0xATR,rr3.0] nogate pos5%x8",
+      "policy": {
+        "trend_rsi_min": 40.0,
+        "trend_rsi_max": 65.0,
+        "require_macd": false,
+        "meanrev_rsi_max": 36.0,
+        "allow_trend": true,
+        "allow_meanrev": true,
+        "exit_rsi": 78.0,
+        "exit_on_ma200_break": true,
+        "stop_atr_mult": 3.0,
+        "rr_ratio": 3.0,
+        "regime_gate": false,
+        "position_pct": 5.0,
+        "max_positions": 8
+      },
+      "train_sharpe": 0.94,
+      "test_sharpe": 0.86,
+      "overfit_gap": 0.07,
+      "test_cagr_pct": 4.79,
+      "test_maxdd_pct": -4.89,
+      "test_trades_per_fold": 114.9,
+      "test_win_rate_pct": 35.1
+    },
+    {
+      "label": "trend[40-70] mr[<=36] exit[rsi>=78] stop[3.0xATR,rr3.0] nogate pos5%x8",
+      "policy": {
+        "trend_rsi_min": 40.0,
+        "trend_rsi_max": 70.0,
+        "require_macd": false,
+        "meanrev_rsi_max": 36.0,
+        "allow_trend": true,
+        "allow_meanrev": true,
+        "exit_rsi": 78.0,
+        "exit_on_ma200_break": true,
+        "stop_atr_mult": 3.0,
+        "rr_ratio": 3.0,
+        "regime_gate": false,
+        "position_pct": 5.0,
+        "max_positions": 8
+      },
+      "train_sharpe": 0.95,
+      "test_sharpe": 0.85,
+      "overfit_gap": 0.11,
+      "test_cagr_pct": 4.7,
+      "test_maxdd_pct": -4.97,
+      "test_trades_per_fold": 117.0,
+      "test_win_rate_pct": 35.7
+    },
+    {
+      "label": "trend[45-70,macd] mr[<=32] exit[rsi>=78] stop[3.0xATR,rr3.0] nogate pos5%x8",
+      "policy": {
+        "trend_rsi_min": 45.0,
+        "trend_rsi_max": 70.0,
+        "require_macd": true,
+        "meanrev_rsi_max": 32.0,
+        "allow_trend": true,
+        "allow_meanrev": true,
+        "exit_rsi": 78.0,
+        "exit_on_ma200_break": true,
+        "stop_atr_mult": 3.0,
+        "rr_ratio": 3.0,
+        "regime_gate": false,
+        "position_pct": 5.0,
+        "max_positions": 8
+      },
+      "train_sharpe": 0.89,
+      "test_sharpe": 0.84,
+      "overfit_gap": 0.05,
+      "test_cagr_pct": 4.79,
+      "test_maxdd_pct": -5.1,
+      "test_trades_per_fold": 123.7,
+      "test_win_rate_pct": 40.1
+    },
+    {
+      "label": "trend[45-70,macd] mr[<=32] exit[rsi>=78] stop[3.0xATR,rr3.0] gate pos5%x8",
+      "policy": {
+        "trend_rsi_min": 45.0,
+        "trend_rsi_max": 70.0,
+        "require_macd": true,
+        "meanrev_rsi_max": 32.0,
+        "allow_trend": true,
+        "allow_meanrev": true,
+        "exit_rsi": 78.0,
+        "exit_on_ma200_break": true,
+        "stop_atr_mult": 3.0,
+        "rr_ratio": 3.0,
+        "regime_gate": true,
+        "position_pct": 5.0,
+        "max_positions": 8
+      },
+      "train_sharpe": 0.91,
+      "test_sharpe": 0.82,
+      "overfit_gap": 0.09,
+      "test_cagr_pct": 3.86,
+      "test_maxdd_pct": -3.46,
+      "test_trades_per_fold": 115.0,
+      "test_win_rate_pct": 40.7
+    },
+    {
+      "label": "trend[45-70,macd] mr[<=36] exit[rsi>=78] stop[2.0xATR,rr1.5] nogate pos5%x8",
+      "policy": {
+        "trend_rsi_min": 45.0,
+        "trend_rsi_max": 70.0,
+        "require_macd": true,
+        "meanrev_rsi_max": 36.0,
+        "allow_trend": true,
+        "allow_meanrev": true,
+        "exit_rsi": 78.0,
+        "exit_on_ma200_break": true,
+        "stop_atr_mult": 2.0,
+        "rr_ratio": 1.5,
+        "regime_gate": false,
+        "position_pct": 5.0,
+        "max_positions": 8
+      },
+      "train_sharpe": 0.54,
+      "test_sharpe": 0.81,
+      "overfit_gap": -0.26,
+      "test_cagr_pct": 3.66,
+      "test_maxdd_pct": -5.2,
+      "test_trades_per_fold": 226.9,
+      "test_win_rate_pct": 42.3
+    },
+    {
+      "label": "trend[50-70] mr[<=28] exit[rsi>=78] stop[3.0xATR,rr3.0] nogate pos5%x8",
+      "policy": {
+        "trend_rsi_min": 50.0,
+        "trend_rsi_max": 70.0,
+        "require_macd": false,
+        "meanrev_rsi_max": 28.0,
+        "allow_trend": true,
+        "allow_meanrev": true,
+        "exit_rsi": 78.0,
+        "exit_on_ma200_break": true,
+        "stop_atr_mult": 3.0,
+        "rr_ratio": 3.0,
+        "regime_gate": false,
+        "position_pct": 5.0,
+        "max_positions": 8
+      },
+      "train_sharpe": 0.94,
+      "test_sharpe": 0.81,
+      "overfit_gap": 0.13,
+      "test_cagr_pct": 4.59,
+      "test_maxdd_pct": -5.34,
+      "test_trades_per_fold": 115.0,
+      "test_win_rate_pct": 40.7
+    }
+  ],
+  "live_baseline_rank": 492,
+  "holdout": {
+    "policy": "trend[40-65] mr[<=32] exit[rsi>=78] stop[3.0xATR,rr3.0] nogate pos5%x8",
+    "metrics": {
+      "total_return_pct": 1.96,
+      "cagr_pct": 1.97,
+      "sharpe": 0.48,
+      "max_drawdown_pct": -3.48,
+      "n_trades": 104,
+      "win_rate_pct": 32.7,
+      "avg_trade_pct": 0.05,
+      "by_regime": {
+        "BEAR_TRENDING": {
+          "n": 1,
+          "win_rate_pct": 0.0,
+          "avg_trade_pct": -1.35
+        },
+        "BULL_TRENDING": {
+          "n": 70,
+          "win_rate_pct": 28.6,
+          "avg_trade_pct": -0.84
+        },
+        "SIDEWAYS": {
+          "n": 33,
+          "win_rate_pct": 42.4,
+          "avg_trade_pct": 1.97
+        }
+      },
+      "by_setup": {
+        "mean_reversion": {
+          "n": 63,
+          "win_rate_pct": 27.0,
+          "avg_trade_pct": 0.05
+        },
+        "trend_follow": {
+          "n": 41,
+          "win_rate_pct": 41.5,
+          "avg_trade_pct": 0.05
+        }
+      }
+    },
+    "spy_return_pct": 22.4
+  }
+}

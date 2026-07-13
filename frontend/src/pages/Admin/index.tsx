@@ -367,6 +367,163 @@ function CopyButton({ text, title }: { text: string; title: string }) {
   );
 }
 
+interface ResearchReport {
+  meta: {
+    span: string;
+    universe_size: number;
+    policies_tested: number;
+    policies_qualified: number;
+    folds: string[];
+    holdout: string;
+    spy_test_period_return_pct: number | null;
+    elapsed_s: number;
+    caveats: string[];
+  };
+  leaderboard: {
+    label: string;
+    train_sharpe: number;
+    test_sharpe: number;
+    overfit_gap: number;
+    test_cagr_pct: number;
+    test_maxdd_pct: number;
+    test_trades_per_fold: number;
+    test_win_rate_pct: number;
+  }[];
+  live_baseline_rank: number | null;
+  holdout: {
+    policy: string;
+    metrics: Record<string, unknown>;
+    spy_return_pct: number | null;
+  } | null;
+}
+
+function ResearchLab() {
+  const qc = useQueryClient();
+  const { data } = useQuery<{ status: string; started_at: string | null; report: ResearchReport | null }>({
+    queryKey: ["admin", "research"],
+    queryFn: () => api.get("/admin/research/latest").then((r) => r.data),
+    refetchInterval: (q) => (q.state.data?.status === "running" ? 30_000 : false),
+  });
+
+  const launch = useMutation({
+    mutationFn: () => api.post("/admin/research/run", {}),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["admin", "research"] }),
+  });
+
+  const report = data?.report;
+  const running = data?.status === "running";
+
+  return (
+    <div className="card p-6 space-y-5">
+      <div className="flex items-center justify-between border-b border-border pb-3">
+        <div className="flex items-center gap-2">
+          <Activity size={15} className="text-accent" />
+          <h2 className="text-sm font-semibold text-text-primary">
+            Research — Walk-Forward Policy Tournament
+          </h2>
+        </div>
+        <button
+          onClick={() => launch.mutate()}
+          disabled={running || launch.isPending}
+          className="flex items-center gap-1.5 px-3 py-1.5 bg-accent/10 text-accent text-xs
+                     font-medium rounded-lg hover:bg-accent/20 transition-colors disabled:opacity-50"
+        >
+          {running ? <Loader2 size={13} className="animate-spin" /> : <Plus size={13} />}
+          {running ? "Running…" : "Run tournament"}
+        </button>
+      </div>
+
+      {running && (
+        <p className="text-xs text-text-muted">
+          Simulating the policy grid across walk-forward folds — takes 15–60 min.
+          Started {data?.started_at ? new Date(data.started_at).toLocaleTimeString() : "…"}.
+        </p>
+      )}
+      {data?.status?.startsWith("failed") && (
+        <p className="text-xs text-loss">{data.status}</p>
+      )}
+      {!report && !running && (
+        <p className="text-xs text-text-muted">
+          No tournament has been run yet. Policies are trained on rolling historical
+          windows and ranked by out-of-sample Sharpe; a final holdout period is only
+          ever shown to the single winner.
+        </p>
+      )}
+
+      {report && (
+        <>
+          <div className="flex flex-wrap gap-x-6 gap-y-1 text-xs text-text-muted">
+            <span>{report.meta.span}</span>
+            <span>{report.meta.policies_tested} policies, {report.meta.policies_qualified} qualified</span>
+            <span>{report.meta.folds.length} folds</span>
+            <span>holdout {report.meta.holdout}</span>
+            <span>
+              live baseline rank:{" "}
+              <span className="text-text-primary font-medium">
+                {report.live_baseline_rank ?? "unranked"}
+              </span>
+            </span>
+          </div>
+
+          <div className="overflow-x-auto">
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="text-left text-xs text-text-muted border-b border-border">
+                  <th className="py-2 pr-4 font-medium">#</th>
+                  <th className="py-2 pr-4 font-medium">Policy</th>
+                  <th className="py-2 pr-4 font-medium">Test Sharpe</th>
+                  <th className="py-2 pr-4 font-medium">Overfit gap</th>
+                  <th className="py-2 pr-4 font-medium">CAGR</th>
+                  <th className="py-2 pr-4 font-medium">Max DD</th>
+                  <th className="py-2 pr-4 font-medium">Win rate</th>
+                  <th className="py-2 pr-4 font-medium">Trades/fold</th>
+                </tr>
+              </thead>
+              <tbody>
+                {report.leaderboard.map((r, i) => (
+                  <tr key={r.label} className="border-b border-border/50">
+                    <td className="py-2 pr-4 text-xs text-text-muted">{i + 1}</td>
+                    <td className="py-2 pr-4 font-mono text-[11px] text-text-primary">{r.label}</td>
+                    <td className={cn("py-2 pr-4 font-mono text-xs",
+                      r.test_sharpe >= 1 ? "text-gain" : r.test_sharpe <= 0 ? "text-loss" : "text-text-primary")}>
+                      {r.test_sharpe}
+                    </td>
+                    <td className={cn("py-2 pr-4 font-mono text-xs",
+                      r.overfit_gap > 0.5 ? "text-warn" : "text-text-muted")}>
+                      {r.overfit_gap}
+                    </td>
+                    <td className="py-2 pr-4 font-mono text-xs">{r.test_cagr_pct}%</td>
+                    <td className="py-2 pr-4 font-mono text-xs text-loss">{r.test_maxdd_pct}%</td>
+                    <td className="py-2 pr-4 font-mono text-xs">{r.test_win_rate_pct}%</td>
+                    <td className="py-2 pr-4 font-mono text-xs">{r.test_trades_per_fold}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+
+          {report.holdout && (
+            <div className="bg-bg-elevated rounded-lg p-4 space-y-1">
+              <p className="text-xs font-semibold text-text-primary">
+                Holdout (one shot, winner only) — {report.meta.holdout}
+              </p>
+              <p className="text-xs font-mono text-text-muted">{report.holdout.policy}</p>
+              <p className="text-xs text-text-muted">
+                {JSON.stringify(report.holdout.metrics)} · SPY same period:{" "}
+                {report.holdout.spy_return_pct}%
+              </p>
+            </div>
+          )}
+
+          <p className="text-[11px] text-text-muted italic">
+            {report.meta.caveats.join(" · ")}
+          </p>
+        </>
+      )}
+    </div>
+  );
+}
+
 export default function Admin() {
   const qc = useQueryClient();
   const [maxUses, setMaxUses] = useState(1);
@@ -442,6 +599,9 @@ export default function Admin() {
 
       {/* Strategy Lab */}
       <StrategyLab />
+
+      {/* Research */}
+      <ResearchLab />
 
       {/* Invites */}
       <div className="card p-6 space-y-4">

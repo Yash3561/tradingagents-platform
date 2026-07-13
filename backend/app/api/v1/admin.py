@@ -5,7 +5,7 @@ Router is registered with require_admin — only is_admin users get through.
 import secrets
 from datetime import datetime, timedelta, UTC
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, BackgroundTasks
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, func
 from pydantic import BaseModel, Field
@@ -337,4 +337,74 @@ async def platform_stats(admin=Depends(require_admin), db: AsyncSession = Depend
         "active_users": active,
         "verified_users": verified,
         "broker_connected": connected,
+    }
+
+
+# ── Research: walk-forward policy tournament (see app/research/) ────────────
+
+class ResearchRunRequest(BaseModel):
+    start: str = "2013-01-01"
+    train_years: int = Field(default=4, ge=1, le=8)
+    test_years: int = Field(default=1, ge=1, le=3)
+    holdout_months: int = Field(default=12, ge=3, le=24)
+    quick: bool = False
+
+
+@router.post("/research/run")
+async def launch_research(
+    body: ResearchRunRequest,
+    background_tasks: BackgroundTasks,
+    admin=Depends(require_admin),
+):
+    """
+    Launch a walk-forward tournament over the deterministic policy grid.
+    CPU-bound, minutes to ~an hour — runs in a worker thread; poll
+    GET /admin/research/latest for status + report.
+    """
+    from app.core.redis_client import get_redis
+    r = await get_redis()
+    if await r.get("research:status") == "running":
+        raise HTTPException(status_code=409, detail="A research run is already in progress")
+    await r.set("research:status", "running")
+    await r.set("research:started_at", datetime.now(UTC).isoformat())
+
+    async def _run():
+        import asyncio
+        import json as _json
+        from app.research.walkforward import run_walkforward
+        from app.research.engine import Policy
+
+        grid = None
+        start = body.start
+        if body.quick:
+            grid = [Policy(), Policy(regime_gate=False), Policy(require_macd=False),
+                    Policy(allow_meanrev=False), Policy(allow_trend=False)]
+            start = "2019-01-01"
+        loop = asyncio.get_running_loop()
+        try:
+            report = await loop.run_in_executor(None, lambda: run_walkforward(
+                start=start, train_years=body.train_years, test_years=body.test_years,
+                holdout_months=body.holdout_months, grid=grid,
+            ))
+            await r.set("research:report", _json.dumps(report, default=str))
+            await r.set("research:status", "completed")
+        except Exception as e:
+            await r.set("research:status", f"failed: {e}")
+
+    background_tasks.add_task(_run)
+    return {"status": "started"}
+
+
+@router.get("/research/latest")
+async def research_latest(admin=Depends(require_admin)):
+    """Status + most recent tournament report."""
+    import json as _json
+    from app.core.redis_client import get_redis
+    r = await get_redis()
+    status = await r.get("research:status")
+    report = await r.get("research:report")
+    return {
+        "status": status or "never_run",
+        "started_at": await r.get("research:started_at"),
+        "report": _json.loads(report) if report else None,
     }

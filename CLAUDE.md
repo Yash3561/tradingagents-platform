@@ -74,6 +74,15 @@ Live trading is a deliberate future product/legal decision — do not soften thi
 - **Tracebacks** no longer stored in `agent_runs.error` (message only; full trace goes to server logs) — structured_runner, quant_baseline, legacy runner.
 - **CSP enforced** on Vercel (was Report-Only): `script-src 'self'`, fonts from Google, `connect-src` **pinned to the Render backend URL** — vercel.json must be updated if the backend moves. Bundle statically verified: no inline scripts / eval / workers; tradingview+alpaca strings are plain `<a href>` links.
 
+## Research Engine (added 2026-07-12)
+
+- **Purpose**: the user's "hundreds of accounts" experiment idea, done right — instead of hundreds of real Alpaca accounts, a **walk-forward policy tournament** over the deterministic quant rule family (`app/research/`). Train/test split by TIME (never shuffled), rolling folds, final N-month **holdout that only the tournament winner ever touches, once**.
+- `research/data.py` — daily OHLCV via yfinance (pickle cache in /tmp/research_cache), ~60-ticker universe (survivorship-biased — rankings meaningful, absolute returns optimistic), vectorized historical regime series (port of regime_detector scoring, rolling windows only).
+- `research/engine.py` — `Policy` dataclass (defaults = live quant baseline; grid varies RSI bands, MACD requirement, stops/RR, regime gate, setup ablations), matrix `Panel`, honest simulator: signal on close t → fill at open t+1, stops/TP intraday with stop-first assumption, 5bps slippage.
+- `research/walkforward.py` — fold machinery, MIN_TRADES filter, leaderboard ranked by mean TEST Sharpe across folds (must qualify in EVERY fold — the "universally applicable" bar), overfit gap (train−test), regime/setup-sliced metrics, SPY benchmark, one-shot holdout.
+- Run: `docker exec tap_backend python -m app.research.run [--quick]` (writes /tmp/research_report.json) or `POST /admin/research/run` + `GET /admin/research/latest` (report cached in Redis `research:report`).
+- **★ LLM strategies can NOT be backtested** — the models' training data contains the historical outcomes (lookahead by construction). The tournament covers deterministic policies only; agents are evaluated forward against the tournament winner as baseline.
+
 ---
 
 ## Stack at a Glance
