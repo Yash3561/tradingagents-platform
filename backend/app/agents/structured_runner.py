@@ -176,6 +176,23 @@ def _fetch_news(ticker: str) -> list[str]:
 
 # ── NIM (NVIDIA) structured output helper ─────────────────────────────────────
 
+# The free NIM tier enforces a requests-per-minute cap. Pace all calls
+# process-wide so scans (8 tickers × ~8 calls) stay under it.
+import threading as _threading
+import time as _time_mod
+_nim_pace_lock = _threading.Lock()
+_nim_last_call = [0.0]
+NIM_MIN_CALL_INTERVAL_S = 2.0
+
+
+def _nim_throttle():
+    with _nim_pace_lock:
+        wait = _nim_last_call[0] + NIM_MIN_CALL_INTERVAL_S - _time_mod.monotonic()
+        if wait > 0:
+            _time_mod.sleep(wait)
+        _nim_last_call[0] = _time_mod.monotonic()
+
+
 def _nim_structured(
     system: str,
     user: str,
@@ -205,6 +222,7 @@ def _nim_structured(
     response = None
     for attempt in range(4):
         try:
+            _nim_throttle()
             response = client.chat.completions.create(
                 model=model,
                 max_tokens=2048,
@@ -230,7 +248,19 @@ def _nim_structured(
                 or "timed out" in str(e).lower() or "connection" in str(e).lower()
             if not transient or attempt == 3:
                 raise
-            delay = 2 * (2 ** attempt) + _random.uniform(0, 1.5)
+            if status == 429:
+                # Rate-limit window: honor Retry-After when given, else wait it out
+                retry_after = None
+                resp = getattr(e, "response", None)
+                if resp is not None:
+                    try:
+                        retry_after = float(resp.headers.get("retry-after"))
+                    except (TypeError, ValueError):
+                        pass
+                delay = retry_after if retry_after else 15.0 * (attempt + 1)
+            else:
+                delay = 2 * (2 ** attempt)
+            delay += _random.uniform(0, 1.5)
             log.warning("nim.transient_error_retrying", attempt=attempt + 1,
                         status=status, delay_s=round(delay, 1))
             _time.sleep(delay)
