@@ -1,7 +1,7 @@
 # TradingAgents Platform — Session Checkpoint
 
 > Rally race co-driver notes. Read this before touching anything.
-> Last updated: 2026-07-12 (post-launch: Strategy Lab, mobile responsiveness, chart timezone fix, quant baseline engine, MACD signal-line fix, security hardening)
+> Last updated: 2026-07-12 (quant baseline engine, MACD fix, security hardening ×2, refresh-token auth, research engine + first tournament)
 
 ---
 
@@ -14,6 +14,24 @@ A **multi-tenant paper-trading SaaS** — a professional-grade multi-agent tradi
 **Paper-only, enforced server-side.** `broker_connections.base_url` is forced to
 the paper API in code (`PAPER_BASE_URL` in `db/models/broker_connection.py`).
 Live trading is a deliberate future product/legal decision — do not soften this.
+
+## Current State & The Working Loop (★ orient here first — keep this section current)
+
+**Live in production**: Vercel (frontend) + Render free (backend, `RUN_ALL_WORKERS=true`) + Neon + Upstash. Invite-gated signup. Admin = ygc2@njit.edu. Security-hardened (see Security Hardening) with 30-min JWTs + rotating refresh tokens, enforced CSP, per-user LLM quotas.
+
+**Two strategy engines** selectable per user via `strategy_mode` setting:
+- `agents` — the 7-agent LLM debate pipeline (`structured_runner.py`)
+- `quant` — deterministic regime-filtered rules, zero LLM cost (`quant_baseline.py`). The control group: if agents can't beat it, the product story is explainability, not alpha.
+
+**The research → deploy → race loop** (the current operating model):
+1. **Research**: walk-forward policy tournament over the deterministic rule family (`app/research/`, Admin page → Research, or `docker exec tap_backend python -m app.research.run`). Time-ordered train/test folds, one-shot holdout, leaderboard by out-of-sample Sharpe. Reports land in `docs/research/`.
+2. **Deploy**: the winning policy's parameters become the live quant account's settings.
+3. **Forward race**: agents account vs quant-winner account, compared in Admin → Strategy Lab. LLM strategies can NOT be backtested (model training data contains historical outcomes = lookahead by construction) — agents are judged forward-only against the tournament winner.
+4. Repeat as data accrues. Never re-run the holdout on more than the single winner.
+
+**Round-1 tournament results (2026-07-12**, `docs/research/walkforward-2026-07-12.json`): 650 policies, 7 folds, 2013–2026. Live baseline ranked **492/650**. Winning plateau: wide stops (3×ATR), 3:1 R:R, regime gate OFF, trend+meanrev blend — near-zero overfit gap across ranks 1-6 (robust plateau, not a spike). Holdout (one shot): +1.96%, maxDD −3.5%, vs SPY +22.4% — capital-preserving, not alpha; exposure capped ~40% (8×5%). Regime slice: mean reversion wins in SIDEWAYS, trend entries lost in late BULL.
+
+**NEXT UP (agreed with user, not yet built) — round-2 grid**: exits (trailing stops, time-based exits, partial profit-taking), portfolio construction sweep (10–20 slots, 5–10% sizes, regime-scaled exposure), regime-conditional parameters. Then flip the live quant account to the round-2 winner and start the forward race. Parallel low-effort: SMTP env vars on Render, scheduled Neon pg_dump backups, weekly tournament re-run cron.
 
 ## Multi-Tenancy (★ read this first)
 
@@ -128,14 +146,17 @@ tradingagents-platform/
 │   │   │   └── ws.py            ←   WebSocket endpoint
 │   │   ├── agents/
 │   │   │   ├── contracts.py     ← ★ AGENT CONTRACTS (Pydantic schemas for all 7 agents)
-│   │   │   └── structured_runner.py ← ★ MAIN RUNNER — world-class frameworks in every prompt
+│   │   │   ├── structured_runner.py ← ★ MAIN RUNNER — world-class frameworks in every prompt
+│   │   │   └── quant_baseline.py ← deterministic control strategy (strategy_mode="quant", no LLM)
+│   │   ├── research/            ← ★ WALK-FORWARD TOURNAMENT (data.py, engine.py, walkforward.py, run.py)
 │   │   ├── core/
 │   │   │   ├── postgres.py      ← Async SQLAlchemy engine + Base
 │   │   │   ├── redis_client.py  ← Redis async client
 │   │   │   └── websocket_manager.py ← Room-based WS broadcast
 │   │   ├── db/models/
 │   │   │   ├── agent_run.py     ← AgentRun ORM (stores full debate_log + reasoning_json JSONB)
-│   │   │   └── trade.py         ← Trade ORM (reasoning_json = full audit trail per trade)
+│   │   │   ├── trade.py         ← Trade ORM (reasoning_json = full audit trail per trade)
+│   │   │   └── refresh_token.py ← rotating refresh tokens (families, replay = revoke family)
 │   │   └── workers/
 │   │       ├── main.py          ← Entry point: runs 4 async loops
 │   │       ├── scanner.py       ← Market scanner with ATR/BB/Stoch/PEAD/custom criteria
@@ -174,6 +195,8 @@ tradingagents-platform/
 │       │   └── Settings/        ← Model selector, risk sliders, API key hot-reload
 │       ├── lib/                 ← api.ts, cn.ts, formatters.ts, queryClient.ts, auth.ts
 │       └── index.css            ← Tailwind base + component layer (.card, .badge-gain, etc.)
+│
+├── docs/research/               ← committed tournament reports (walkforward-YYYY-MM-DD.json)
 │
 └── scripts/
     └── init_timescale.sql       ← TimescaleDB hypertable setup
@@ -402,7 +425,7 @@ docker compose up --build backend -d
 
 ## What's Done ✅
 
-- Full Docker Compose infra + JWT auth (register/login, 30-day tokens)
+- Full Docker Compose infra + JWT auth (30-min access tokens + rotating refresh tokens; legacy 30-day JWTs valid until expiry)
 - 7 AI agent pipeline (TechnicalReport → FinalDecision) with Pydantic contracts
 - World-class frameworks in every agent prompt (see table above)
 - Market regime detector with 4-regime classification + 15min cache
