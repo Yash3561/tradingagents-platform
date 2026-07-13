@@ -43,6 +43,19 @@
     outline-offset: 2px;
     border-radius: 4px;
   }
+
+  /* Kill CSS animations/transitions for reduced-motion users.
+     Framer Motion is handled separately via <MotionConfig reducedMotion="user">. */
+  @media (prefers-reduced-motion: reduce) {
+    *,
+    ::before,
+    ::after {
+      animation-duration: 0.01ms !important;
+      animation-iteration-count: 1 !important;
+      transition-duration: 0.01ms !important;
+      scroll-behavior: auto !important;
+    }
+  }
 }
 
 @layer components {
@@ -89,6 +102,15 @@
 
   .glass {
     @apply bg-bg-surface/80 backdrop-blur-sm border border-border;
+  }
+
+  /* Unified live-price tick feedback: 300ms background pulse.
+     Re-trigger by remounting (keyed span) or toggling the class. */
+  .flash-up {
+    @apply animate-price-flash-up;
+  }
+  .flash-down {
+    @apply animate-price-flash-down;
   }
 }
 
