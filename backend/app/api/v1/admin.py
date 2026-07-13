@@ -377,7 +377,7 @@ async def launch_research(
         grid = None
         start = body.start
         if body.quick:
-            grid = [Policy(), Policy(regime_gate=False), Policy(require_macd=False),
+            grid = [Policy(), Policy(regime_mode="off"), Policy(require_macd=False),
                     Policy(allow_meanrev=False), Policy(allow_trend=False)]
             start = "2019-01-01"
         loop = asyncio.get_running_loop()

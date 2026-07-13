@@ -21,6 +21,12 @@ import pandas as pd
 TRADING_DAYS = 252
 
 
+# Position-size multipliers per regime when regime_mode="scale":
+# stay invested everywhere, but risk less where the odds are worse.
+REGIME_SCALE = {"BULL_TRENDING": 1.0, "SIDEWAYS": 0.6,
+                "BEAR_TRENDING": 0.35, "HIGH_VOLATILITY": 0.25}
+
+
 @dataclass(frozen=True)
 class Policy:
     """One experiment arm. Defaults = the live quant baseline."""
@@ -34,9 +40,14 @@ class Policy:
     exit_on_ma200_break: bool = True
     stop_atr_mult: float = 2.0
     rr_ratio: float = 2.0
-    regime_gate: bool = True          # no new BUYs in BEAR_TRENDING / HIGH_VOLATILITY
+    # "gate": no new BUYs in bad regimes + regime position caps (live behavior)
+    # "scale": always allowed, but position size shrinks with regime quality
+    # "off":   regime-blind
+    regime_mode: str = "gate"
     position_pct: float = 5.0         # % of equity per position
     max_positions: int = 8
+    trail_atr_mult: float | None = None   # trailing stop distance in ATRs (None = fixed stop)
+    time_exit_days: int | None = None     # close after N trading days regardless (None = never)
 
     def label(self) -> str:
         return (f"trend[{self.trend_rsi_min:.0f}-{self.trend_rsi_max:.0f}"
@@ -44,7 +55,10 @@ class Policy:
                 f"{'' if self.allow_trend else 'OFF'}"
                 f" mr[<={self.meanrev_rsi_max:.0f}]{'' if self.allow_meanrev else 'OFF'}"
                 f" exit[rsi>={self.exit_rsi:.0f}] stop[{self.stop_atr_mult:.1f}xATR"
-                f",rr{self.rr_ratio:.1f}] {'gate' if self.regime_gate else 'nogate'}"
+                f",rr{self.rr_ratio:.1f}"
+                f"{f',trail{self.trail_atr_mult:.1f}' if self.trail_atr_mult else ''}"
+                f"{f',t{self.time_exit_days}d' if self.time_exit_days else ''}]"
+                f" {self.regime_mode}"
                 f" pos{self.position_pct:.0f}%x{self.max_positions}")
 
 
@@ -110,7 +124,7 @@ def entry_signals(p: Panel, pol: Policy) -> np.ndarray:
         sig |= trend
     if pol.allow_meanrev:
         sig |= meanrev
-    if pol.regime_gate:
+    if pol.regime_mode == "gate":
         sig &= ~p.no_buy[:, None]
     return sig & valid
 
@@ -131,20 +145,29 @@ def simulate(p: Panel, pol: Policy, start: pd.Timestamp, end: pd.Timestamp,
     slip = slippage_bps / 10_000.0
 
     cash = starting_cash
-    # ticker_index -> [qty, entry_px, stop_px, tp_px, entry_day, setup_meanrev]
+    # ticker_index -> [qty, entry_px, stop_px, tp_px, entry_day, setup_meanrev,
+    #                  high_water, trail_pct]
     positions: dict[int, list] = {}
     equity_curve, trades = [], []
 
     for d in day_idx:
         # ── Exits first: stops / take-profits intraday, rule exits at close ──
         for j in list(positions):
-            qty, entry_px, stop_px, tp_px, e_day, is_mr = positions[j]
+            qty, entry_px, stop_px, tp_px, e_day, is_mr, hw, trail_pct = positions[j]
             if np.isnan(p.close[d, j]):
                 continue
-            exit_px, reason = None, None
             lo, hi = p.low[d, j], p.high[d, j]
+            # Trailing stop ratchets from the high-water mark THROUGH YESTERDAY —
+            # trailing off today's high before checking today's low would assume
+            # the high printed first (lookahead within the bar).
+            if trail_pct is not None:
+                stop_px = max(stop_px, hw * (1 - trail_pct / 100))
+                positions[j][2] = stop_px
+            exit_px, reason = None, None
             if lo <= stop_px:                      # stop assumed to fill first
-                exit_px, reason = stop_px * (1 - slip), "stop"
+                # Gap through the stop fills at the open, not the stop price
+                exit_px = min(stop_px, p.open[d, j]) * (1 - slip)
+                reason = "stop"
             elif hi >= tp_px:
                 exit_px, reason = tp_px * (1 - slip), "take_profit"
             elif pol.exit_on_ma200_break and not np.isnan(p.ma200[d, j]) \
@@ -152,6 +175,8 @@ def simulate(p: Panel, pol: Policy, start: pd.Timestamp, end: pd.Timestamp,
                 exit_px, reason = p.close[d, j] * (1 - slip), "trend_break"
             elif p.rsi[d, j] >= pol.exit_rsi:
                 exit_px, reason = p.close[d, j] * (1 - slip), "overbought"
+            elif pol.time_exit_days is not None and (d - e_day) >= pol.time_exit_days:
+                exit_px, reason = p.close[d, j] * (1 - slip), "time_exit"
             if exit_px is not None:
                 cash += qty * exit_px
                 trades.append({
@@ -162,6 +187,8 @@ def simulate(p: Panel, pol: Policy, start: pd.Timestamp, end: pd.Timestamp,
                     "regime": p.regime[e_day],
                 })
                 del positions[j]
+            elif trail_pct is not None and not np.isnan(hi):
+                positions[j][6] = max(hw, hi)   # roll high-water forward
 
         # Mark to market
         pos_val = sum(q * p.close[d, j] for j, (q, *_ ) in positions.items()
@@ -187,9 +214,16 @@ def simulate(p: Panel, pol: Policy, start: pd.Timestamp, end: pd.Timestamp,
             stop_pct = float(np.clip(pol.stop_atr_mult * atr_pct, 3.0, 8.0)) \
                 if not np.isnan(atr_pct) else 7.0
             tp_pct = pol.rr_ratio * stop_pct
+            trail_pct = float(np.clip(pol.trail_atr_mult * atr_pct, 3.0, 12.0)) \
+                if (pol.trail_atr_mult is not None and not np.isnan(atr_pct)) else \
+                (8.0 if pol.trail_atr_mult is not None else None)
 
-            cap = min(pol.position_pct, p.regime_cap[yd]) if pol.regime_gate \
-                else pol.position_pct
+            if pol.regime_mode == "gate":
+                cap = min(pol.position_pct, p.regime_cap[yd])
+            elif pol.regime_mode == "scale":
+                cap = pol.position_pct * REGIME_SCALE.get(p.regime[yd], 0.5)
+            else:
+                cap = pol.position_pct
             is_mr = bool(p.close[yd, j] > p.ma200[yd, j] and p.rsi[yd, j] <= pol.meanrev_rsi_max
                          and p.chg_1w[yd, j] < 0)
             if is_mr:
@@ -201,7 +235,7 @@ def simulate(p: Panel, pol: Policy, start: pd.Timestamp, end: pd.Timestamp,
                 continue
             cash -= qty * px
             positions[j] = [qty, px, px * (1 - stop_pct / 100),
-                            px * (1 + tp_pct / 100), d, is_mr]
+                            px * (1 + tp_pct / 100), d, is_mr, px, trail_pct]
 
     eq = pd.Series(equity_curve, index=p.dates[day_idx], name="equity")
     return SimResult(policy=asdict(pol), label=pol.label(), equity=eq,

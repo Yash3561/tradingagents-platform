@@ -51,22 +51,65 @@ def _cache_path(key: str) -> Path:
     return CACHE_DIR / f"{hashlib.sha256(key.encode()).hexdigest()[:24]}.pkl"
 
 
-def load_history(tickers: list[str], start: str, end: str) -> dict[str, pd.DataFrame]:
+def _load_alpaca(tickers: list[str], start: str, end: str) -> dict[str, pd.DataFrame]:
     """
-    Daily OHLCV per ticker, cached on disk. Returns {ticker: DataFrame with
-    Open/High/Low/Close/Volume, DatetimeIndex}. Tickers with too little
-    history are dropped (they simply never signal — no lookahead is created).
+    Historical daily bars from Alpaca's data API (split/dividend adjusted).
+    Returns {} when platform keys are missing or the API rejects us —
+    caller falls back to yfinance. Index tickers (^VIX) are never available here.
     """
-    key = f"{','.join(sorted(tickers))}|{start}|{end}"
-    path = _cache_path(key)
-    if path.exists():
-        return pd.read_pickle(path)
+    from app.config import get_settings
+    s = get_settings()
+    if not (getattr(s, "alpaca_api_key", "") and getattr(s, "alpaca_api_secret", "")):
+        return {}
+    symbols = [t for t in tickers if not t.startswith("^")]
+    if not symbols:
+        return {}
 
+    import requests
+    headers = {"APCA-API-KEY-ID": s.alpaca_api_key, "APCA-API-SECRET-KEY": s.alpaca_api_secret}
+    url = f"{s.alpaca_data_url}/v2/stocks/bars"
+    params = {
+        "symbols": ",".join(symbols),
+        "timeframe": "1Day",
+        "start": f"{start}T00:00:00Z",
+        "end": f"{end}T00:00:00Z",
+        "adjustment": "all",
+        "limit": 10000,
+    }
+    raw_bars: dict[str, list] = {t: [] for t in symbols}
+    page_token = None
+    try:
+        while True:
+            p = dict(params)
+            if page_token:
+                p["page_token"] = page_token
+            r = requests.get(url, headers=headers, params=p, timeout=60)
+            r.raise_for_status()
+            j = r.json()
+            for sym, bars in (j.get("bars") or {}).items():
+                raw_bars.setdefault(sym, []).extend(bars)
+            page_token = j.get("next_page_token")
+            if not page_token:
+                break
+    except Exception as e:
+        log.warning("research.alpaca_bars_failed", error=str(e)[:200])
+        return {}
+
+    out: dict[str, pd.DataFrame] = {}
+    for t, bars in raw_bars.items():
+        if len(bars) < 260:
+            continue
+        df = pd.DataFrame(bars).rename(columns={
+            "o": "Open", "h": "High", "l": "Low", "c": "Close", "v": "Volume"})
+        df.index = pd.to_datetime(df["t"], utc=True).dt.tz_convert(None).dt.normalize()
+        out[t] = df[["Open", "High", "Low", "Close", "Volume"]].astype(float)
+    return out
+
+
+def _load_yfinance(tickers: list[str], start: str, end: str) -> dict[str, pd.DataFrame]:
     import yfinance as yf
-    log.info("research.download", tickers=len(tickers), start=start, end=end)
     raw = yf.download(tickers, start=start, end=end, interval="1d",
                       auto_adjust=True, group_by="ticker", progress=False, threads=True)
-
     out: dict[str, pd.DataFrame] = {}
     for t in tickers:
         try:
@@ -74,11 +117,33 @@ def load_history(tickers: list[str], start: str, end: str) -> dict[str, pd.DataF
             df = df.dropna(subset=["Close"])
         except KeyError:
             continue
-        if len(df) < 260:  # need at least ~1y for MA200 warmup
+        if len(df) < 260:
             continue
         df = df[["Open", "High", "Low", "Close", "Volume"]].copy()
         df.index = pd.to_datetime(df.index).tz_localize(None)
         out[t] = df
+    return out
+
+
+def load_history(tickers: list[str], start: str, end: str) -> dict[str, pd.DataFrame]:
+    """
+    Daily OHLCV per ticker, cached on disk. Alpaca's data API is preferred
+    (platform keys, adjusted bars); yfinance fills whatever Alpaca can't serve
+    (index tickers like ^VIX, or pre-IEX history). Tickers with under ~1y of
+    bars are dropped — they simply never signal, no lookahead is created.
+    """
+    key = f"v2|{','.join(sorted(tickers))}|{start}|{end}"
+    path = _cache_path(key)
+    if path.exists():
+        return pd.read_pickle(path)
+
+    log.info("research.download", tickers=len(tickers), start=start, end=end)
+    out = _load_alpaca(tickers, start, end)
+    if out:
+        log.info("research.download.alpaca", kept=len(out))
+    missing = [t for t in tickers if t not in out]
+    if missing:
+        out.update(_load_yfinance(missing, start, end))
 
     pd.to_pickle(out, path)
     log.info("research.download.done", kept=len(out))

@@ -32,22 +32,36 @@ log = structlog.get_logger()
 MIN_TRADES_PER_FOLD = 15
 
 
+# Round-1 tournament winner (2026-07-12): kept in every grid as a reference point
+ROUND1_WINNER = Policy(trend_rsi_min=40, trend_rsi_max=65, require_macd=False,
+                       meanrev_rsi_max=32, stop_atr_mult=3.0, rr_ratio=3.0,
+                       regime_mode="off")
+
+
 def default_grid() -> list[Policy]:
-    """~200 policies spanning the quant rule family, live baseline included."""
+    """
+    Round-2 grid (~770 policies): entries pinned near the round-1 winning
+    plateau; the new dimensions are EXITS (trailing stops, time exits) and
+    PORTFOLIO CONSTRUCTION (slots, sizes, regime-scaled exposure) — round 1
+    showed the ~40% max exposure was the binding constraint, not entries.
+    """
     combos = itertools.product(
-        (40.0, 45.0, 50.0),          # trend_rsi_min
-        (65.0, 70.0),                # trend_rsi_max
-        (True, False),               # require_macd
-        (28.0, 32.0, 36.0),          # meanrev_rsi_max
-        (1.5, 2.0, 3.0),             # stop_atr_mult
-        (1.5, 2.0, 3.0),             # rr_ratio
-        (True, False),               # regime_gate
+        ((40.0, 65.0), (40.0, 70.0)),   # (trend_rsi_min, trend_rsi_max)
+        (32.0, 36.0),                    # meanrev_rsi_max
+        (2.0, 3.0),                      # rr_ratio
+        (None, 2.5),                     # trail_atr_mult
+        (None, 30),                      # time_exit_days
+        ("gate", "scale"),               # regime_mode
+        (5.0, 8.0, 10.0),                # position_pct
+        (8, 16),                         # max_positions
     )
-    grid = [Policy(trend_rsi_min=a, trend_rsi_max=b, require_macd=c,
-                   meanrev_rsi_max=d, stop_atr_mult=e, rr_ratio=f, regime_gate=g)
-            for a, b, c, d, e, f, g in combos]
-    # Single-setup ablations: is each entry family pulling its weight?
-    grid += [Policy(allow_meanrev=False), Policy(allow_trend=False)]
+    grid = [Policy(trend_rsi_min=band[0], trend_rsi_max=band[1], require_macd=False,
+                   meanrev_rsi_max=mr, stop_atr_mult=3.0, rr_ratio=rr,
+                   trail_atr_mult=trail, time_exit_days=te, regime_mode=mode,
+                   position_pct=pos, max_positions=slots)
+            for band, mr, rr, trail, te, mode, pos, slots in combos]
+    # Reference points: the live baseline and the round-1 winner
+    grid += [Policy(), ROUND1_WINNER]
     return grid
 
 
