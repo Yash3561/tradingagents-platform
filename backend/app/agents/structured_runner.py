@@ -225,7 +225,9 @@ def _nim_structured(
             _nim_throttle()
             response = client.chat.completions.create(
                 model=model,
-                max_tokens=2048,
+                # Reasoning models spend tokens thinking before the tool call —
+                # too small a budget yields truncated or empty skeleton reports
+                max_tokens=4096,
                 temperature=0.1,
                 messages=[
                     {"role": "system", "content": system},
@@ -270,18 +272,33 @@ def _nim_structured(
         return json.loads(msg.tool_calls[0].function.arguments)
 
     # Fallback: model returned JSON in content instead of a tool call —
-    # often with stray prose or markdown fences around it (e.g. 'Let{"ticker"...')
-    content = (msg.content or "").strip()
-    idx = content.find("{")
-    if idx != -1:
-        try:
-            obj, _ = json.JSONDecoder().raw_decode(content[idx:])
-            if isinstance(obj, dict):
-                return obj
-        except ValueError:
-            pass
+    # often with stray prose or markdown fences around it (e.g. 'Let{"ticker"...').
+    # Score every JSON object in the prose by schema-field overlap so a stray
+    # fragment of chain-of-thought can never masquerade as the report.
+    obj = _best_schema_json((msg.content or "").strip(), schema)
+    if obj is not None:
+        return obj
 
     raise RuntimeError(f"NIM model did not call submit_report. Response: {response}")
+
+
+def _best_schema_json(content: str, schema: type) -> dict | None:
+    """The JSON object in `content` that best matches the schema (≥3 fields), or None."""
+    fields = set(schema.model_fields.keys())
+    dec = json.JSONDecoder()
+    best, best_score = None, 0
+    i = content.find("{")
+    while i != -1:
+        try:
+            o, _ = dec.raw_decode(content[i:])
+            if isinstance(o, dict):
+                score = len(fields & set(o.keys()))
+                if score > best_score:
+                    best, best_score = o, score
+        except ValueError:
+            pass
+        i = content.find("{", i + 1)
+    return best if best_score >= 3 else None
 
 
 def _inline_refs(schema: dict) -> dict:
@@ -692,7 +709,13 @@ produces overwhelming evidence one way. Default to caution — HOLD is always av
     )
     result = _nim_structured(system, user, ResearcherDebate, model)
     result["ticker"] = bundle.ticker
-    return ResearcherDebate(**result)
+    debate = ResearcherDebate(**result)
+    # An empty skeleton (no theses) means the model dodged the work — fail loudly
+    # rather than let a default-NEUTRAL 0.5 debate flow into risk/PM as if real.
+    if not debate.bull_final_thesis.strip() and not debate.bear_final_thesis.strip():
+        raise RuntimeError("Researcher debate returned empty theses — model produced "
+                           "a skeleton report; refusing to decide on a default debate")
+    return debate
 
 
 def _run_risk_manager(bundle: AnalystBundle, debate: ResearcherDebate, model: str) -> RiskAssessment:
