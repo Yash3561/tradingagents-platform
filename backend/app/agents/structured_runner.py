@@ -199,24 +199,41 @@ def _nim_structured(
     # OpenAI tool parameters schema must not have a top-level 'title'
     tool_schema.pop("title", None)
 
-    response = client.chat.completions.create(
-        model=model,
-        max_tokens=2048,
-        temperature=0.1,
-        messages=[
-            {"role": "system", "content": system},
-            {"role": "user", "content": user},
-        ],
-        tools=[{
-            "type": "function",
-            "function": {
-                "name": "submit_report",
-                "description": f"Submit your structured {schema.__name__} report.",
-                "parameters": tool_schema,
-            },
-        }],
-        tool_choice={"type": "function", "function": {"name": "submit_report"}},
-    )
+    # NIM free tier throws transient 429/5xx under load — retry with backoff
+    import time as _time
+    import random as _random
+    response = None
+    for attempt in range(4):
+        try:
+            response = client.chat.completions.create(
+                model=model,
+                max_tokens=2048,
+                temperature=0.1,
+                messages=[
+                    {"role": "system", "content": system},
+                    {"role": "user", "content": user},
+                ],
+                tools=[{
+                    "type": "function",
+                    "function": {
+                        "name": "submit_report",
+                        "description": f"Submit your structured {schema.__name__} report.",
+                        "parameters": tool_schema,
+                    },
+                }],
+                tool_choice={"type": "function", "function": {"name": "submit_report"}},
+            )
+            break
+        except Exception as e:
+            status = getattr(e, "status_code", None)
+            transient = status in (429, 500, 502, 503, 504) \
+                or "timed out" in str(e).lower() or "connection" in str(e).lower()
+            if not transient or attempt == 3:
+                raise
+            delay = 2 * (2 ** attempt) + _random.uniform(0, 1.5)
+            log.warning("nim.transient_error_retrying", attempt=attempt + 1,
+                        status=status, delay_s=round(delay, 1))
+            _time.sleep(delay)
 
     msg = response.choices[0].message
     if msg.tool_calls:
