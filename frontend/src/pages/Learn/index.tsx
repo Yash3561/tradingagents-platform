@@ -581,10 +581,14 @@ export default function Learn() {
     : `Showing ${filtered.length} term${filtered.length !== 1 ? "s" : ""}`;
 
   return (
-    <div className="min-h-screen" style={{ backgroundColor: "#0A0E1A" }}>
-      {/* Sticky header */}
+    // Negative margins consume the Shell's scroll-container padding so the
+    // sticky header sits flush at top-0 — otherwise cards scroll through the
+    // padding gap above and beside it.
+    <div className="min-h-full -m-4 md:-m-6" style={{ backgroundColor: "#0A0E1A" }}>
+      {/* Sticky header — negative top offsets compensate the Shell scroll
+          container's padding, which insets the sticky constraint rectangle */}
       <div
-        className="border-b border-white/5 sticky top-0 z-20"
+        className="border-b border-white/5 sticky -top-4 md:-top-6 z-20"
         style={{ backgroundColor: "#0F1629" }}
       >
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6">

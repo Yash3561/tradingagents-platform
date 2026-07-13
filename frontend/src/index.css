@@ -23,6 +23,25 @@
     background-color: theme("colors.bg.base");
     color: theme("colors.text.primary");
     font-family: "Inter", system-ui, sans-serif;
+    font-feature-settings: "cv02", "cv03", "cv04", "cv11";
+    -webkit-font-smoothing: antialiased;
+    text-rendering: optimizeLegibility;
+  }
+
+  /* Display face for headings — numbers/tickers keep JetBrains Mono */
+  h1, h2, h3 {
+    font-family: "Space Grotesk", "Inter", system-ui, sans-serif;
+    letter-spacing: -0.02em;
+  }
+
+  ::selection {
+    background: theme("colors.accent.DEFAULT" / 35%);
+  }
+
+  :focus-visible {
+    outline: 2px solid theme("colors.accent.DEFAULT");
+    outline-offset: 2px;
+    border-radius: 4px;
   }
 }
 
