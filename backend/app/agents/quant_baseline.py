@@ -42,23 +42,41 @@ log = structlog.get_logger()
 
 QUANT_MODEL_LABEL = "quant-baseline"
 
-# Rule thresholds — change deliberately; these define the strategy
-TREND_RSI_MIN = 45.0
-TREND_RSI_MAX = 70.0
-MEANREV_RSI_MAX = 32.0
-MEANREV_RSI_DEEP = 27.0
-EXIT_RSI = 78.0
-STOP_ATR_MULT = 2.0
+# Rule thresholds — per-user overridable via quant_* settings so walk-forward
+# tournament winners deploy without code changes. These defaults = the
+# original baseline; the research grid in app/research mirrors this family.
+QUANT_PARAM_DEFAULTS = {
+    "quant_trend_rsi_min": 45.0,
+    "quant_trend_rsi_max": 70.0,
+    "quant_require_macd": True,
+    "quant_meanrev_rsi_max": 32.0,
+    "quant_exit_rsi": 78.0,
+    "quant_stop_atr_mult": 2.0,
+    "quant_rr_ratio": 2.0,
+    "quant_regime_gate": True,
+}
 STOP_MIN_PCT, STOP_MAX_PCT = 3.0, 8.0
-RR_RATIO = 2.0
 NO_BUY_REGIMES = {"BEAR_TRENDING", "HIGH_VOLATILITY"}
 
 
-def _evaluate(md: dict, regime_data: dict) -> dict:
+async def _load_params(user_id: int | None) -> dict:
+    """The user's quant policy profile: settings overrides on the defaults."""
+    from app.db.models.user_settings import get_user_setting
+    params = {}
+    for key, default in QUANT_PARAM_DEFAULTS.items():
+        v = await get_user_setting(user_id, key, default)
+        params[key] = bool(v) if isinstance(default, bool) else float(v)
+    return params
+
+
+def _evaluate(md: dict, regime_data: dict, params: dict | None = None) -> dict:
     """
     Pure rules evaluation. Returns decision, confidence, setup name,
     risk params, and the full checklist of rule evaluations (for the audit trail).
     """
+    p = {**QUANT_PARAM_DEFAULTS, **(params or {})}
+    trend_min, trend_max = p["quant_trend_rsi_min"], p["quant_trend_rsi_max"]
+    meanrev_max, exit_rsi = p["quant_meanrev_rsi_max"], p["quant_exit_rsi"]
     regime = regime_data.get("regime", "UNKNOWN")
     strategy = regime_data.get("strategy", {}) or {}
     regime_max_pos = float(strategy.get("max_position_pct", 5.0))
@@ -87,18 +105,18 @@ def _evaluate(md: dict, regime_data: dict) -> dict:
         "ma50_above_ma200": bool(ma50 is not None and ma200 is not None and ma50 > ma200),
         "macd_bullish": macd_bullish,
         "rsi_14": rsi,
-        "rsi_in_trend_band": bool(rsi is not None and TREND_RSI_MIN <= rsi <= TREND_RSI_MAX),
-        "rsi_oversold": bool(rsi is not None and rsi <= MEANREV_RSI_MAX),
-        "rsi_overbought": bool(rsi is not None and rsi >= EXIT_RSI),
+        "rsi_in_trend_band": bool(rsi is not None and trend_min <= rsi <= trend_max),
+        "rsi_oversold": bool(rsi is not None and rsi <= meanrev_max),
+        "rsi_overbought": bool(rsi is not None and rsi >= exit_rsi),
         "volume_ratio": vol_ratio,
         "down_week": bool(chg_1w < 0),
         "pct_from_52w_high": pct_from_high,
     }
 
     # Risk params from volatility — same discipline rules as the agent pipeline
-    stop_pct = round(min(max(STOP_ATR_MULT * atr_pct, STOP_MIN_PCT), STOP_MAX_PCT), 2) \
+    stop_pct = round(min(max(p["quant_stop_atr_mult"] * atr_pct, STOP_MIN_PCT), STOP_MAX_PCT), 2) \
         if atr_pct else 7.0
-    tp_pct = round(RR_RATIO * stop_pct, 2)
+    tp_pct = round(p["quant_rr_ratio"] * stop_pct, 2)
 
     # Data guards — no decision without the core indicators
     if price is None or rsi is None or above_ma200 is None:
@@ -117,19 +135,20 @@ def _evaluate(md: dict, regime_data: dict) -> dict:
 
     if checks["rsi_overbought"]:
         return {"decision": Decision.SELL, "confidence": 0.65, "setup": "overbought",
-                "reason": f"RSI {rsi:.0f} >= {EXIT_RSI:.0f} — take profits into strength.",
+                "reason": f"RSI {rsi:.0f} >= {exit_rsi:.0f} — take profits into strength.",
                 "stop_loss_pct": stop_pct, "take_profit_pct": tp_pct,
                 "position_size_pct": 0.0, "checks": checks}
 
     # ── Regime gate for new entries ────────────────────────────────────────────
-    if regime in NO_BUY_REGIMES:
+    if p["quant_regime_gate"] and regime in NO_BUY_REGIMES:
         return {"decision": Decision.HOLD, "confidence": 0.60, "setup": "regime_gate",
                 "reason": f"Regime is {regime} — new entries suppressed. Capital preservation first.",
                 "stop_loss_pct": stop_pct, "take_profit_pct": tp_pct,
                 "position_size_pct": 0.0, "checks": checks}
 
     # ── ENTRY: trend following ─────────────────────────────────────────────────
-    if above_ma50 and checks["ma50_above_ma200"] and macd_bullish and checks["rsi_in_trend_band"]:
+    if above_ma50 and checks["ma50_above_ma200"] \
+            and (macd_bullish or not p["quant_require_macd"]) and checks["rsi_in_trend_band"]:
         conf = 0.65
         if regime == "BULL_TRENDING":
             conf += 0.05
@@ -139,15 +158,16 @@ def _evaluate(md: dict, regime_data: dict) -> dict:
             conf += 0.05  # momentum: within 5% of 52w high
         return {"decision": Decision.BUY, "confidence": round(min(conf, 0.85), 2),
                 "setup": "trend_follow",
-                "reason": f"Trend entry: price > MA50 > MA200, MACD bullish, RSI {rsi:.0f} "
-                          f"in {TREND_RSI_MIN:.0f}-{TREND_RSI_MAX:.0f} band. Regime: {regime}.",
+                "reason": f"Trend entry: price > MA50 > MA200"
+                          f"{', MACD bullish' if macd_bullish else ''}, RSI {rsi:.0f} "
+                          f"in {trend_min:.0f}-{trend_max:.0f} band. Regime: {regime}.",
                 "stop_loss_pct": stop_pct, "take_profit_pct": tp_pct,
                 "position_size_pct": regime_max_pos, "checks": checks}
 
     # ── ENTRY: mean reversion dip-buy ──────────────────────────────────────────
     if checks["rsi_oversold"] and checks["down_week"]:
         conf = 0.62
-        if rsi <= MEANREV_RSI_DEEP:
+        if rsi <= meanrev_max - 5:   # deeply oversold
             conf += 0.05
         if regime == "BULL_TRENDING":
             conf += 0.05
@@ -180,12 +200,12 @@ def _build_result(ticker: str, analysis_date: str, md: dict,
         stop_loss_pct=verdict["stop_loss_pct"],
         take_profit_pct=verdict["take_profit_pct"],
         rejection_reason=None,
-        risk_notes=[f"Stop = {STOP_ATR_MULT:.0f}×ATR14 clamped to "
-                    f"{STOP_MIN_PCT:.0f}-{STOP_MAX_PCT:.0f}%",
-                    f"Take-profit = {RR_RATIO:.0f}:1 R:R",
+        risk_notes=[f"Stop = {verdict['stop_loss_pct']}% (ATR-scaled, clamped "
+                    f"{STOP_MIN_PCT:.0f}-{STOP_MAX_PCT:.0f}%)",
+                    f"Take-profit = {verdict['take_profit_pct']}%",
                     f"Size capped by regime ({verdict['checks'].get('regime')})"],
-        reasoning="Mechanical risk parameters — volatility-scaled stop, fixed 2:1 "
-                  "reward:risk, regime-capped sizing. No discretion.",
+        reasoning="Mechanical risk parameters — volatility-scaled stop, fixed "
+                  "reward:risk ratio, regime-capped sizing. No discretion.",
     )
 
     final = FinalDecision(
@@ -267,10 +287,12 @@ async def run_quant_baseline_analysis(
 
         from app.workers.regime_detector import get_market_regime
         regime_data = await get_market_regime()
+        params = await _load_params(user_id)
 
         await _emit(run_id, {"type": "agent_start", "agent": "Quant Engine", "role": "quant"})
-        verdict = _evaluate(md, regime_data)
+        verdict = _evaluate(md, regime_data, params)
         result = _build_result(ticker, analysis_date, md, regime_data, verdict)
+        result["reasoning_json"]["params"] = params
 
         await _emit(run_id, {"type": "debate_event", "agent": "Quant Engine", "role": "quant",
                              "content": result["summary"], "signal": result["decision"],

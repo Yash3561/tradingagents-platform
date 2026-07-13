@@ -42,6 +42,13 @@ NUMERIC_BOUNDS: dict[str, tuple[float, float, bool]] = {
     "take_profit_pct": (1.0, 100.0, False),
     "daily_loss_limit_pct": (0.5, 50.0, False),
     "earnings_blackout_days": (0, 30, True),
+    # Quant policy profile
+    "quant_trend_rsi_min": (20.0, 60.0, False),
+    "quant_trend_rsi_max": (55.0, 90.0, False),
+    "quant_meanrev_rsi_max": (15.0, 45.0, False),
+    "quant_exit_rsi": (60.0, 95.0, False),
+    "quant_stop_atr_mult": (1.0, 4.0, False),
+    "quant_rr_ratio": (1.0, 5.0, False),
 }
 
 ENUM_VALUES: dict[str, set[str]] = {

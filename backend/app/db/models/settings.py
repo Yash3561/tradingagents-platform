@@ -36,6 +36,16 @@ DEFAULTS: dict = {
     "earnings_blackout_days": 5,
     # "agents" = LLM pipeline, "quant" = deterministic baseline (no LLM cost)
     "strategy_mode": "agents",
+    # Quant policy profile — deploy walk-forward tournament winners here
+    # (defaults mirror QUANT_PARAM_DEFAULTS in agents/quant_baseline.py)
+    "quant_trend_rsi_min": 45.0,
+    "quant_trend_rsi_max": 70.0,
+    "quant_require_macd": True,
+    "quant_meanrev_rsi_max": 32.0,
+    "quant_exit_rsi": 78.0,
+    "quant_stop_atr_mult": 2.0,
+    "quant_rr_ratio": 2.0,
+    "quant_regime_gate": True,
 }
 
 # The only model ids users may select — anything else is rejected. The platform

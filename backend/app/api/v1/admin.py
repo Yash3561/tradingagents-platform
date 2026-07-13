@@ -220,6 +220,9 @@ STRATEGY_KEYS = [
     "scan_enabled", "long_only", "min_confidence_to_trade",
     "position_size_pct", "stop_loss_pct", "take_profit_pct",
     "scan_max_candidates", "custom_watchlist",
+    "quant_trend_rsi_min", "quant_trend_rsi_max", "quant_require_macd",
+    "quant_meanrev_rsi_max", "quant_exit_rsi", "quant_stop_atr_mult",
+    "quant_rr_ratio", "quant_regime_gate",
 ]
 
 
