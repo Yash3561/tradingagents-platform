@@ -40,11 +40,11 @@ DEFAULTS: dict = {
 
 # The only model ids users may select — anything else is rejected. The platform
 # pays for inference, so arbitrary model strings must never reach the LLM client.
+# NIM-served models only: the runner has no Anthropic routing, so claude ids
+# would 404 at the NVIDIA endpoint — re-add them only when routing exists.
 ALLOWED_LLM_MODELS = {
     "deepseek-ai/deepseek-v4-flash",
     "deepseek-ai/deepseek-v4-pro",
-    "claude-sonnet-4-6",
-    "claude-opus-4-6",
 }
 
 

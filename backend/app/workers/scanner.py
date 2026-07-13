@@ -342,7 +342,8 @@ def _run_pre_screen(watchlist: list[str], criteria: dict | None = None) -> list[
 
 async def run_market_scan(
     model: str | None = None,
-    senior_model: str | None = "claude-opus-4-6",
+    # Everything routes through NIM — a claude id here would 404 at the endpoint
+    senior_model: str | None = "deepseek-ai/deepseek-v4-pro",
     watchlist: list[str] | None = None,
     max_candidates: int | None = None,
     vix_override: float | None = None,

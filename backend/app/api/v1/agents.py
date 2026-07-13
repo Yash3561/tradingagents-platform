@@ -34,7 +34,8 @@ class RunRequest(BaseModel):
     date: str | None = None        # defaults to today
     debate_rounds: int = Field(default=2, ge=0, le=3)
     model: str = "deepseek-ai/deepseek-v4-flash"
-    senior_model: str | None = "deepseek-ai/deepseek-v4-flash"
+    # flash produces skeleton debates on the senior prompts — pro fills them
+    senior_model: str | None = "deepseek-ai/deepseek-v4-pro"
     strategy: str | None = None    # "agents" | "quant"; None = user's strategy_mode setting
 
     _models_ok = field_validator("model", "senior_model")(_check_model)
@@ -178,7 +179,7 @@ class ScanCriteria(BaseModel):
 
 class ScanRequest(BaseModel):
     model: str = "deepseek-ai/deepseek-v4-flash"
-    senior_model: str | None = "deepseek-ai/deepseek-v4-flash"
+    senior_model: str | None = "deepseek-ai/deepseek-v4-pro"
     max_candidates: int = Field(default=8, ge=1, le=10)
     watchlist: list[str] | None = Field(default=None, max_length=60)
     criteria: ScanCriteria | None = None
