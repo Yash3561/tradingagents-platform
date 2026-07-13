@@ -222,10 +222,17 @@ def _nim_structured(
     if msg.tool_calls:
         return json.loads(msg.tool_calls[0].function.arguments)
 
-    # Fallback: model returned JSON in content instead of tool call
+    # Fallback: model returned JSON in content instead of a tool call —
+    # often with stray prose or markdown fences around it (e.g. 'Let{"ticker"...')
     content = (msg.content or "").strip()
-    if content.startswith("{"):
-        return json.loads(content)
+    idx = content.find("{")
+    if idx != -1:
+        try:
+            obj, _ = json.JSONDecoder().raw_decode(content[idx:])
+            if isinstance(obj, dict):
+                return obj
+        except ValueError:
+            pass
 
     raise RuntimeError(f"NIM model did not call submit_report. Response: {response}")
 
