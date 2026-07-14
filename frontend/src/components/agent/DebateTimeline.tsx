@@ -1,5 +1,8 @@
+import { useEffect, useRef } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { cn } from "../../lib/cn";
+import { DUR, EASE } from "../../lib/motion";
+import EmptyState from "../ui/EmptyState";
 import {
   LineChart, MessageSquare, Newspaper, BarChart2,
   Users, Shield, TrendingUp,
@@ -33,11 +36,48 @@ const AGENT_ICONS: Record<string, React.ElementType> = {
 
 interface DebateTimelineProps {
   entries: DebateEntry[];
+  /** True while a run is streaming — shows a typing indicator and auto-scrolls. */
+  running?: boolean;
 }
 
-export default function DebateTimeline({ entries }: DebateTimelineProps) {
+function TypingIndicator() {
   return (
-    <div className="flex flex-col gap-3 overflow-y-auto max-h-[600px] pr-1">
+    <motion.div
+      initial={{ opacity: 0, y: 8 }}
+      animate={{ opacity: 1, y: 0 }}
+      exit={{ opacity: 0 }}
+      transition={{ duration: DUR.fast, ease: EASE }}
+      className="flex items-center gap-3 p-4 rounded-xl border border-border bg-bg-elevated/50"
+    >
+      <div className="shrink-0 w-8 h-8 rounded-lg flex items-center justify-center bg-bg-card border border-border">
+        <Users size={14} className="text-accent-bright" />
+      </div>
+      <div className="flex items-center gap-1.5">
+        {[0, 1, 2].map((i) => (
+          <motion.span
+            key={i}
+            className="w-1.5 h-1.5 rounded-full bg-accent-bright"
+            animate={{ opacity: [0.25, 1, 0.25] }}
+            transition={{ duration: 1.2, repeat: Infinity, delay: i * 0.2 }}
+          />
+        ))}
+        <span className="ml-2 text-xs text-text-muted">agents deliberating…</span>
+      </div>
+    </motion.div>
+  );
+}
+
+export default function DebateTimeline({ entries, running = false }: DebateTimelineProps) {
+  const scrollRef = useRef<HTMLDivElement>(null);
+
+  // Keep the newest message in view while a run streams
+  useEffect(() => {
+    if (!running || !scrollRef.current) return;
+    scrollRef.current.scrollTo({ top: scrollRef.current.scrollHeight, behavior: "smooth" });
+  }, [entries.length, running]);
+
+  return (
+    <div ref={scrollRef} className="flex flex-col gap-3 overflow-y-auto max-h-[600px] pr-1">
       <AnimatePresence initial={false}>
         {entries.map((entry, i) => {
           const meta = ROLE_META[entry.role] ?? ROLE_META.analyst;
@@ -48,7 +88,7 @@ export default function DebateTimeline({ entries }: DebateTimelineProps) {
               key={i}
               initial={{ opacity: 0, x: 12 }}
               animate={{ opacity: 1, x: 0 }}
-              transition={{ duration: 0.3, delay: i * 0.05 }}
+              transition={{ duration: DUR.base, ease: EASE }}
               className={cn("flex gap-3 p-4 rounded-xl border", meta.bg)}
             >
               <div className={cn("shrink-0 w-8 h-8 rounded-lg flex items-center justify-center bg-bg-card border border-border mt-0.5")}>
@@ -67,16 +107,16 @@ export default function DebateTimeline({ entries }: DebateTimelineProps) {
             </motion.div>
           );
         })}
+        {running && <TypingIndicator key="typing" />}
       </AnimatePresence>
 
-      {entries.length === 0 && (
-        <div className="flex flex-col items-center justify-center py-16 text-center">
-          <div className="w-12 h-12 rounded-full bg-bg-elevated flex items-center justify-center mb-3">
-            <Users size={20} className="text-text-muted" />
-          </div>
-          <p className="text-sm text-text-secondary">Debate will appear here</p>
-          <p className="text-xs text-text-muted mt-1">Run an analysis to start</p>
-        </div>
+      {entries.length === 0 && !running && (
+        <EmptyState
+          icon={<Users size={20} />}
+          title="Debate will appear here"
+          description="Run an analysis and watch the agents argue in real time."
+          className="py-16"
+        />
       )}
     </div>
   );

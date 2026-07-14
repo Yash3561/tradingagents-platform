@@ -7,6 +7,7 @@ import AgentFlow, { type FlowState, type AgentStatus } from "../../components/ag
 import DebateTimeline, { type DebateEntry } from "../../components/agent/DebateTimeline";
 import CandlestickChart from "../../components/charts/CandlestickChart";
 import { cn } from "../../lib/cn";
+import { EASE } from "../../lib/motion";
 
 const ROLE_TO_KEY: Record<string, keyof FlowState> = {
   "Technical Analyst": "technical",
@@ -235,7 +236,7 @@ export default function AgentHub() {
       </div>
 
       {/* Controls */}
-      <div className="card p-5 flex items-end gap-4">
+      <div className="card p-5 flex flex-wrap items-end gap-4">
         <div className="flex-1 max-w-xs">
           <label className="metric-label block mb-2">Ticker</label>
           <input
@@ -318,21 +319,30 @@ export default function AgentHub() {
                   <span className="text-xs font-mono opacity-70">{Math.round(decision.confidence * 100)}% confidence</span>
                 </div>
                 <p className="text-2xl font-bold font-mono">{decision.d}</p>
-                <p className="text-xs mt-2 opacity-75 leading-relaxed">{decision.summary}</p>
+                {/* Confidence bar animates to value */}
+                <div className="mt-3 h-1.5 rounded-full bg-bg-elevated overflow-hidden">
+                  <motion.div
+                    className="h-full rounded-full bg-current"
+                    initial={{ width: 0 }}
+                    animate={{ width: `${Math.round(decision.confidence * 100)}%` }}
+                    transition={{ duration: 0.7, ease: EASE, delay: 0.15 }}
+                  />
+                </div>
+                <p className="text-xs mt-3 opacity-75 leading-relaxed">{decision.summary}</p>
               </motion.div>
             )}
           </AnimatePresence>
         </div>
 
         {/* Debate timeline */}
-        <div className="col-span-3 card p-5 flex flex-col">
+        <div className="lg:col-span-3 card p-5 flex flex-col">
           <h2 className="text-sm font-semibold text-text-primary mb-4">
             Agent Debate
             {entries.length > 0 && (
               <span className="ml-2 text-xs text-text-muted font-normal">{entries.length} messages</span>
             )}
           </h2>
-          <DebateTimeline entries={entries} />
+          <DebateTimeline entries={entries} running={status === "running"} />
         </div>
       </div>
     </motion.div>
