@@ -70,6 +70,7 @@ const config: Config = {
         marquee: "marquee 40s linear infinite",
         "marquee-slow": "marquee 60s linear infinite",
         shimmer: "shimmer 1.6s linear infinite",
+        shake: "shake 0.4s cubic-bezier(0.36,0.07,0.19,0.97)",
       },
       keyframes: {
         fadeIn: { from: { opacity: "0" }, to: { opacity: "1" } },
@@ -78,6 +79,11 @@ const config: Config = {
         priceFlashDown: { "0%,100%": { backgroundColor: "transparent" }, "50%": { backgroundColor: "rgba(255,61,87,0.15)" } },
         marquee: { from: { transform: "translateX(0)" }, to: { transform: "translateX(-50%)" } },
         shimmer: { from: { backgroundPosition: "200% 0" }, to: { backgroundPosition: "-200% 0" } },
+        shake: {
+          "0%,100%": { transform: "translateX(0)" },
+          "20%,60%": { transform: "translateX(-4px)" },
+          "40%,80%": { transform: "translateX(4px)" },
+        },
       },
       backdropBlur: { xs: "2px" },
     },

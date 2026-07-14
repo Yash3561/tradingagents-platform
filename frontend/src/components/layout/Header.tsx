@@ -222,13 +222,14 @@ function MarketClock() {
   const isMarketOpen = h >= 9.5 && h < 16 && etTime.getDay() >= 1 && etTime.getDay() <= 5;
 
   return (
-    <div className="flex items-center gap-2">
+    <div className="flex items-center gap-2 whitespace-nowrap">
       <div className={cn("w-2 h-2 rounded-full", isMarketOpen ? "bg-gain animate-pulse-slow" : "bg-text-muted")} />
       <span className="text-xs text-text-secondary font-mono">
         {etTime.toLocaleTimeString("en-US", { hour: "2-digit", minute: "2-digit", second: "2-digit", hour12: false })} ET
       </span>
+      {/* Chip yields below xl — the pulse dot still signals open/closed */}
       <span className={cn(
-        "text-2xs font-medium px-1.5 py-0.5 rounded",
+        "hidden xl:inline-block text-2xs font-medium px-1.5 py-0.5 rounded",
         isMarketOpen ? "bg-gain/10 text-gain" : "bg-bg-elevated text-text-muted"
       )}>
         {isMarketOpen ? "OPEN" : "CLOSED"}
@@ -253,10 +254,11 @@ function LiveIndices() {
     return () => clearInterval(t);
   }, []);
 
+  // QQQ yields first when the header gets tight (~1280px) — SPY + VIX carry the signal
   if (!indices.length) return (
-    <div className="flex items-center gap-6 flex-1">
+    <div className="flex items-center gap-4 xl:gap-6 flex-1 overflow-hidden">
       {["SPY", "QQQ", "VIX"].map(l => (
-        <div key={l} className="flex items-center gap-2">
+        <div key={l} className={cn("flex items-center gap-2 whitespace-nowrap", l === "QQQ" && "hidden xl:flex")}>
           <span className="text-xs font-semibold text-text-secondary">{l}</span>
           <span className="text-sm font-mono text-text-muted">—</span>
         </div>
@@ -265,9 +267,9 @@ function LiveIndices() {
   );
 
   return (
-    <div className="flex items-center gap-6 flex-1">
+    <div className="flex items-center gap-4 xl:gap-6 flex-1 overflow-hidden">
       {indices.map(({ label, value, change }) => (
-        <div key={label} className="flex items-center gap-2">
+        <div key={label} className={cn("flex items-center gap-2 whitespace-nowrap", label === "QQQ" && "hidden xl:flex")}>
           <span className="text-xs font-semibold text-text-secondary">{label}</span>
           <span className="text-sm font-mono text-text-primary">{fmt.price(value)}</span>
           <span className={cn("text-xs font-mono", (change ?? 0) >= 0 ? "text-gain" : "text-loss")}>

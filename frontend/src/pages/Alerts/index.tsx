@@ -3,6 +3,7 @@ import { motion } from "framer-motion";
 import { AlertTriangle, ShieldAlert, Info, RefreshCw, Loader2, Bell, TrendingDown, TrendingUp, Clock, Activity } from "lucide-react";
 import { api } from "../../lib/api";
 import { cn } from "../../lib/cn";
+import Skeleton from "../../components/ui/Skeleton";
 
 interface Alert {
   id: string;
@@ -153,10 +154,21 @@ export default function Alerts() {
       )}
 
       {loading && !data && (
-        <div className="flex items-center justify-center h-48 gap-3">
-          <Loader2 size={24} className="text-accent animate-spin" />
-          <span className="text-slate-400 text-sm">Scanning positions...</span>
-        </div>
+        <>
+          <div className="grid grid-cols-3 gap-2 sm:gap-4">
+            {[0, 1, 2].map(i => (
+              <div key={i} className="card p-4 flex flex-col items-center gap-2">
+                <Skeleton className="h-9 w-12" />
+                <Skeleton className="h-3 w-16" />
+              </div>
+            ))}
+          </div>
+          <div className="space-y-3">
+            {[0, 1, 2].map(i => (
+              <Skeleton key={i} className="h-16 w-full rounded-xl" />
+            ))}
+          </div>
+        </>
       )}
 
       {error && (

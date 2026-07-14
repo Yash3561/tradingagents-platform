@@ -64,7 +64,7 @@ export default function Login({ onAuth, onGoSignup, onGoForgot }: Props) {
           <p className="text-sm text-slate-400 mb-6">Sign in to your account</p>
 
           {error && (
-            <div className="flex items-center gap-2 bg-loss/10 border border-loss/30 rounded-lg px-3 py-2.5 mb-4">
+            <div key={error} className="animate-shake flex items-center gap-2 bg-loss/10 border border-loss/30 rounded-lg px-3 py-2.5 mb-4">
               <AlertCircle size={14} className="text-loss shrink-0" />
               <p className="text-sm text-loss">{error}</p>
             </div>
