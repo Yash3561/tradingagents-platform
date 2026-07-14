@@ -1,18 +1,22 @@
 import { useEffect, useState, useRef, useCallback } from "react";
 import { Link } from "react-router-dom";
 import { motion } from "framer-motion";
-import { DollarSign, TrendingUp, BarChart2, Activity, Loader2, RefreshCw, ShieldCheck, ShieldAlert, ShieldX, Clock, Radio, Bell, Brain } from "lucide-react";
+import { DollarSign, TrendingUp, BarChart2, Activity, RefreshCw, ShieldCheck, ShieldAlert, ShieldX, Clock, Radio, Bell, Brain, Briefcase, Bot } from "lucide-react";
+import { useNavigate } from "react-router-dom";
 import MetricCard from "../../components/data-display/MetricCard";
 import PnLBadge from "../../components/data-display/PnLBadge";
 import CandlestickChart from "../../components/charts/CandlestickChart";
+import Skeleton, { SkeletonText } from "../../components/ui/Skeleton";
+import EmptyState from "../../components/ui/EmptyState";
 import { fmt } from "../../lib/formatters";
 import { api } from "../../lib/api";
 import { cn } from "../../lib/cn";
+import { DUR, EASE } from "../../lib/motion";
 
 const FADE_UP = {
-  initial: { opacity: 0, y: 16 },
+  initial: { opacity: 0, y: 8 },
   animate: { opacity: 1, y: 0 },
-  transition: { duration: 0.4 },
+  transition: { duration: DUR.base, ease: EASE },
 };
 
 // ── System Status types ───────────────────────────────────────────────────────
@@ -227,13 +231,24 @@ const MOOD_CONFIG = {
 
 function MarketBriefCard({ data, loading }: { data: BriefData | null; loading: boolean }) {
   if (loading) {
+    // Mirrors the loaded card's structure so content lands without layout shift
     return (
-      <div className="card p-5 flex items-center gap-3">
-        <Loader2 size={18} className="text-accent animate-spin shrink-0" />
-        <div>
-          <p className="text-sm font-medium text-white">Generating AI Market Brief...</p>
-          <p className="text-xs text-slate-500 mt-0.5">Analyzing SPY, QQQ, VIX, sectors, crypto</p>
+      <div className="card p-5">
+        <div className="flex items-center justify-between mb-4">
+          <div className="flex items-center gap-3">
+            <Brain size={16} className="text-accent" />
+            <span className="text-sm font-semibold text-white">AI Market Brief</span>
+            <Skeleton className="h-5 w-20 rounded-full" />
+          </div>
+          <Skeleton className="h-3.5 w-16" />
         </div>
+        <Skeleton className="h-4 w-4/5 mb-4" />
+        <div className="flex flex-wrap gap-2 mb-4">
+          {[0, 1, 2, 3, 4].map((i) => (
+            <Skeleton key={i} className="h-7 w-32 rounded-lg" />
+          ))}
+        </div>
+        <SkeletonText lines={3} />
       </div>
     );
   }
@@ -413,11 +428,51 @@ export default function Dashboard() {
   }, []);
 
   const today = new Date().toLocaleDateString("en-US", { weekday: "long", month: "long", day: "numeric", year: "numeric" });
+  const navigate = useNavigate();
+  const unrealizedTotal = positions.reduce((s: number, p: any) => s + p.unrealized_pnl, 0);
 
   if (loading) {
+    // Full-page skeleton mirroring the loaded layout — no spinner voids
     return (
-      <div className="flex items-center justify-center h-64">
-        <Loader2 size={24} className="animate-spin text-accent" />
+      <div className="space-y-6">
+        <div className="flex items-center justify-between">
+          <div className="space-y-2">
+            <Skeleton className="h-6 w-40" />
+            <Skeleton className="h-3.5 w-56" />
+          </div>
+          <Skeleton className="h-8 w-24 rounded-lg" />
+        </div>
+        <div className="grid grid-cols-2 gap-3 lg:grid-cols-4 lg:gap-4">
+          {[0, 1, 2, 3].map((i) => (
+            <div key={i} className="card p-5 space-y-3">
+              <Skeleton className="h-3 w-24" />
+              <Skeleton className="h-8 w-32" />
+              <Skeleton className="h-3 w-20" />
+            </div>
+          ))}
+        </div>
+        <div className="card p-5 space-y-4">
+          <Skeleton className="h-4 w-44" />
+          <SkeletonText lines={3} />
+        </div>
+        <div className="grid grid-cols-1 gap-4 lg:grid-cols-5">
+          <div className="card p-5 lg:col-span-2 space-y-4">
+            <Skeleton className="h-4 w-32" />
+            <div className="grid grid-cols-2 gap-3">
+              {[0, 1, 2, 3].map((i) => (
+                <Skeleton key={i} className="h-16 rounded-lg" />
+              ))}
+            </div>
+          </div>
+          <div className="card p-5 lg:col-span-3 space-y-4">
+            <Skeleton className="h-4 w-32" />
+            <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
+              {[0, 1, 2, 3, 4, 5].map((i) => (
+                <Skeleton key={i} className="h-16 rounded-lg" />
+              ))}
+            </div>
+          </div>
+        </div>
       </div>
     );
   }
@@ -474,29 +529,31 @@ export default function Dashboard() {
       <div className="grid grid-cols-2 gap-3 lg:grid-cols-4 lg:gap-4">
         <MetricCard
           label="Portfolio Value"
-          value={summary ? fmt.usd(summary.equity) : "—"}
+          value={summary ? summary.equity : "—"}
+          format={(n) => fmt.usd(n)}
           delta={summary?.day_pnl_pct}
           icon={<DollarSign size={16} />}
           accent={summary?.day_pnl >= 0 ? "gain" : "loss"}
         />
         <MetricCard
           label="Day P&L"
-          value={summary ? `${summary.day_pnl >= 0 ? "+" : ""}${fmt.usd(summary.day_pnl)}` : "—"}
+          value={summary ? summary.day_pnl : "—"}
+          format={(n) => `${n >= 0 ? "+" : ""}${fmt.usd(n)}`}
           delta={summary?.day_pnl_pct}
           icon={<TrendingUp size={16} />}
           accent={summary?.day_pnl >= 0 ? "gain" : "loss"}
         />
         <MetricCard
           label="Unrealized P&L"
-          value={positions.length > 0
-            ? `${positions.reduce((s: number, p: any) => s + p.unrealized_pnl, 0) >= 0 ? "+" : ""}${fmt.usd(positions.reduce((s: number, p: any) => s + p.unrealized_pnl, 0))}`
-            : "No positions"}
+          value={positions.length > 0 ? unrealizedTotal : "No positions"}
+          format={(n) => `${n >= 0 ? "+" : ""}${fmt.usd(n)}`}
           icon={<BarChart2 size={16} />}
-          accent={positions.reduce((s: number, p: any) => s + p.unrealized_pnl, 0) >= 0 ? "gain" : "loss"}
+          accent={unrealizedTotal >= 0 ? "gain" : "loss"}
         />
         <MetricCard
           label="Sharpe Ratio"
-          value={summary?.sharpe != null ? summary.sharpe.toFixed(2) : "Building..."}
+          value={summary?.sharpe != null ? summary.sharpe : "Building..."}
+          format={(n) => n.toFixed(2)}
           icon={<Activity size={16} />}
           accent="accent"
         />
@@ -609,10 +666,13 @@ export default function Dashboard() {
                       </td>
                       <td className="py-3 font-mono text-sm text-text-secondary">{p.qty.toFixed(2)}</td>
                       <td className="py-3">
-                        <span className={cn(
-                          "font-mono text-sm font-semibold transition-colors duration-300",
-                          live?.flash === "up" ? "text-gain" : live?.flash === "down" ? "text-loss" : "text-text-primary"
-                        )}>
+                        <span
+                          key={`${displayPrice}-${live?.flash ?? ""}`}
+                          className={cn(
+                            "price text-sm font-semibold rounded px-1 -mx-1",
+                            live?.flash === "up" ? "flash-up text-gain" : live?.flash === "down" ? "flash-down text-loss" : "text-text-primary"
+                          )}
+                        >
                           {fmt.price(displayPrice)}
                           {live?.flash && (
                             <span className="ml-1 text-xs">{live.flash === "up" ? "▲" : "▼"}</span>
@@ -629,11 +689,13 @@ export default function Dashboard() {
               </tbody>
             </table>
           ) : (
-            <div className="flex flex-col items-center justify-center py-8 text-center">
-              <p className="text-sm text-text-muted">No open positions</p>
-              <p className="text-xs text-text-muted mt-1">Run a scan to auto-build positions</p>
-              <a href="/scanner" className="mt-3 text-xs text-accent-bright hover:underline">Go to Scanner →</a>
-            </div>
+            <EmptyState
+              icon={<Briefcase size={20} />}
+              title="No open positions"
+              description="Run a scan and the agents will build positions automatically."
+              action={{ label: "Go to Scanner", onClick: () => navigate("/scanner") }}
+              className="py-8"
+            />
           )}
         </motion.div>
 
@@ -676,7 +738,13 @@ export default function Dashboard() {
               })}
             </div>
           ) : (
-            <p className="text-xs text-text-muted text-center py-8">No activity yet</p>
+            <EmptyState
+              icon={<Bot size={20} />}
+              title="No agent activity yet"
+              description="Run an analysis from the Agent Hub to see decisions here."
+              action={{ label: "Open Agent Hub", onClick: () => navigate("/agents") }}
+              className="py-8"
+            />
           )}
         </motion.div>
       </div>
