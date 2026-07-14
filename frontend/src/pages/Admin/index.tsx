@@ -30,6 +30,7 @@ import {
 } from "recharts";
 import { api } from "../../lib/api";
 import { cn } from "../../lib/cn";
+import Skeleton from "../../components/ui/Skeleton";
 
 interface AdminUser {
   user_id: number;
@@ -86,14 +87,25 @@ interface LabAccount {
 const LAB_COLORS = ["#2D7DD2", "#00E676", "#FFB740", "#FF3D57", "#A78BFA", "#22D3EE"];
 
 function StrategyLab() {
-  const { data } = useQuery<{ days: number; accounts: LabAccount[] }>({
+  const { data, isLoading } = useQuery<{ days: number; accounts: LabAccount[] }>({
     queryKey: ["admin", "strategy-lab"],
     queryFn: () => api.get("/admin/strategy-lab").then((r) => r.data),
     refetchInterval: 5 * 60 * 1000,
   });
 
+  if (isLoading) {
+    return (
+      <div className="card p-6 space-y-4">
+        <Skeleton className="h-4 w-56" />
+        <Skeleton className="h-56 w-full" />
+        <Skeleton className="h-24 w-full" />
+      </div>
+    );
+  }
   if (!data || data.accounts.length === 0) return null;
   const accounts = data.accounts;
+  // Leader by return for the row highlight
+  const bestReturn = Math.max(...accounts.map((a) => a.return_pct ?? -Infinity));
 
   // Merge curves onto one time axis (sparse merge keyed by timestamp)
   const byTime = new Map<string, Record<string, number | string>>();
@@ -167,22 +179,27 @@ function StrategyLab() {
       <div className="overflow-x-auto">
         <table className="w-full text-sm">
           <thead>
-            <tr className="text-left text-xs text-text-muted border-b border-border">
-              <th className="py-2 pr-4 font-medium">Account</th>
-              <th className="py-2 pr-4 font-medium">Engine</th>
-              <th className="py-2 pr-4 font-medium">Return</th>
-              <th className="py-2 pr-4 font-medium">Trades</th>
-              <th className="py-2 pr-4 font-medium">Win rate</th>
-              <th className="py-2 pr-4 font-medium">P&L</th>
-              <th className="py-2 pr-4 font-medium">Conf. gate</th>
-              <th className="py-2 pr-4 font-medium">Size</th>
-              <th className="py-2 pr-4 font-medium">Stop/TP</th>
-              <th className="py-2 font-medium">Scans</th>
+            <tr className="text-xs text-text-muted border-b border-border">
+              <th className="py-2 pr-4 font-medium text-left">Account</th>
+              <th className="py-2 pr-4 font-medium text-left">Engine</th>
+              <th className="py-2 pr-4 font-medium text-right">Return</th>
+              <th className="py-2 pr-4 font-medium text-right">Trades</th>
+              <th className="py-2 pr-4 font-medium text-right">Win rate</th>
+              <th className="py-2 pr-4 font-medium text-right">P&L</th>
+              <th className="py-2 pr-4 font-medium text-right">Conf. gate</th>
+              <th className="py-2 pr-4 font-medium text-right">Size</th>
+              <th className="py-2 pr-4 font-medium text-right">Stop/TP</th>
+              <th className="py-2 font-medium text-right">Scans</th>
             </tr>
           </thead>
           <tbody>
-            {accounts.map((a, i) => (
-              <tr key={a.user_id} className="border-b border-border/50">
+            {accounts.map((a, i) => {
+              const leads = a.return_pct != null && a.return_pct === bestReturn && accounts.length > 1;
+              return (
+              <tr key={a.user_id} className={cn(
+                "border-b border-border/50 hover:bg-bg-elevated/40 transition-colors",
+                leads && "bg-accent/[0.04]",
+              )}>
                 <td className="py-2.5 pr-4">
                   <span className="inline-flex items-center gap-2">
                     <span
@@ -190,6 +207,7 @@ function StrategyLab() {
                       style={{ background: LAB_COLORS[i % LAB_COLORS.length] }}
                     />
                     <span className="text-text-primary">{a.label}</span>
+                    {leads && <span className="text-2xs px-1.5 py-0.5 rounded bg-accent/15 text-accent-bright font-medium">leading</span>}
                   </span>
                 </td>
                 <td className="py-2.5 pr-4 text-xs">
@@ -202,32 +220,32 @@ function StrategyLab() {
                     {a.settings.strategy_mode === "quant" ? "Quant" : "Agents"}
                   </span>
                 </td>
-                <td className={cn("py-2.5 pr-4 font-mono text-xs", (a.return_pct ?? 0) >= 0 ? "text-gain" : "text-loss")}>
+                <td className={cn("py-2.5 pr-4 price text-xs text-right", (a.return_pct ?? 0) >= 0 ? "text-gain" : "text-loss")}>
                   {a.return_pct != null ? `${a.return_pct >= 0 ? "+" : ""}${a.return_pct}%` : "—"}
                 </td>
-                <td className="py-2.5 pr-4 font-mono text-xs">
+                <td className="py-2.5 pr-4 price text-xs text-right">
                   {a.trades_closed}/{a.trades_total}
                 </td>
-                <td className="py-2.5 pr-4 font-mono text-xs">
+                <td className="py-2.5 pr-4 price text-xs text-right">
                   {a.win_rate != null ? `${Math.round(a.win_rate * 100)}%` : "—"}
                 </td>
-                <td className={cn("py-2.5 pr-4 font-mono text-xs", a.total_pnl >= 0 ? "text-gain" : "text-loss")}>
+                <td className={cn("py-2.5 pr-4 price text-xs text-right", a.total_pnl >= 0 ? "text-gain" : "text-loss")}>
                   {a.total_pnl >= 0 ? "+" : ""}${a.total_pnl}
                 </td>
-                <td className="py-2.5 pr-4 text-xs text-text-muted">
+                <td className="py-2.5 pr-4 text-xs text-text-muted text-right font-mono">
                   {fmtSetting(a, "min_confidence_to_trade")}
                 </td>
-                <td className="py-2.5 pr-4 text-xs text-text-muted">
+                <td className="py-2.5 pr-4 text-xs text-text-muted text-right font-mono">
                   {fmtSetting(a, "position_size_pct", "%")}
                 </td>
-                <td className="py-2.5 pr-4 text-xs text-text-muted">
+                <td className="py-2.5 pr-4 text-xs text-text-muted text-right font-mono">
                   {fmtSetting(a, "stop_loss_pct", "%")} / {fmtSetting(a, "take_profit_pct", "%")}
                 </td>
-                <td className="py-2.5 text-xs text-text-muted">
+                <td className="py-2.5 text-xs text-text-muted text-right font-mono">
                   {fmtSetting(a, "scan_enabled")}
                 </td>
               </tr>
-            ))}
+            );})}
           </tbody>
         </table>
       </div>
@@ -468,34 +486,43 @@ function ResearchLab() {
           <div className="overflow-x-auto">
             <table className="w-full text-sm">
               <thead>
-                <tr className="text-left text-xs text-text-muted border-b border-border">
-                  <th className="py-2 pr-4 font-medium">#</th>
-                  <th className="py-2 pr-4 font-medium">Policy</th>
-                  <th className="py-2 pr-4 font-medium">Test Sharpe</th>
-                  <th className="py-2 pr-4 font-medium">Overfit gap</th>
-                  <th className="py-2 pr-4 font-medium">CAGR</th>
-                  <th className="py-2 pr-4 font-medium">Max DD</th>
-                  <th className="py-2 pr-4 font-medium">Win rate</th>
-                  <th className="py-2 pr-4 font-medium">Trades/fold</th>
+                <tr className="text-xs text-text-muted border-b border-border">
+                  <th className="py-2 pr-4 font-medium text-left">#</th>
+                  <th className="py-2 pr-4 font-medium text-left">Policy</th>
+                  <th className="py-2 pr-4 font-medium text-right">Test Sharpe</th>
+                  <th className="py-2 pr-4 font-medium text-right">Overfit gap</th>
+                  <th className="py-2 pr-4 font-medium text-right">CAGR</th>
+                  <th className="py-2 pr-4 font-medium text-right">Max DD</th>
+                  <th className="py-2 pr-4 font-medium text-right">Win rate</th>
+                  <th className="py-2 pr-4 font-medium text-right">Trades/fold</th>
                 </tr>
               </thead>
               <tbody>
                 {report.leaderboard.map((r, i) => (
-                  <tr key={r.label} className="border-b border-border/50">
-                    <td className="py-2 pr-4 text-xs text-text-muted">{i + 1}</td>
+                  <tr key={r.label} className={cn(
+                    "border-b border-border/50 hover:bg-bg-elevated/40 transition-colors",
+                    i === 0 && "bg-accent/[0.05]",
+                  )}>
+                    <td className="py-2 pr-4 text-xs">
+                      <span className={cn(
+                        "inline-flex items-center justify-center w-5 h-5 rounded font-mono",
+                        i === 0 ? "bg-accent/20 text-accent-bright font-bold" :
+                        i < 3 ? "bg-bg-elevated text-text-secondary" : "text-text-muted",
+                      )}>{i + 1}</span>
+                    </td>
                     <td className="py-2 pr-4 font-mono text-[11px] text-text-primary">{r.label}</td>
-                    <td className={cn("py-2 pr-4 font-mono text-xs",
+                    <td className={cn("py-2 pr-4 price text-xs text-right",
                       r.test_sharpe >= 1 ? "text-gain" : r.test_sharpe <= 0 ? "text-loss" : "text-text-primary")}>
                       {r.test_sharpe}
                     </td>
-                    <td className={cn("py-2 pr-4 font-mono text-xs",
-                      r.overfit_gap > 0.5 ? "text-warn" : "text-text-muted")}>
+                    <td className={cn("py-2 pr-4 price text-xs text-right",
+                      r.overfit_gap > 0.5 ? "text-warn" : r.overfit_gap <= 0.15 ? "text-gain" : "text-text-muted")}>
                       {r.overfit_gap}
                     </td>
-                    <td className="py-2 pr-4 font-mono text-xs">{r.test_cagr_pct}%</td>
-                    <td className="py-2 pr-4 font-mono text-xs text-loss">{r.test_maxdd_pct}%</td>
-                    <td className="py-2 pr-4 font-mono text-xs">{r.test_win_rate_pct}%</td>
-                    <td className="py-2 pr-4 font-mono text-xs">{r.test_trades_per_fold}</td>
+                    <td className="py-2 pr-4 price text-xs text-right">{r.test_cagr_pct}%</td>
+                    <td className="py-2 pr-4 price text-xs text-right text-loss">{r.test_maxdd_pct}%</td>
+                    <td className="py-2 pr-4 price text-xs text-right">{r.test_win_rate_pct}%</td>
+                    <td className="py-2 pr-4 price text-xs text-right">{r.test_trades_per_fold}</td>
                   </tr>
                 ))}
               </tbody>
@@ -503,15 +530,25 @@ function ResearchLab() {
           </div>
 
           {report.holdout && (
-            <div className="bg-bg-elevated rounded-lg p-4 space-y-1">
+            <div className="bg-bg-elevated rounded-lg p-4 space-y-3">
               <p className="text-xs font-semibold text-text-primary">
                 Holdout (one shot, winner only) — {report.meta.holdout}
               </p>
-              <p className="text-xs font-mono text-text-muted">{report.holdout.policy}</p>
-              <p className="text-xs text-text-muted">
-                {JSON.stringify(report.holdout.metrics)} · SPY same period:{" "}
-                {report.holdout.spy_return_pct}%
-              </p>
+              <p className="text-xs font-mono text-text-muted break-all">{report.holdout.policy}</p>
+              <div className="flex flex-wrap gap-2">
+                {Object.entries(report.holdout.metrics).map(([k, v]) => (
+                  <span key={k} className="inline-flex items-baseline gap-1.5 px-2.5 py-1 rounded-md bg-bg-card border border-border text-xs">
+                    <span className="text-text-muted">{k.replace(/_/g, " ")}</span>
+                    <span className="font-mono text-text-primary">{typeof v === "number" ? v : String(v)}</span>
+                  </span>
+                ))}
+                {report.holdout.spy_return_pct != null && (
+                  <span className="inline-flex items-baseline gap-1.5 px-2.5 py-1 rounded-md bg-bg-card border border-accent/30 text-xs">
+                    <span className="text-text-muted">SPY same period</span>
+                    <span className="font-mono text-accent-bright">{report.holdout.spy_return_pct}%</span>
+                  </span>
+                )}
+              </div>
             </div>
           )}
 
