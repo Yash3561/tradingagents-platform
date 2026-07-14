@@ -99,6 +99,15 @@ const DEFAULTS = {
   daily_loss_limit_pct: 3,
   // Strategy Engine
   strategy_mode: "agents",
+  // Quant policy profile (drives the quant engine only; bounds mirror backend NUMERIC_BOUNDS)
+  quant_trend_rsi_min: 45,
+  quant_trend_rsi_max: 70,
+  quant_require_macd: true,
+  quant_meanrev_rsi_max: 32,
+  quant_exit_rsi: 78,
+  quant_stop_atr_mult: 2,
+  quant_rr_ratio: 2,
+  quant_regime_gate: true,
   // AI Model
   llm_model: "deepseek-ai/deepseek-v4-flash",
   debate_rounds: 2,
@@ -114,6 +123,19 @@ const DEFAULTS = {
 };
 
 type Settings = typeof DEFAULTS;
+
+// Round-1 walk-forward tournament winner (docs/research/walkforward-2026-07-12.json):
+// trend[40-65] mr[<=32] exit[rsi>=78] stop[3xATR, rr 3] regime gate off.
+const TOURNAMENT_WINNER: Partial<Settings> = {
+  quant_trend_rsi_min: 40,
+  quant_trend_rsi_max: 65,
+  quant_require_macd: false,
+  quant_meanrev_rsi_max: 32,
+  quant_exit_rsi: 78,
+  quant_stop_atr_mult: 3,
+  quant_rr_ratio: 3,
+  quant_regime_gate: false,
+};
 
 // ── Circuit Breaker Display ────────────────────────────────────────────────────
 
@@ -439,6 +461,11 @@ export default function Settings() {
     persist({ [key]: value });
   }
 
+  const deployTournamentWinner = () => {
+    setSettings(prev => ({ ...prev, ...TOURNAMENT_WINNER }));
+    persist(TOURNAMENT_WINNER);
+  };
+
   const addTicker = async () => {
     const t = newTicker.trim().toUpperCase();
     if (!t) return;
@@ -612,6 +639,84 @@ export default function Settings() {
           format={v => `${Math.round(v * 100)}% confidence required`}
           onChange={v => update("min_confidence_to_trade", v)}
         />
+      </Section>
+
+      {/* ── Quant Policy Profile ─────────────────────────────────────────────── */}
+      <Section title="Quant Policy Profile">
+        <div className="flex items-start justify-between gap-4 -mt-1">
+          <p className="text-xs text-text-muted">
+            Parameters for the deterministic quant engine (only used when Strategy Engine is
+            Quant Baseline). Tournament winners deploy here — no code change needed.
+          </p>
+          <button
+            onClick={deployTournamentWinner}
+            className="shrink-0 px-3 py-1.5 text-xs font-medium rounded-lg bg-accent/10 text-accent
+                       hover:bg-accent/20 border border-accent/30 transition-colors"
+            title="trend 40-65, no MACD gate, 3xATR stops, 3:1 R:R, regime gate off"
+          >
+            Deploy tournament winner
+          </button>
+        </div>
+        <SliderField
+          label="Trend Entry RSI Min"
+          description="Lower bound of the trend-follow entry band"
+          value={settings.quant_trend_rsi_min}
+          min={20} max={60} step={1}
+          format={v => `RSI ≥ ${v}`}
+          onChange={v => update("quant_trend_rsi_min", v)}
+        />
+        <SliderField
+          label="Trend Entry RSI Max"
+          description="Upper bound — skip already-overbought breakouts"
+          value={settings.quant_trend_rsi_max}
+          min={55} max={90} step={1}
+          format={v => `RSI ≤ ${v}`}
+          onChange={v => update("quant_trend_rsi_max", v)}
+        />
+        <Field label="Require MACD Bullish" description="Trend entries also need a bullish MACD cross">
+          <Toggle
+            enabled={settings.quant_require_macd}
+            onChange={v => update("quant_require_macd", v)}
+          />
+        </Field>
+        <SliderField
+          label="Mean-Reversion RSI Max"
+          description="Buy oversold names below this RSI"
+          value={settings.quant_meanrev_rsi_max}
+          min={15} max={45} step={1}
+          format={v => `RSI ≤ ${v}`}
+          onChange={v => update("quant_meanrev_rsi_max", v)}
+        />
+        <SliderField
+          label="Exit RSI"
+          description="Take profits when RSI runs this hot"
+          value={settings.quant_exit_rsi}
+          min={60} max={95} step={1}
+          format={v => `exit at RSI ${v}`}
+          onChange={v => update("quant_exit_rsi", v)}
+        />
+        <SliderField
+          label="Stop Distance (×ATR)"
+          description="Wider stops ride noise; round-2 research favored 3×"
+          value={settings.quant_stop_atr_mult}
+          min={1} max={4} step={0.5}
+          format={v => `${v}× ATR(14)`}
+          onChange={v => update("quant_stop_atr_mult", v)}
+        />
+        <SliderField
+          label="Reward : Risk Ratio"
+          description="Take-profit distance as a multiple of the stop"
+          value={settings.quant_rr_ratio}
+          min={1} max={5} step={0.5}
+          format={v => `${v} : 1`}
+          onChange={v => update("quant_rr_ratio", v)}
+        />
+        <Field label="Regime Gate" description="Suppress entries that clash with the market regime (research says off)">
+          <Toggle
+            enabled={settings.quant_regime_gate}
+            onChange={v => update("quant_regime_gate", v)}
+          />
+        </Field>
       </Section>
 
       {/* ── Scanner ─────────────────────────────────────────────────────────── */}
