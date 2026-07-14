@@ -11,6 +11,8 @@ import {
 } from "lucide-react";
 import { api } from "../../lib/api";
 import { cn } from "../../lib/cn";
+import Skeleton from "../../components/ui/Skeleton";
+import SharedEmptyState from "../../components/ui/EmptyState";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -199,15 +201,15 @@ function OrderRow({
       </td>
 
       {/* Limit Price */}
-      <td className="px-4 py-3 whitespace-nowrap">
-        <span className="text-xs font-mono text-text-secondary">
+      <td className="px-4 py-3 whitespace-nowrap text-right">
+        <span className="text-xs price text-text-secondary">
           {fmtPrice(order.limit_price)}
         </span>
       </td>
 
       {/* Stop Price */}
-      <td className="px-4 py-3 whitespace-nowrap">
-        <span className="text-xs font-mono text-text-secondary">
+      <td className="px-4 py-3 whitespace-nowrap text-right">
+        <span className="text-xs price text-text-secondary">
           {fmtPrice(order.stop_price)}
         </span>
       </td>
@@ -289,7 +291,10 @@ function OrdersTable({
             {headers.map((h) => (
               <th
                 key={h}
-                className="metric-label text-left px-4 py-3 font-medium whitespace-nowrap"
+                className={cn(
+                  "metric-label px-4 py-3 font-medium whitespace-nowrap",
+                  ["Limit Price", "Stop"].includes(h) ? "text-right" : "text-left",
+                )}
               >
                 {h}
               </th>
@@ -332,12 +337,14 @@ function OrdersTable({
 
 // ─── Empty State ──────────────────────────────────────────────────────────────
 
-function EmptyState({ message }: { message: string }) {
+function EmptyState({ message, description }: { message: string; description?: string }) {
   return (
-    <div className="flex flex-col items-center justify-center py-16 gap-3">
-      <ListX size={36} className="text-text-muted/40" />
-      <p className="text-sm text-text-muted">{message}</p>
-    </div>
+    <SharedEmptyState
+      icon={<ListX size={22} />}
+      title={message}
+      description={description}
+      className="py-16"
+    />
   );
 }
 
@@ -405,6 +412,7 @@ export default function Orders() {
   const {
     data: openOrders = [],
     isFetching: openFetching,
+    isLoading: openLoading,
     refetch: refetchOpen,
   } = useQuery<Order[]>({
     queryKey: ["orders", "open"],
@@ -420,6 +428,7 @@ export default function Orders() {
   const {
     data: historyOrders = [],
     isFetching: historyFetching,
+    isLoading: historyLoading,
     refetch: refetchHistory,
   } = useQuery<Order[]>({
     queryKey: ["orders", "history"],
@@ -504,6 +513,7 @@ export default function Orders() {
   const isOpen = activeTab === "open";
   const currentOrders = isOpen ? openOrders : historyOrders;
   const isFetching = isOpen ? openFetching : historyFetching;
+  const isInitialLoading = isOpen ? openLoading : historyLoading;
   const refetch = isOpen ? refetchOpen : refetchHistory;
 
   return (
@@ -631,7 +641,13 @@ export default function Orders() {
             exit={{ opacity: 0, y: -6 }}
             transition={{ duration: 0.18 }}
           >
-            {currentOrders.length > 0 ? (
+            {isInitialLoading ? (
+              <div className="p-4 space-y-3">
+                {Array.from({ length: 5 }).map((_, i) => (
+                  <Skeleton key={i} className="h-10 w-full" />
+                ))}
+              </div>
+            ) : currentOrders.length > 0 ? (
               <OrdersTable
                 orders={currentOrders}
                 showActions={isOpen}
@@ -641,10 +657,11 @@ export default function Orders() {
               />
             ) : (
               <EmptyState
-                message={
+                message={isOpen ? "No open orders" : "No order history found"}
+                description={
                   isOpen
-                    ? "No open orders"
-                    : "No order history found"
+                    ? "Bracket orders placed by the agents will appear here while active."
+                    : "Filled and canceled orders show up here once trades execute."
                 }
               />
             )}

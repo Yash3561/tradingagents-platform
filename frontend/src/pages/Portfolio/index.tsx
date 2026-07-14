@@ -1,5 +1,6 @@
-import { useEffect, useState } from "react";
+import { Fragment, useEffect, useState } from "react";
 import { motion } from "framer-motion";
+import { useNavigate } from "react-router-dom";
 import {
   PieChart, Pie, Cell, Tooltip, ResponsiveContainer,
   AreaChart, Area, XAxis, YAxis, CartesianGrid,
@@ -8,9 +9,11 @@ import PnLBadge from "../../components/data-display/PnLBadge";
 import { fmt } from "../../lib/formatters";
 import { api } from "../../lib/api";
 import { cn } from "../../lib/cn";
-import { RefreshCw, Loader2, ChevronDown, ChevronRight } from "lucide-react";
+import { RefreshCw, ChevronDown, ChevronRight, Briefcase, PieChart as PieChartIcon } from "lucide-react";
 import CandlestickChart from "../../components/charts/CandlestickChart";
 import PnLCalendar from "../../components/data-display/PnLCalendar";
+import Skeleton from "../../components/ui/Skeleton";
+import EmptyState from "../../components/ui/EmptyState";
 
 const PIE_COLORS = ["#2D7DD2", "#4A9AEF", "#00E676", "#FFB740", "#FF3D57", "#7C5CBF", "#4D6080"];
 
@@ -61,6 +64,7 @@ function StatCard({ label, value, sub, color }: {
 }
 
 export default function Portfolio() {
+  const navigate = useNavigate();
   const [positions, setPositions] = useState<Position[]>([]);
   const [allocation, setAllocation] = useState<{ ticker: string; market_value: number; pct: number }[]>([]);
   const [metrics, setMetrics] = useState<RiskMetrics | null>(null);
@@ -113,9 +117,32 @@ export default function Portfolio() {
   const equityMax = curve.length ? Math.max(...curve.map(p => p.equity)) * 1.002 : 101000;
 
   if (loading) {
+    // Layout-mirroring skeleton — KPIs, chart, allocation grid, table
     return (
-      <div className="flex items-center justify-center h-64">
-        <Loader2 size={24} className="animate-spin text-accent" />
+      <div className="space-y-6">
+        <div className="space-y-2">
+          <Skeleton className="h-6 w-36" />
+          <Skeleton className="h-3.5 w-64" />
+        </div>
+        <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
+          {[0, 1, 2, 3].map((i) => (
+            <div key={i} className="card p-4 space-y-2">
+              <Skeleton className="h-3 w-24" />
+              <Skeleton className="h-7 w-28" />
+              <Skeleton className="h-3 w-20" />
+            </div>
+          ))}
+        </div>
+        <div className="card p-5 space-y-4">
+          <Skeleton className="h-4 w-32" />
+          <Skeleton className="h-40 w-full" />
+        </div>
+        <div className="card p-4 space-y-3">
+          <Skeleton className="h-8 w-full" />
+          {[0, 1, 2].map((i) => (
+            <Skeleton key={i} className="h-10 w-full" />
+          ))}
+        </div>
       </div>
     );
   }
@@ -247,7 +274,11 @@ export default function Portfolio() {
               </div>
             </>
           ) : (
-            <p className="text-xs text-text-muted text-center py-8">No positions</p>
+            <EmptyState
+              icon={<PieChartIcon size={20} />}
+              title="No positions"
+              className="py-8"
+            />
           )}
         </div>
 
@@ -325,16 +356,18 @@ export default function Portfolio() {
             <table className="w-full text-sm">
               <thead>
                 <tr className="border-b border-border">
-                  {["Ticker", "Qty", "Entry", "Current", "Mkt Value", "Unrealized P&L", "Stop", "Target"].map(h => (
-                    <th key={h} className="metric-label text-left px-4 py-3 font-medium">{h}</th>
+                  {["Ticker", "Qty", "Entry", "Current", "Mkt Value", "Unrealized P&L", "Stop", "Target"].map((h, i) => (
+                    <th key={h} className={cn(
+                      "metric-label px-4 py-3 font-medium whitespace-nowrap",
+                      i >= 1 && i <= 5 ? "text-right" : "text-left",
+                    )}>{h}</th>
                   ))}
                 </tr>
               </thead>
               <tbody className="divide-y divide-border/50">
                 {positions.map(p => (
-                  <>
+                  <Fragment key={p.ticker}>
                     <tr
-                      key={p.ticker}
                       className="hover:bg-bg-elevated/50 transition-colors group cursor-pointer hover:bg-bg-elevated"
                       onClick={() => setExpandedTicker(prev => prev === p.ticker ? null : p.ticker)}
                     >
@@ -344,14 +377,14 @@ export default function Portfolio() {
                           : <ChevronRight size={14} className="inline mr-1 text-slate-500" />}
                         {p.ticker}
                       </td>
-                      <td className="px-4 py-3 font-mono text-text-secondary">{p.qty.toFixed(4)}</td>
-                      <td className="px-4 py-3 font-mono text-text-muted">{fmt.price(p.avg_entry_price)}</td>
-                      <td className="px-4 py-3 font-mono text-text-primary">{fmt.price(p.current_price)}</td>
-                      <td className="px-4 py-3 font-mono text-text-primary">{fmt.usd(p.market_value)}</td>
+                      <td className="px-4 py-3 price text-text-secondary text-right">{p.qty.toFixed(4)}</td>
+                      <td className="px-4 py-3 price text-text-muted text-right">{fmt.price(p.avg_entry_price)}</td>
+                      <td className="px-4 py-3 price text-text-primary text-right">{fmt.price(p.current_price)}</td>
+                      <td className="px-4 py-3 price text-text-primary text-right">{fmt.usd(p.market_value)}</td>
                       <td className="px-4 py-3">
-                        <div className="flex items-center gap-2">
+                        <div className="flex items-center justify-end gap-2">
                           <PnLBadge value={p.unrealized_pnl_pct} />
-                          <span className={cn("text-xs font-mono", p.unrealized_pnl >= 0 ? "text-gain" : "text-loss")}>
+                          <span className={cn("text-xs price", p.unrealized_pnl >= 0 ? "text-gain" : "text-loss")}>
                             {p.unrealized_pnl >= 0 ? "+" : ""}{fmt.usd(p.unrealized_pnl)}
                           </span>
                         </div>
@@ -360,7 +393,7 @@ export default function Portfolio() {
                       <td className="px-4 py-3 text-xs font-mono text-gain/70">—</td>
                     </tr>
                     {expandedTicker === p.ticker && (
-                      <tr key={`${p.ticker}-chart`}>
+                      <tr>
                         <td colSpan={8} className="p-0">
                           <div className="p-4 bg-bg-card border-t border-border">
                             <CandlestickChart ticker={p.ticker} period="3mo" height={260} showControls={true} />
@@ -368,16 +401,19 @@ export default function Portfolio() {
                         </td>
                       </tr>
                     )}
-                  </>
+                  </Fragment>
                 ))}
               </tbody>
             </table>
           </div>
         ) : (
-          <div className="px-5 py-10 text-center">
-            <p className="text-sm text-text-muted">No open positions</p>
-            <p className="text-xs text-text-muted mt-1">Run a market scan to auto-execute trades</p>
-          </div>
+          <EmptyState
+            icon={<Briefcase size={22} />}
+            title="No open positions"
+            description="Run a market scan — approved trades build the portfolio automatically."
+            action={{ label: "Go to Scanner", onClick: () => navigate("/scanner") }}
+            className="py-10"
+          />
         )}
       </div>
     </motion.div>

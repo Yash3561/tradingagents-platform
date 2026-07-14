@@ -1,7 +1,9 @@
 import { useState, useEffect } from "react";
 import { motion, AnimatePresence } from "framer-motion";
-import { ChevronRight, X, Loader2, RefreshCw, BookOpen, Download } from "lucide-react";
+import { ChevronRight, X, Loader2, RefreshCw, BookOpen, Download, History } from "lucide-react";
 import PnLBadge from "../../components/data-display/PnLBadge";
+import Skeleton from "../../components/ui/Skeleton";
+import EmptyState from "../../components/ui/EmptyState";
 import { fmt } from "../../lib/formatters";
 import { api } from "../../lib/api";
 import { cn } from "../../lib/cn";
@@ -239,21 +241,32 @@ export default function TradeHistory() {
       </div>
 
       {loading ? (
-        <div className="flex items-center justify-center h-48">
-          <Loader2 size={24} className="animate-spin text-accent" />
+        <div className="card p-4 space-y-3">
+          <Skeleton className="h-8 w-full" />
+          {Array.from({ length: 8 }).map((_, i) => (
+            <Skeleton key={i} className="h-10 w-full" />
+          ))}
         </div>
       ) : trades.length === 0 ? (
-        <div className="card p-10 text-center">
-          <p className="text-sm text-text-muted">No trades yet</p>
-          <p className="text-xs text-text-muted mt-1">Run a market scan to auto-execute approved trades</p>
+        <div className="card">
+          <EmptyState
+            icon={<History size={22} />}
+            title="No trades yet"
+            description="Run a market scan — approved trades execute automatically and land here with their full reasoning trail."
+            className="py-12"
+          />
         </div>
       ) : (
         <div className="card overflow-hidden">
+          <div className="overflow-x-auto max-h-[70vh] overflow-y-auto">
           <table className="w-full">
-            <thead className="border-b border-border">
+            <thead className="sticky top-0 z-10 bg-bg-card shadow-[0_1px_0_0_theme(colors.border.DEFAULT)]">
               <tr>
-                {["Ticker", "Side", "Qty", "Fill Price", "P&L", "Stop / Target", "Status", "Closed", "Time", ""].map(h => (
-                  <th key={h} className="metric-label text-left px-4 py-3 font-medium">{h}</th>
+                {(["Ticker", "Side", "Qty", "Fill Price", "P&L", "Stop / Target", "Status", "Closed", "Time", ""] as const).map((h, i) => (
+                  <th key={h || "actions"} className={cn(
+                    "metric-label px-4 py-3 font-medium whitespace-nowrap",
+                    [2, 3, 4].includes(i) ? "text-right" : "text-left",
+                  )}>{h}</th>
                 ))}
               </tr>
             </thead>
@@ -273,19 +286,19 @@ export default function TradeHistory() {
                         {trade.side}
                       </span>
                     </td>
-                    <td className="px-4 py-3 font-mono text-sm text-text-secondary">{trade.qty?.toFixed(4) ?? "—"}</td>
-                    <td className="px-4 py-3 font-mono text-sm text-text-primary">
+                    <td className="px-4 py-3 price text-sm text-text-secondary text-right">{trade.qty?.toFixed(4) ?? "—"}</td>
+                    <td className="px-4 py-3 price text-sm text-text-primary text-right">
                       {trade.filled_price ? fmt.price(trade.filled_price) : "—"}
                     </td>
                     <td className="px-4 py-3">
                       {trade.pnl != null ? (
-                        <div className="flex items-center gap-1.5">
+                        <div className="flex items-center justify-end gap-1.5">
                           {pnlPct != null && <PnLBadge value={pnlPct} />}
-                          <span className={cn("text-xs font-mono", trade.pnl >= 0 ? "text-gain" : "text-loss")}>
+                          <span className={cn("text-xs price", trade.pnl >= 0 ? "text-gain" : "text-loss")}>
                             {trade.pnl >= 0 ? "+" : ""}{fmt.usd(trade.pnl)}
                           </span>
                         </div>
-                      ) : <span className="text-xs text-text-muted">—</span>}
+                      ) : <span className="text-xs text-text-muted block text-right">—</span>}
                     </td>
                     <td className="px-4 py-3 text-xs font-mono">
                       {trade.stop_loss_pct ? (
@@ -336,6 +349,7 @@ export default function TradeHistory() {
               })}
             </tbody>
           </table>
+          </div>
         </div>
       )}
 
