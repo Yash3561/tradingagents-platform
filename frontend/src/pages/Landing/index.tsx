@@ -19,6 +19,8 @@ import {
 } from "lucide-react";
 import { api } from "../../lib/api";
 import { cn } from "../../lib/cn";
+import { EASE } from "../../lib/motion";
+import Skeleton from "../../components/ui/Skeleton";
 
 interface Props {
   onGetStarted: () => void;
@@ -230,7 +232,7 @@ function DebateTerminal() {
 function LiveStats() {
   const ref = useRef<HTMLDivElement>(null);
   const inView = useInView(ref, { once: true, margin: "-80px" });
-  const { data } = useQuery({
+  const { data, isLoading } = useQuery({
     queryKey: ["track-record"],
     queryFn: () => api.get("/track-record/").then((r) => r.data),
     staleTime: 5 * 60 * 1000,
@@ -241,6 +243,20 @@ function LiveStats() {
   const total = data ? Object.values(data.decisions as Record<string, number>).reduce((a, b) => a + b, 0) : 0;
   const discipline = useCountUp(total ? Math.round((holds / total) * 100) : 0, inView && !!data);
   const confidence = useCountUp(data?.avg_confidence ? Math.round(data.avg_confidence * 100) : 0, inView && !!data);
+
+  // Reserve the section's space while loading so the page doesn't jump.
+  if (isLoading) {
+    return (
+      <div ref={ref} className="grid grid-cols-1 gap-8 sm:grid-cols-3 sm:gap-6">
+        {[0, 1, 2].map((i) => (
+          <div key={i} className="flex flex-col items-center gap-3">
+            <Skeleton className="h-10 md:h-12 w-28" />
+            <Skeleton className="h-3 w-44" />
+          </div>
+        ))}
+      </div>
+    );
+  }
 
   // A fresh platform bragging about zeros undermines the pitch — show nothing
   // until there's a real number to stand behind.
@@ -257,7 +273,7 @@ function LiveStats() {
           key={i}
           initial={{ opacity: 0, y: 16 }}
           animate={inView ? { opacity: 1, y: 0 } : {}}
-          transition={{ delay: i * 0.12, duration: 0.5 }}
+          transition={{ delay: i * 0.12, duration: 0.5, ease: EASE }}
           className="text-center"
         >
           <p className="font-mono text-3xl md:text-5xl font-bold text-text-primary">
@@ -313,7 +329,7 @@ function Features() {
           initial={{ opacity: 0, y: 20 }}
           whileInView={{ opacity: 1, y: 0 }}
           viewport={{ once: true, margin: "-60px" }}
-          transition={{ delay: (i % 3) * 0.1, duration: 0.5 }}
+          transition={{ delay: (i % 3) * 0.1, duration: 0.5, ease: EASE }}
           className="card card-hover p-6"
         >
           <div className="w-9 h-9 rounded-lg bg-accent-muted/40 border border-accent/30 flex items-center justify-center mb-4">
@@ -377,12 +393,12 @@ export default function Landing({ onGetStarted, onSignIn }: Props) {
             <a href="/track-record" className="text-sm text-text-secondary hover:text-white transition-colors hidden sm:block">
               Track Record
             </a>
-            <button onClick={onSignIn} className="text-sm text-text-secondary hover:text-white transition-colors px-2">
+            <button onClick={onSignIn} className="text-sm text-text-secondary hover:text-white transition-colors px-2 whitespace-nowrap">
               Sign in
             </button>
             <button
               onClick={onGetStarted}
-              className="px-4 py-2 bg-accent hover:bg-accent-bright text-white text-sm font-medium rounded-lg transition-colors"
+              className="px-4 py-2 bg-accent hover:bg-accent-bright text-white text-sm font-medium rounded-lg transition-colors whitespace-nowrap"
             >
               Get started
             </button>
@@ -412,14 +428,14 @@ export default function Landing({ onGetStarted, onSignIn }: Props) {
           <motion.div
             initial={{ opacity: 0, y: 10 }}
             animate={{ opacity: 1, y: 0 }}
-            transition={{ duration: 0.5 }}
+            transition={{ duration: 0.5, ease: EASE }}
             className="inline-flex items-center gap-2 text-xs text-text-secondary border border-border rounded-full px-4 py-1.5 bg-bg-surface/80 mb-8"
           >
             <span className="w-1.5 h-1.5 rounded-full bg-gain animate-pulse-slow" />
             Paper trading · zero real money at risk · full AI audit trail
           </motion.div>
 
-          <h1 className="text-4xl md:text-6xl lg:text-7xl font-bold tracking-tight leading-[1.05]">
+          <h1 className="text-4xl md:text-6xl lg:text-7xl font-bold tracking-[-0.03em] leading-[1.04]">
             {["Seven AI agents.", "One disciplined trader."].map((line, li) => (
               <span key={li} className="block">
                 {line.split(" ").map((w, wi) => (
@@ -431,7 +447,7 @@ export default function Landing({ onGetStarted, onSignIn }: Props) {
                     )}
                     initial={{ opacity: 0, y: 24 }}
                     animate={{ opacity: 1, y: 0 }}
-                    transition={{ delay: 0.15 + (li * 2 + wi) * 0.08, duration: 0.6, ease: [0.16, 1, 0.3, 1] }}
+                    transition={{ delay: 0.15 + (li * 2 + wi) * 0.08, duration: 0.6, ease: EASE }}
                   >
                     {w}
                   </motion.span>
@@ -443,7 +459,7 @@ export default function Landing({ onGetStarted, onSignIn }: Props) {
           <motion.p
             initial={{ opacity: 0, y: 16 }}
             animate={{ opacity: 1, y: 0 }}
-            transition={{ delay: 0.7, duration: 0.6 }}
+            transition={{ delay: 0.7, duration: 0.6, ease: EASE }}
             className="mt-6 text-base md:text-lg text-text-secondary max-w-2xl mx-auto leading-relaxed"
           >
             TradingAgents runs every stock through four specialist analysts, a bull-vs-bear
@@ -454,7 +470,7 @@ export default function Landing({ onGetStarted, onSignIn }: Props) {
           <motion.div
             initial={{ opacity: 0, y: 16 }}
             animate={{ opacity: 1, y: 0 }}
-            transition={{ delay: 0.85, duration: 0.6 }}
+            transition={{ delay: 0.85, duration: 0.6, ease: EASE }}
             className="mt-8 flex items-center justify-center gap-3 flex-wrap"
           >
             <button
@@ -480,7 +496,7 @@ export default function Landing({ onGetStarted, onSignIn }: Props) {
           <motion.div
             initial={{ opacity: 0, y: 24 }}
             animate={{ opacity: 1, y: 0 }}
-            transition={{ delay: 1.0, duration: 0.7 }}
+            transition={{ delay: 1.0, duration: 0.7, ease: EASE }}
           >
             <PipelineAnimation />
           </motion.div>
@@ -494,7 +510,7 @@ export default function Landing({ onGetStarted, onSignIn }: Props) {
             initial={{ opacity: 0, x: -24 }}
             whileInView={{ opacity: 1, x: 0 }}
             viewport={{ once: true, margin: "-80px" }}
-            transition={{ duration: 0.6 }}
+            transition={{ duration: 0.6, ease: EASE }}
           >
             <h2 className="text-2xl md:text-4xl font-bold tracking-tight">
               The AI argues with itself
@@ -518,7 +534,7 @@ export default function Landing({ onGetStarted, onSignIn }: Props) {
             initial={{ opacity: 0, x: 24 }}
             whileInView={{ opacity: 1, x: 0 }}
             viewport={{ once: true, margin: "-80px" }}
-            transition={{ duration: 0.6 }}
+            transition={{ duration: 0.6, ease: EASE }}
           >
             <DebateTerminal />
           </motion.div>
@@ -541,7 +557,7 @@ export default function Landing({ onGetStarted, onSignIn }: Props) {
           initial={{ opacity: 0, y: 16 }}
           whileInView={{ opacity: 1, y: 0 }}
           viewport={{ once: true }}
-          transition={{ duration: 0.6 }}
+          transition={{ duration: 0.6, ease: EASE }}
           className="text-center mb-12"
         >
           <h2 className="text-2xl md:text-4xl font-bold tracking-tight">
@@ -564,7 +580,7 @@ export default function Landing({ onGetStarted, onSignIn }: Props) {
               initial={{ opacity: 0, y: 20 }}
               whileInView={{ opacity: 1, y: 0 }}
               viewport={{ once: true, margin: "-60px" }}
-              transition={{ delay: i * 0.12, duration: 0.5 }}
+              transition={{ delay: i * 0.12, duration: 0.5, ease: EASE }}
               className="card p-6"
             >
               <span className="block font-mono text-3xl font-bold text-accent/30 mb-3">{s.n}</span>
@@ -585,7 +601,7 @@ export default function Landing({ onGetStarted, onSignIn }: Props) {
             initial={{ opacity: 0, y: 20 }}
             whileInView={{ opacity: 1, y: 0 }}
             viewport={{ once: true }}
-            transition={{ duration: 0.6 }}
+            transition={{ duration: 0.6, ease: EASE }}
           >
             <ShieldCheck size={28} className="text-accent-bright mx-auto mb-5" />
             <h2 className="text-3xl md:text-5xl font-bold tracking-tight">
