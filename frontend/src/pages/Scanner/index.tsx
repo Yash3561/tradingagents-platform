@@ -5,6 +5,11 @@ import { useNavigate } from "react-router-dom";
 import { api, wsUrl } from "../../lib/api";
 import { cn } from "../../lib/cn";
 import { TermTooltip } from "../../components/ui/Tooltip";
+import EmptyState from "../../components/ui/EmptyState";
+import { DUR, EASE } from "../../lib/motion";
+
+// Per-candidate live status, derived from scan_progress WS events
+interface CandidateState { ticker: string; status: "running" | "completed" | "failed"; }
 
 interface ScreenedStock {
   ticker: string; score: number; direction: "BUY" | "SELL" | "NEUTRAL";
@@ -107,6 +112,7 @@ export default function Scanner() {
   const [scanSummary, setScanSummary] = useState<ScanSummary | null>(cache.scanSummary);
   const [progress, setProgress] = useState(cache.progress);
   const [activeTicker, setActiveTicker] = useState<string | null>(null);
+  const [candidates, setCandidates] = useState<CandidateState[]>([]);
   const [scanLog, setScanLog] = useState<string[]>(cache.scanLog);
   const [maxCandidates, setMaxCandidates] = useState(cache.maxCandidates);
   const [criteria, setCriteria] = useState<ScanCriteria>(DEFAULT_CRITERIA);
@@ -190,9 +196,15 @@ export default function Scanner() {
       saveCache({ progress: { current: msg.completed, total: msg.total }, scanId });
       if (msg.stage === "starting") {
         setActiveTicker(msg.ticker);
+        setCandidates(prev => prev.some(c => c.ticker === msg.ticker)
+          ? prev.map(c => c.ticker === msg.ticker ? { ...c, status: "running" as const } : c)
+          : [...prev, { ticker: msg.ticker, status: "running" as const }]);
         addLog(`[${msg.completed + 1}/${msg.total}] Running AI on ${msg.ticker}...`);
       } else if (msg.stage === "done") {
         setActiveTicker(null);
+        setCandidates(prev => prev.map(c => c.ticker === msg.ticker
+          ? { ...c, status: (msg.status === "completed" ? "completed" : "failed") as CandidateState["status"] }
+          : c));
         addLog(`  ✓ ${msg.ticker} — ${msg.status}`);
       }
     } else if (msg.type === "scan_completed") {
@@ -271,6 +283,7 @@ export default function Scanner() {
     setScanStatus("scanning");
     setScanSummary(null);
     setScanLog([]);
+    setCandidates([]);
     setProgress({ current: 0, total: maxCandidates });
     scanCompletedRef.current = false;
 
@@ -317,6 +330,7 @@ export default function Scanner() {
     setPrescreen([]);
     setScanSummary(null);
     setScanLog([]);
+    setCandidates([]);
     setProgress({ current: 0, total: 0 });
     setActiveTicker(null);
     clearScanCache();
@@ -521,6 +535,84 @@ export default function Scanner() {
       <div className="grid grid-cols-1 gap-4 lg:grid-cols-3">
         {/* Pre-screen results */}
         <div className="lg:col-span-2 space-y-4">
+          {/* Live scan pipeline — per-candidate status streamed over WS */}
+          <AnimatePresence>
+            {scanStatus === "scanning" && (
+              <motion.div
+                initial={{ opacity: 0, y: 8 }}
+                animate={{ opacity: 1, y: 0 }}
+                exit={{ opacity: 0, height: 0 }}
+                transition={{ duration: DUR.base, ease: EASE }}
+                className="card p-5 border-accent/30"
+              >
+                <div className="flex items-center justify-between mb-3">
+                  <div className="flex items-center gap-2">
+                    <Radar size={15} className="text-accent animate-pulse-slow" />
+                    <h3 className="text-sm font-semibold text-text-primary">AI Pipeline Running</h3>
+                  </div>
+                  <span className="text-xs font-mono text-accent">
+                    {progress.current}/{progress.total || maxCandidates} candidates
+                  </span>
+                </div>
+
+                {/* Overall progress */}
+                <div className="h-1.5 bg-bg-elevated rounded-full overflow-hidden mb-4">
+                  <motion.div
+                    animate={{ width: `${(progress.current / Math.max(1, progress.total || maxCandidates)) * 100}%` }}
+                    transition={{ duration: 0.4, ease: EASE }}
+                    className="h-full bg-accent rounded-full"
+                  />
+                </div>
+
+                {/* Candidate chips: done → check, running → pulse, rest queued */}
+                <div className="flex flex-wrap gap-2">
+                  {candidates.map((c) => (
+                    <motion.span
+                      key={c.ticker}
+                      initial={{ opacity: 0, scale: 0.9 }}
+                      animate={{ opacity: 1, scale: 1 }}
+                      transition={{ duration: DUR.fast, ease: EASE }}
+                      className={cn(
+                        "relative inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg border text-xs font-mono font-semibold",
+                        c.status === "running" && "border-accent bg-accent/10 text-accent shadow-accent-glow",
+                        c.status === "completed" && "border-gain/40 bg-gain/10 text-gain",
+                        c.status === "failed" && "border-loss/40 bg-loss/10 text-loss",
+                      )}
+                    >
+                      {c.status === "running" ? (
+                        <Loader2 size={11} className="animate-spin" />
+                      ) : c.status === "completed" ? (
+                        <CheckCircle2 size={11} />
+                      ) : (
+                        <XCircle size={11} />
+                      )}
+                      {c.ticker}
+                      {c.status === "running" && (
+                        <motion.span
+                          className="absolute inset-0 rounded-lg border border-accent"
+                          animate={{ opacity: [0.5, 0, 0.5] }}
+                          transition={{ duration: 1.4, repeat: Infinity }}
+                        />
+                      )}
+                    </motion.span>
+                  ))}
+                  {/* Queued placeholders for candidates that haven't started */}
+                  {Array.from({ length: Math.max(0, (progress.total || maxCandidates) - candidates.length) }).map((_, i) => (
+                    <span
+                      key={`queued-${i}`}
+                      className="inline-flex items-center px-2.5 py-1.5 rounded-lg border border-border bg-bg-elevated/40 text-xs font-mono text-text-muted/50"
+                    >
+                      ···
+                    </span>
+                  ))}
+                </div>
+                <p className="text-2xs text-text-muted mt-3">
+                  Each candidate runs the full 7-agent debate (~2 min each) — safe to navigate away, the scan continues server-side.
+                </p>
+              </motion.div>
+            )}
+          </AnimatePresence>
+
           {prescreen.length > 0 && (
             <div className="grid grid-cols-3 gap-3">
               <div className="card p-4">
@@ -675,13 +767,14 @@ export default function Scanner() {
               </div>
             </div>
           ) : scanStatus === "idle" ? (
-            <div className="card p-12 flex flex-col items-center justify-center text-center">
-              <Radar size={40} className="text-text-muted/30 mb-4" />
-              <p className="text-sm text-text-muted">No scan data yet.</p>
-              <p className="text-xs text-text-muted mt-1">
-                Click <strong className="text-text-secondary">Quick Screen</strong> to see technical signals,
-                or <strong className="text-text-secondary">Full Scan + Trade</strong> to run AI and auto-place trades.
-              </p>
+            <div className="card">
+              <EmptyState
+                icon={<Radar size={22} />}
+                title="No scan data yet"
+                description="Quick Screen scores 40+ stocks with technicals for free; Full Scan + Trade runs the AI pipeline on top candidates and auto-places approved trades."
+                action={{ label: "Run Quick Screen", onClick: handlePrescreen }}
+                className="py-12"
+              />
             </div>
           ) : null}
         </div>
