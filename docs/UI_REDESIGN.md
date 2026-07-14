@@ -1,5 +1,10 @@
 # UI Redesign Brief — TradingAgents Platform
 
+> **STATUS: EXECUTED 2026-07-14** — all phases shipped and deployed (see the
+> UI REDESIGN section in CLAUDE.md for the commit-by-commit summary and the
+> conventions new pages must follow: motion.ts tokens, Skeleton, EmptyState,
+> no bare-spinner pages). This file stays as the design mandate of record.
+
 > The working brief for the full visual overhaul. Read CLAUDE.md first for
 > platform context; this file is the design mandate. Kick off a session with:
 > "Read docs/UI_REDESIGN.md and execute the redesign, phase by phase."
