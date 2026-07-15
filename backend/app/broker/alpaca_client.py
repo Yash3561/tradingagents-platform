@@ -150,12 +150,18 @@ class AlpacaClient:
         stop_loss_pct: float,
         take_profit_pct: float,
         current_price: float,
+        time_in_force: str = "gtc",
     ) -> dict:
         """
         Place a market BUY with attached stop-loss and take-profit orders.
         Alpaca bracket orders: type=market, order_class=bracket,
         stop_loss.stop_price and take_profit.limit_price attached.
         Returns the main order dict.
+
+        time_in_force: "gtc" for swing entries — day-TIF legs EXPIRE at the
+        close and leave overnight positions unprotected at the broker (this
+        bit us on 2026-07-13/14). The intraday engine passes "day" because
+        its positions are force-flat by 15:55 ET anyway.
         """
         stop_price = round(current_price * (1 - stop_loss_pct / 100), 2)
         take_price = round(current_price * (1 + take_profit_pct / 100), 2)
@@ -165,7 +171,7 @@ class AlpacaClient:
             "qty": str(int(qty)),
             "side": "buy",
             "type": "market",
-            "time_in_force": "day",
+            "time_in_force": time_in_force,
             "order_class": "bracket",
             "stop_loss": {"stop_price": str(stop_price)},
             "take_profit": {"limit_price": str(take_price)},

@@ -396,7 +396,19 @@ async def run_market_scan(
     debate_rounds_setting = int(await _get_setting("debate_rounds", 2))
 
     # Strategy engine: "agents" = LLM pipeline, "quant" = deterministic baseline
-    use_quant = str(await _get_setting("strategy_mode", "agents")) == "quant"
+    strategy_mode = str(await _get_setting("strategy_mode", "agents"))
+    if strategy_mode == "intraday":
+        # The intraday engine trades continuously during RTH on its own loop —
+        # scheduled daily swing scans don't apply to this account.
+        log.info("scanner.skipped_intraday_mode", user_id=user_id)
+        return {
+            "status": "skipped_intraday_mode",
+            "screened": 0,
+            "candidates": 0,
+            "trades_placed": 0,
+            "duration_s": 0,
+        }
+    use_quant = strategy_mode == "quant"
     if use_quant:
         model = QUANT_MODEL_LABEL
         debate_rounds_setting = 0

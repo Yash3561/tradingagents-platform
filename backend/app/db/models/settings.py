@@ -34,8 +34,24 @@ DEFAULTS: dict = {
     "long_only": True,
     "min_confidence_to_trade": 0.48,
     "earnings_blackout_days": 5,
-    # "agents" = LLM pipeline, "quant" = deterministic baseline (no LLM cost)
+    # "agents" = LLM pipeline, "quant" = deterministic baseline (no LLM cost),
+    # "intraday" = 5-minute rule engine, flat by the close (no LLM cost)
     "strategy_mode": "agents",
+    # Intraday policy profile — deploy walk-forward tournament winners here
+    # (defaults mirror INTRADAY_PARAM_DEFAULTS in workers/intraday_engine.py)
+    "intraday_setup": "mom",
+    "intraday_or_minutes": 30,
+    "intraday_vol_ratio_min": 1.0,
+    "intraday_above_vwap": True,
+    "intraday_dev_entry_atr": 1.5,
+    "intraday_rsi_max": 100.0,
+    "intraday_stop_atr_mult": 1.5,
+    "intraday_rr": 2.0,
+    "intraday_max_hold_bars": 0,
+    "intraday_risk_pct": 0.5,
+    "intraday_max_trades_day": 6,
+    "intraday_max_concurrent": 3,
+    "intraday_daily_loss_halt_pct": 0.5,
     # Quant policy profile — deploy walk-forward tournament winners here
     # (defaults mirror QUANT_PARAM_DEFAULTS in agents/quant_baseline.py)
     "quant_trend_rsi_min": 45.0,

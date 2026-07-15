@@ -53,13 +53,15 @@ async def lifespan(app: FastAPI):
     from app.workers.overnight_agent import run_overnight_agent
     from app.workers.circuit_breakers import check_circuit_breakers  # noqa: F401 — warm import
     from app.workers.price_feed import run_price_feed
+    from app.workers.intraday_engine import run_intraday_engine
 
     tasks = [
         asyncio.create_task(run_position_monitor()),
         asyncio.create_task(run_scheduler()),
         asyncio.create_task(run_overnight_agent()),
+        asyncio.create_task(run_intraday_engine()),
     ]
-    workers = ["position_monitor", "scheduler", "overnight_agent"]
+    workers = ["position_monitor", "scheduler", "overnight_agent", "intraday_engine"]
 
     if settings.price_feed_enabled:
         tasks.append(asyncio.create_task(run_price_feed()))

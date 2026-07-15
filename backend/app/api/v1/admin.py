@@ -223,6 +223,9 @@ STRATEGY_KEYS = [
     "quant_trend_rsi_min", "quant_trend_rsi_max", "quant_require_macd",
     "quant_meanrev_rsi_max", "quant_exit_rsi", "quant_stop_atr_mult",
     "quant_rr_ratio", "quant_regime_gate",
+    "intraday_setup", "intraday_stop_atr_mult", "intraday_rr",
+    "intraday_risk_pct", "intraday_max_trades_day", "intraday_max_concurrent",
+    "intraday_daily_loss_halt_pct",
 ]
 
 

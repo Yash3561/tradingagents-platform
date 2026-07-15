@@ -1,7 +1,7 @@
 # TradingAgents Platform — Session Checkpoint
 
 > Rally race co-driver notes. Read this before touching anything.
-> Last updated: 2026-07-12 (quant baseline engine, MACD fix, security hardening ×2, refresh-token auth, research engine + first tournament)
+> Last updated: 2026-07-14 night (intraday round 1: NO $200/day edge in family; intraday engine shipped as third arm; bracket TIF day→gtc fix)
 
 ---
 
@@ -19,9 +19,14 @@ Live trading is a deliberate future product/legal decision — do not soften thi
 
 **Live in production**: Vercel (frontend) + Render free (backend, `RUN_ALL_WORKERS=true`) + Neon + Upstash. Invite-gated signup. Admin = ygc2@njit.edu. Security-hardened (see Security Hardening) with 30-min JWTs + rotating refresh tokens, enforced CSP, per-user LLM quotas.
 
-**Two strategy engines** selectable per user via `strategy_mode` setting:
+**Three strategy engines** selectable per user via `strategy_mode` setting:
 - `agents` — the 7-agent LLM debate pipeline (`structured_runner.py`)
 - `quant` — deterministic regime-filtered rules, zero LLM cost (`quant_baseline.py`). The control group: if agents can't beat it, the product story is explainability, not alpha.
+- `intraday` — 5-minute-bar rule engine (`workers/intraday_engine.py`), zero LLM. Runs its own RTH loop (10s poll / 5m signal scan, started in main.py lifespan), imports signal code from `research/intraday.py` (no live/backtest drift), day-TIF brackets + time exit + 15:55 ET force-flat + daily loss halt (settings `intraday_*`, all NUMERIC_BOUNDS-clamped). Scheduled daily scans SKIP intraday-mode users (scanner returns `skipped_intraday_mode`). Only touches positions it opened (reasoning_json.engine="intraday-rules") — safe on accounts that also hold swing positions. AgentRun rows tagged llm_model="intraday-rules".
+
+**⚠ Intraday round 1 (2026-07-14, `docs/research/intraday-walkforward-2026-07-14.md`): NO robust $200/day edge.** 378 policies, 60d of 5m bars (yfinance — only window available; local .env Alpaca keys stale/401). Top test performer +$106/day went **−$133/day on the burned one-shot holdout**; negative overfit gaps everywhere = period luck. Engine defaults = most-robust-looking profile (mom20 stop1.5atr rr2 holdEOD) at 0.5% risk + 0.5% daily halt — a forward experiment, NOT an income claim. Real unlock: fresh Alpaca keys → years of minute bars → rerun tournament.
+
+**Bracket TIF fix (2026-07-14)**: `submit_bracket_order` now defaults **gtc** — day-TIF legs expired at the entry day's close and left overnight swing positions naked at the broker (bit both arms 7/13–7/14; position_monitor 60s loop was the only protection). Intraday engine passes `time_in_force="day"` explicitly (correct there). Positions opened BEFORE this fix still have no broker-side stops until re-entered.
 
 **The research → deploy → race loop** (the current operating model):
 1. **Research**: walk-forward policy tournament over the deterministic rule family (`app/research/`, Admin page → Research, or `docker exec tap_backend python -m app.research.run`). Time-ordered train/test folds, one-shot holdout, leaderboard by out-of-sample Sharpe. Reports land in `docs/research/`.

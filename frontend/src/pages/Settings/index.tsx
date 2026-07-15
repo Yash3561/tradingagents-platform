@@ -108,6 +108,13 @@ const DEFAULTS = {
   quant_stop_atr_mult: 2,
   quant_rr_ratio: 2,
   quant_regime_gate: true,
+  // Intraday policy profile (drives the intraday engine only)
+  intraday_setup: "mom",
+  intraday_stop_atr_mult: 1.5,
+  intraday_rr: 2,
+  intraday_risk_pct: 0.5,
+  intraday_max_trades_day: 6,
+  intraday_daily_loss_halt_pct: 0.5,
   // AI Model
   llm_model: "deepseek-ai/deepseek-v4-flash",
   debate_rounds: 2,
@@ -593,7 +600,7 @@ export default function Settings() {
       <Section title="AI Model">
         <Field
           label="Strategy Engine"
-          description="AI Agents = full LLM debate pipeline. Quant Baseline = deterministic regime-filtered trend + mean-reversion rules (no AI credits) — the control group the agents must beat."
+          description="AI Agents = full LLM debate pipeline. Quant Baseline = deterministic regime-filtered trend + mean-reversion rules (no AI credits) — the control group the agents must beat. Intraday Rules = 5-minute-bar engine that trades during market hours and is always flat by the close (no AI credits)."
         >
           <select
             value={settings.strategy_mode}
@@ -603,6 +610,7 @@ export default function Settings() {
           >
             <option value="agents">AI Agents (LLM pipeline)</option>
             <option value="quant">Quant Baseline (rules only, free)</option>
+            <option value="intraday">Intraday Rules (5m bars, flat by close)</option>
           </select>
         </Field>
 
@@ -717,6 +725,68 @@ export default function Settings() {
             onChange={v => update("quant_regime_gate", v)}
           />
         </Field>
+      </Section>
+
+      {/* ── Intraday Policy Profile ──────────────────────────────────────────── */}
+      <Section title="Intraday Policy Profile">
+        <p className="text-xs text-text-muted -mt-1">
+          Parameters for the intraday rules engine (only used when Strategy Engine is
+          Intraday Rules). Trades 5-minute bars during market hours, always flat by the
+          close. Round-1 research found no robust high-return edge — treat this arm as a
+          forward experiment and keep risk small.
+        </p>
+        <Field label="Setup" description="Which entry rule the engine trades">
+          <select
+            value={settings.intraday_setup}
+            onChange={e => update("intraday_setup", e.target.value)}
+            className="px-3 py-1.5 bg-bg-elevated border border-border rounded-lg text-sm text-text-primary
+                       focus:outline-none focus:border-accent transition-colors"
+          >
+            <option value="mom">Momentum (20-bar high break)</option>
+            <option value="orb">Opening Range Breakout</option>
+            <option value="vwaprev">VWAP Mean Reversion</option>
+          </select>
+        </Field>
+        <SliderField
+          label="Stop Distance (×ATR)"
+          description="Stop below entry, in 5-minute ATRs"
+          value={settings.intraday_stop_atr_mult}
+          min={0.5} max={4} step={0.5}
+          format={v => `${v}× ATR(5m)`}
+          onChange={v => update("intraday_stop_atr_mult", v)}
+        />
+        <SliderField
+          label="Reward : Risk Ratio"
+          description="Take-profit distance as a multiple of the stop"
+          value={settings.intraday_rr}
+          min={1} max={5} step={0.5}
+          format={v => `${v} : 1`}
+          onChange={v => update("intraday_rr", v)}
+        />
+        <SliderField
+          label="Risk Per Trade"
+          description="Percent of equity risked if the stop is hit"
+          value={settings.intraday_risk_pct}
+          min={0.1} max={2} step={0.1}
+          format={v => `${v}%`}
+          onChange={v => update("intraday_risk_pct", v)}
+        />
+        <SliderField
+          label="Max Trades Per Day"
+          description="Hard cap on entries per session"
+          value={settings.intraday_max_trades_day}
+          min={1} max={12} step={1}
+          format={v => `${v} trades`}
+          onChange={v => update("intraday_max_trades_day", v)}
+        />
+        <SliderField
+          label="Daily Loss Halt"
+          description="Flatten everything and stand down for the day at this loss"
+          value={settings.intraday_daily_loss_halt_pct}
+          min={0.1} max={3} step={0.1}
+          format={v => `−${v}% equity`}
+          onChange={v => update("intraday_daily_loss_halt_pct", v)}
+        />
       </Section>
 
       {/* ── Scanner ─────────────────────────────────────────────────────────── */}

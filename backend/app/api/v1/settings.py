@@ -49,10 +49,24 @@ NUMERIC_BOUNDS: dict[str, tuple[float, float, bool]] = {
     "quant_exit_rsi": (60.0, 95.0, False),
     "quant_stop_atr_mult": (1.0, 4.0, False),
     "quant_rr_ratio": (1.0, 5.0, False),
+    # Intraday policy profile — risk caps are deliberately tight: this engine
+    # trades many times a day, so per-trade risk compounds fast
+    "intraday_or_minutes": (15, 30, True),
+    "intraday_vol_ratio_min": (0.5, 3.0, False),
+    "intraday_dev_entry_atr": (0.5, 4.0, False),
+    "intraday_rsi_max": (10.0, 100.0, False),
+    "intraday_stop_atr_mult": (0.5, 4.0, False),
+    "intraday_rr": (1.0, 5.0, False),
+    "intraday_max_hold_bars": (0, 78, True),
+    "intraday_risk_pct": (0.1, 2.0, False),
+    "intraday_max_trades_day": (1, 12, True),
+    "intraday_max_concurrent": (1, 5, True),
+    "intraday_daily_loss_halt_pct": (0.1, 3.0, False),
 }
 
 ENUM_VALUES: dict[str, set[str]] = {
-    "strategy_mode": {"agents", "quant"},
+    "strategy_mode": {"agents", "quant", "intraday"},
+    "intraday_setup": {"orb", "vwaprev", "mom"},
     "llm_model": ALLOWED_LLM_MODELS,
 }
 
