@@ -1,0 +1,2152 @@
+{
+  "generated_at": "2026-07-16T07:13:39.192800+00:00",
+  "target_dollars_per_day": 200.0,
+  "equity": 100000.0,
+  "slippage_bps_per_side": 3.0,
+  "universe": [
+    "AAPL",
+    "ADBE",
+    "AMD",
+    "AMZN",
+    "AVGO",
+    "BAC",
+    "CAT",
+    "COST",
+    "CRM",
+    "CVX",
+    "DIS",
+    "GE",
+    "GOOGL",
+    "HD",
+    "INTC",
+    "JPM",
+    "META",
+    "MSFT",
+    "MU",
+    "NFLX",
+    "NVDA",
+    "ORCL",
+    "QCOM",
+    "QQQ",
+    "SPY",
+    "TSLA",
+    "TXN",
+    "UNH",
+    "WMT",
+    "XOM"
+  ],
+  "sessions": 501,
+  "n_policies": 1134,
+  "n_qualified": 1134,
+  "data_source": "alpaca_5m_deep",
+  "caveats": [
+    "2y of Alpaca 5m bars",
+    "survivorship-biased universe",
+    "long-only; paper-grade fills; absolute $ optimistic"
+  ],
+  "leaderboard": [
+    {
+      "label": "orb30 vol>=1.0 vwap+ stop2.5atr rr2.0 hold<=36 risk1.0% x3 first90",
+      "policy": {
+        "setup": "orb",
+        "or_minutes": 30,
+        "vol_ratio_min": 1.0,
+        "above_vwap": true,
+        "dev_entry_atr": 2.0,
+        "rsi_max": 100.0,
+        "stop_atr_mult": 2.5,
+        "rr": 2.0,
+        "max_hold_bars": 36,
+        "risk_pct": 1.0,
+        "max_trades_day": 6,
+        "max_concurrent": 3,
+        "entry_window": "first90"
+      },
+      "test_mean_day": 98.17,
+      "train_mean_day": -43.35,
+      "overfit_gap": -141.53,
+      "all_folds_positive": false,
+      "test_sharpe": 3.12,
+      "test_win_days": 0.5,
+      "test_p_target": 0.392,
+      "trades_per_day": 2.89,
+      "folds": [
+        {
+          "mean_day": 151.06,
+          "sharpe": 6.76,
+          "win_days": 0.65,
+          "p_target": 0.45,
+          "max_dd": -1089.61,
+          "trades_per_day": 2.9,
+          "days": 20
+        },
+        {
+          "mean_day": 23.9,
+          "sharpe": 0.91,
+          "win_days": 0.3,
+          "p_target": 0.2,
+          "max_dd": -1478.98,
+          "trades_per_day": 2.8,
+          "days": 20
+        },
+        {
+          "mean_day": 109.69,
+          "sharpe": 3.65,
+          "win_days": 0.6,
+          "p_target": 0.45,
+          "max_dd": -907.19,
+          "trades_per_day": 2.8,
+          "days": 20
+        },
+        {
+          "mean_day": -21.98,
+          "sharpe": -0.54,
+          "win_days": 0.5,
+          "p_target": 0.4,
+          "max_dd": -2042.31,
+          "trades_per_day": 2.8,
+          "days": 20
+        },
+        {
+          "mean_day": 234.32,
+          "sharpe": 5.9,
+          "win_days": 0.45,
+          "p_target": 0.45,
+          "max_dd": -1266.11,
+          "trades_per_day": 2.9,
+          "days": 20
+        },
+        {
+          "mean_day": 92.05,
+          "sharpe": 2.07,
+          "win_days": 0.5,
+          "p_target": 0.4,
+          "max_dd": -2910.42,
+          "trades_per_day": 3.15,
+          "days": 20
+        }
+      ]
+    },
+    {
+      "label": "orb30 vol>=1.0 vwap+ stop2.5atr rr3.0 hold<=36 risk1.0% x3 first90",
+      "policy": {
+        "setup": "orb",
+        "or_minutes": 30,
+        "vol_ratio_min": 1.0,
+        "above_vwap": true,
+        "dev_entry_atr": 2.0,
+        "rsi_max": 100.0,
+        "stop_atr_mult": 2.5,
+        "rr": 3.0,
+        "max_hold_bars": 36,
+        "risk_pct": 1.0,
+        "max_trades_day": 6,
+        "max_concurrent": 3,
+        "entry_window": "first90"
+      },
+      "test_mean_day": 96.43,
+      "train_mean_day": -56.04,
+      "overfit_gap": -152.47,
+      "all_folds_positive": false,
+      "test_sharpe": 2.77,
+      "test_win_days": 0.492,
+      "test_p_target": 0.375,
+      "trades_per_day": 2.84,
+      "folds": [
+        {
+          "mean_day": 130.07,
+          "sharpe": 5.54,
+          "win_days": 0.6,
+          "p_target": 0.4,
+          "max_dd": -1089.61,
+          "trades_per_day": 2.85,
+          "days": 20
+        },
+        {
+          "mean_day": 3.11,
+          "sharpe": 0.13,
+          "win_days": 0.3,
+          "p_target": 0.2,
+          "max_dd": -1478.98,
+          "trades_per_day": 2.8,
+          "days": 20
+        },
+        {
+          "mean_day": 91.12,
+          "sharpe": 2.96,
+          "win_days": 0.6,
+          "p_target": 0.45,
+          "max_dd": -907.19,
+          "trades_per_day": 2.75,
+          "days": 20
+        },
+        {
+          "mean_day": -27.96,
+          "sharpe": -0.69,
+          "win_days": 0.5,
+          "p_target": 0.35,
+          "max_dd": -2042.31,
+          "trades_per_day": 2.8,
+          "days": 20
+        },
+        {
+          "mean_day": 223.95,
+          "sharpe": 5.57,
+          "win_days": 0.45,
+          "p_target": 0.4,
+          "max_dd": -1266.11,
+          "trades_per_day": 2.85,
+          "days": 20
+        },
+        {
+          "mean_day": 158.27,
+          "sharpe": 3.13,
+          "win_days": 0.5,
+          "p_target": 0.45,
+          "max_dd": -2910.42,
+          "trades_per_day": 3.0,
+          "days": 20
+        }
+      ]
+    },
+    {
+      "label": "orb30 vol>=1.0 vwap+ stop2.5atr rr1.5 hold<=36 risk1.0% x3 first90",
+      "policy": {
+        "setup": "orb",
+        "or_minutes": 30,
+        "vol_ratio_min": 1.0,
+        "above_vwap": true,
+        "dev_entry_atr": 2.0,
+        "rsi_max": 100.0,
+        "stop_atr_mult": 2.5,
+        "rr": 1.5,
+        "max_hold_bars": 36,
+        "risk_pct": 1.0,
+        "max_trades_day": 6,
+        "max_concurrent": 3,
+        "entry_window": "first90"
+      },
+      "test_mean_day": 96.04,
+      "train_mean_day": -47.83,
+      "overfit_gap": -143.87,
+      "all_folds_positive": false,
+      "test_sharpe": 3.24,
+      "test_win_days": 0.508,
+      "test_p_target": 0.408,
+      "trades_per_day": 2.95,
+      "folds": [
+        {
+          "mean_day": 124.61,
+          "sharpe": 6.47,
+          "win_days": 0.65,
+          "p_target": 0.45,
+          "max_dd": -949.8,
+          "trades_per_day": 2.9,
+          "days": 20
+        },
+        {
+          "mean_day": 53.91,
+          "sharpe": 2.22,
+          "win_days": 0.35,
+          "p_target": 0.3,
+          "max_dd": -1412.27,
+          "trades_per_day": 2.95,
+          "days": 20
+        },
+        {
+          "mean_day": 100.91,
+          "sharpe": 3.35,
+          "win_days": 0.6,
+          "p_target": 0.45,
+          "max_dd": -877.86,
+          "trades_per_day": 2.85,
+          "days": 20
+        },
+        {
+          "mean_day": -2.64,
+          "sharpe": -0.06,
+          "win_days": 0.5,
+          "p_target": 0.4,
+          "max_dd": -1989.67,
+          "trades_per_day": 2.8,
+          "days": 20
+        },
+        {
+          "mean_day": 179.66,
+          "sharpe": 4.9,
+          "win_days": 0.45,
+          "p_target": 0.4,
+          "max_dd": -1266.11,
+          "trades_per_day": 2.9,
+          "days": 20
+        },
+        {
+          "mean_day": 119.8,
+          "sharpe": 2.56,
+          "win_days": 0.5,
+          "p_target": 0.45,
+          "max_dd": -2910.42,
+          "trades_per_day": 3.3,
+          "days": 20
+        }
+      ]
+    },
+    {
+      "label": "orb15 vol>=1.5 vwap+ stop2.5atr rr2.0 hold<=36 risk1.0% x3 first90",
+      "policy": {
+        "setup": "orb",
+        "or_minutes": 15,
+        "vol_ratio_min": 1.5,
+        "above_vwap": true,
+        "dev_entry_atr": 2.0,
+        "rsi_max": 100.0,
+        "stop_atr_mult": 2.5,
+        "rr": 2.0,
+        "max_hold_bars": 36,
+        "risk_pct": 1.0,
+        "max_trades_day": 6,
+        "max_concurrent": 3,
+        "entry_window": "first90"
+      },
+      "test_mean_day": 81.35,
+      "train_mean_day": -27.91,
+      "overfit_gap": -109.26,
+      "all_folds_positive": false,
+      "test_sharpe": 1.69,
+      "test_win_days": 0.458,
+      "test_p_target": 0.35,
+      "trades_per_day": 2.81,
+      "folds": [
+        {
+          "mean_day": 25.94,
+          "sharpe": 0.97,
+          "win_days": 0.4,
+          "p_target": 0.3,
+          "max_dd": -1295.79,
+          "trades_per_day": 2.6,
+          "days": 20
+        },
+        {
+          "mean_day": 105.07,
+          "sharpe": 4.16,
+          "win_days": 0.5,
+          "p_target": 0.35,
+          "max_dd": -1184.54,
+          "trades_per_day": 2.8,
+          "days": 20
+        },
+        {
+          "mean_day": -175.5,
+          "sharpe": -5.61,
+          "win_days": 0.4,
+          "p_target": 0.25,
+          "max_dd": -5744.98,
+          "trades_per_day": 2.95,
+          "days": 20
+        },
+        {
+          "mean_day": -71.04,
+          "sharpe": -2.38,
+          "win_days": 0.35,
+          "p_target": 0.2,
+          "max_dd": -2724.1,
+          "trades_per_day": 2.35,
+          "days": 20
+        },
+        {
+          "mean_day": 235.45,
+          "sharpe": 4.89,
+          "win_days": 0.5,
+          "p_target": 0.45,
+          "max_dd": -1641.59,
+          "trades_per_day": 2.75,
+          "days": 20
+        },
+        {
+          "mean_day": 368.17,
+          "sharpe": 8.1,
+          "win_days": 0.6,
+          "p_target": 0.55,
+          "max_dd": -683.27,
+          "trades_per_day": 3.4,
+          "days": 20
+        }
+      ]
+    },
+    {
+      "label": "orb30 vol>=1.0 vwap+ stop2.5atr rr3.0 holdEOD risk1.0% x3 first90",
+      "policy": {
+        "setup": "orb",
+        "or_minutes": 30,
+        "vol_ratio_min": 1.0,
+        "above_vwap": true,
+        "dev_entry_atr": 2.0,
+        "rsi_max": 100.0,
+        "stop_atr_mult": 2.5,
+        "rr": 3.0,
+        "max_hold_bars": null,
+        "risk_pct": 1.0,
+        "max_trades_day": 6,
+        "max_concurrent": 3,
+        "entry_window": "first90"
+      },
+      "test_mean_day": 73.06,
+      "train_mean_day": -81.14,
+      "overfit_gap": -154.2,
+      "all_folds_positive": false,
+      "test_sharpe": 2.09,
+      "test_win_days": 0.467,
+      "test_p_target": 0.383,
+      "trades_per_day": 2.84,
+      "folds": [
+        {
+          "mean_day": 216.73,
+          "sharpe": 7.69,
+          "win_days": 0.7,
+          "p_target": 0.55,
+          "max_dd": -971.76,
+          "trades_per_day": 2.85,
+          "days": 20
+        },
+        {
+          "mean_day": -36.99,
+          "sharpe": -0.91,
+          "win_days": 0.25,
+          "p_target": 0.25,
+          "max_dd": -2946.14,
+          "trades_per_day": 2.8,
+          "days": 20
+        },
+        {
+          "mean_day": 28.35,
+          "sharpe": 0.82,
+          "win_days": 0.55,
+          "p_target": 0.4,
+          "max_dd": -1686.37,
+          "trades_per_day": 2.75,
+          "days": 20
+        },
+        {
+          "mean_day": -126.1,
+          "sharpe": -2.21,
+          "win_days": 0.4,
+          "p_target": 0.3,
+          "max_dd": -4268.89,
+          "trades_per_day": 2.8,
+          "days": 20
+        },
+        {
+          "mean_day": 307.12,
+          "sharpe": 6.19,
+          "win_days": 0.5,
+          "p_target": 0.4,
+          "max_dd": -1897.73,
+          "trades_per_day": 2.85,
+          "days": 20
+        },
+        {
+          "mean_day": 49.28,
+          "sharpe": 0.96,
+          "win_days": 0.4,
+          "p_target": 0.4,
+          "max_dd": -3494.84,
+          "trades_per_day": 3.0,
+          "days": 20
+        }
+      ]
+    },
+    {
+      "label": "orb30 vol>=1.0 vwap+ stop2.5atr rr1.5 holdEOD risk1.0% x3 first90",
+      "policy": {
+        "setup": "orb",
+        "or_minutes": 30,
+        "vol_ratio_min": 1.0,
+        "above_vwap": true,
+        "dev_entry_atr": 2.0,
+        "rsi_max": 100.0,
+        "stop_atr_mult": 2.5,
+        "rr": 1.5,
+        "max_hold_bars": null,
+        "risk_pct": 1.0,
+        "max_trades_day": 6,
+        "max_concurrent": 3,
+        "entry_window": "first90"
+      },
+      "test_mean_day": 72.81,
+      "train_mean_day": -69.72,
+      "overfit_gap": -142.52,
+      "all_folds_positive": false,
+      "test_sharpe": 2.44,
+      "test_win_days": 0.483,
+      "test_p_target": 0.417,
+      "trades_per_day": 2.95,
+      "folds": [
+        {
+          "mean_day": 260.82,
+          "sharpe": 9.83,
+          "win_days": 0.75,
+          "p_target": 0.6,
+          "max_dd": -822.83,
+          "trades_per_day": 2.9,
+          "days": 20
+        },
+        {
+          "mean_day": -12.31,
+          "sharpe": -0.3,
+          "win_days": 0.25,
+          "p_target": 0.25,
+          "max_dd": -2802.06,
+          "trades_per_day": 2.95,
+          "days": 20
+        },
+        {
+          "mean_day": 44.98,
+          "sharpe": 1.37,
+          "win_days": 0.55,
+          "p_target": 0.45,
+          "max_dd": -1255.68,
+          "trades_per_day": 2.85,
+          "days": 20
+        },
+        {
+          "mean_day": -139.79,
+          "sharpe": -2.7,
+          "win_days": 0.45,
+          "p_target": 0.4,
+          "max_dd": -4337.86,
+          "trades_per_day": 2.8,
+          "days": 20
+        },
+        {
+          "mean_day": 233.2,
+          "sharpe": 5.46,
+          "win_days": 0.5,
+          "p_target": 0.4,
+          "max_dd": -1616.64,
+          "trades_per_day": 2.9,
+          "days": 20
+        },
+        {
+          "mean_day": 49.94,
+          "sharpe": 1.01,
+          "win_days": 0.4,
+          "p_target": 0.4,
+          "max_dd": -2819.5,
+          "trades_per_day": 3.3,
+          "days": 20
+        }
+      ]
+    },
+    {
+      "label": "orb30 vol>=1.0 vwap+ stop2.5atr rr2.0 holdEOD risk1.0% x3 first90",
+      "policy": {
+        "setup": "orb",
+        "or_minutes": 30,
+        "vol_ratio_min": 1.0,
+        "above_vwap": true,
+        "dev_entry_atr": 2.0,
+        "rsi_max": 100.0,
+        "stop_atr_mult": 2.5,
+        "rr": 2.0,
+        "max_hold_bars": null,
+        "risk_pct": 1.0,
+        "max_trades_day": 6,
+        "max_concurrent": 3,
+        "entry_window": "first90"
+      },
+      "test_mean_day": 72.52,
+      "train_mean_day": -69.94,
+      "overfit_gap": -142.46,
+      "all_folds_positive": false,
+      "test_sharpe": 2.16,
+      "test_win_days": 0.483,
+      "test_p_target": 0.392,
+      "trades_per_day": 2.89,
+      "folds": [
+        {
+          "mean_day": 210.67,
+          "sharpe": 7.69,
+          "win_days": 0.7,
+          "p_target": 0.55,
+          "max_dd": -971.76,
+          "trades_per_day": 2.9,
+          "days": 20
+        },
+        {
+          "mean_day": -33.1,
+          "sharpe": -0.79,
+          "win_days": 0.25,
+          "p_target": 0.25,
+          "max_dd": -2946.14,
+          "trades_per_day": 2.8,
+          "days": 20
+        },
+        {
+          "mean_day": 33.76,
+          "sharpe": 0.97,
+          "win_days": 0.55,
+          "p_target": 0.4,
+          "max_dd": -1512.13,
+          "trades_per_day": 2.8,
+          "days": 20
+        },
+        {
+          "mean_day": -120.1,
+          "sharpe": -2.15,
+          "win_days": 0.45,
+          "p_target": 0.3,
+          "max_dd": -4268.89,
+          "trades_per_day": 2.8,
+          "days": 20
+        },
+        {
+          "mean_day": 314.58,
+          "sharpe": 6.64,
+          "win_days": 0.55,
+          "p_target": 0.45,
+          "max_dd": -1557.68,
+          "trades_per_day": 2.9,
+          "days": 20
+        },
+        {
+          "mean_day": 29.33,
+          "sharpe": 0.6,
+          "win_days": 0.4,
+          "p_target": 0.4,
+          "max_dd": -3254.44,
+          "trades_per_day": 3.15,
+          "days": 20
+        }
+      ]
+    },
+    {
+      "label": "orb30 vol>=1.0 vwap+ stop2.5atr rr3.0 hold<=12 risk1.0% x3",
+      "policy": {
+        "setup": "orb",
+        "or_minutes": 30,
+        "vol_ratio_min": 1.0,
+        "above_vwap": true,
+        "dev_entry_atr": 2.0,
+        "rsi_max": 100.0,
+        "stop_atr_mult": 2.5,
+        "rr": 3.0,
+        "max_hold_bars": 12,
+        "risk_pct": 1.0,
+        "max_trades_day": 6,
+        "max_concurrent": 3,
+        "entry_window": "all"
+      },
+      "test_mean_day": 72.3,
+      "train_mean_day": -118.39,
+      "overfit_gap": -190.69,
+      "all_folds_positive": false,
+      "test_sharpe": 1.89,
+      "test_win_days": 0.525,
+      "test_p_target": 0.383,
+      "trades_per_day": 5.97,
+      "folds": [
+        {
+          "mean_day": -50.69,
+          "sharpe": -1.91,
+          "win_days": 0.4,
+          "p_target": 0.35,
+          "max_dd": -3150.28,
+          "trades_per_day": 6.0,
+          "days": 20
+        },
+        {
+          "mean_day": -8.2,
+          "sharpe": -0.36,
+          "win_days": 0.5,
+          "p_target": 0.25,
+          "max_dd": -2025.97,
+          "trades_per_day": 5.9,
+          "days": 20
+        },
+        {
+          "mean_day": 121.49,
+          "sharpe": 4.73,
+          "win_days": 0.65,
+          "p_target": 0.45,
+          "max_dd": -1003.18,
+          "trades_per_day": 6.0,
+          "days": 20
+        },
+        {
+          "mean_day": -41.65,
+          "sharpe": -1.02,
+          "win_days": 0.45,
+          "p_target": 0.35,
+          "max_dd": -3567.7,
+          "trades_per_day": 5.95,
+          "days": 20
+        },
+        {
+          "mean_day": 188.84,
+          "sharpe": 4.94,
+          "win_days": 0.5,
+          "p_target": 0.45,
+          "max_dd": -1714.02,
+          "trades_per_day": 6.0,
+          "days": 20
+        },
+        {
+          "mean_day": 224.0,
+          "sharpe": 4.98,
+          "win_days": 0.65,
+          "p_target": 0.45,
+          "max_dd": -2830.13,
+          "trades_per_day": 6.0,
+          "days": 20
+        }
+      ]
+    },
+    {
+      "label": "orb30 vol>=1.0 vwap+ stop1.5atr rr1.5 hold<=36 risk1.0% x3",
+      "policy": {
+        "setup": "orb",
+        "or_minutes": 30,
+        "vol_ratio_min": 1.0,
+        "above_vwap": true,
+        "dev_entry_atr": 2.0,
+        "rsi_max": 100.0,
+        "stop_atr_mult": 1.5,
+        "rr": 1.5,
+        "max_hold_bars": 36,
+        "risk_pct": 1.0,
+        "max_trades_day": 6,
+        "max_concurrent": 3,
+        "entry_window": "all"
+      },
+      "test_mean_day": 70.47,
+      "train_mean_day": -97.06,
+      "overfit_gap": -167.53,
+      "all_folds_positive": false,
+      "test_sharpe": 2.1,
+      "test_win_days": 0.567,
+      "test_p_target": 0.375,
+      "trades_per_day": 6.0,
+      "folds": [
+        {
+          "mean_day": -0.24,
+          "sharpe": -0.01,
+          "win_days": 0.55,
+          "p_target": 0.35,
+          "max_dd": -2627.19,
+          "trades_per_day": 6.0,
+          "days": 20
+        },
+        {
+          "mean_day": 41.8,
+          "sharpe": 2.11,
+          "win_days": 0.5,
+          "p_target": 0.4,
+          "max_dd": -847.65,
+          "trades_per_day": 6.0,
+          "days": 20
+        },
+        {
+          "mean_day": 100.34,
+          "sharpe": 3.2,
+          "win_days": 0.75,
+          "p_target": 0.35,
+          "max_dd": -1075.75,
+          "trades_per_day": 6.0,
+          "days": 20
+        },
+        {
+          "mean_day": -77.7,
+          "sharpe": -1.82,
+          "win_days": 0.4,
+          "p_target": 0.25,
+          "max_dd": -2452.61,
+          "trades_per_day": 6.0,
+          "days": 20
+        },
+        {
+          "mean_day": 158.0,
+          "sharpe": 3.97,
+          "win_days": 0.55,
+          "p_target": 0.5,
+          "max_dd": -1953.83,
+          "trades_per_day": 6.0,
+          "days": 20
+        },
+        {
+          "mean_day": 200.62,
+          "sharpe": 5.18,
+          "win_days": 0.65,
+          "p_target": 0.4,
+          "max_dd": -1890.31,
+          "trades_per_day": 6.0,
+          "days": 20
+        }
+      ]
+    },
+    {
+      "label": "orb30 vol>=1.0 vwap+ stop1.5atr rr2.0 hold<=36 risk1.0% x3 first90",
+      "policy": {
+        "setup": "orb",
+        "or_minutes": 30,
+        "vol_ratio_min": 1.0,
+        "above_vwap": true,
+        "dev_entry_atr": 2.0,
+        "rsi_max": 100.0,
+        "stop_atr_mult": 1.5,
+        "rr": 2.0,
+        "max_hold_bars": 36,
+        "risk_pct": 1.0,
+        "max_trades_day": 6,
+        "max_concurrent": 3,
+        "entry_window": "first90"
+      },
+      "test_mean_day": 70.39,
+      "train_mean_day": -65.52,
+      "overfit_gap": -135.9,
+      "all_folds_positive": false,
+      "test_sharpe": 2.1,
+      "test_win_days": 0.5,
+      "test_p_target": 0.358,
+      "trades_per_day": 3.63,
+      "folds": [
+        {
+          "mean_day": 10.88,
+          "sharpe": 0.44,
+          "win_days": 0.5,
+          "p_target": 0.35,
+          "max_dd": -2227.62,
+          "trades_per_day": 3.15,
+          "days": 20
+        },
+        {
+          "mean_day": 106.28,
+          "sharpe": 4.49,
+          "win_days": 0.5,
+          "p_target": 0.35,
+          "max_dd": -1111.77,
+          "trades_per_day": 3.5,
+          "days": 20
+        },
+        {
+          "mean_day": 76.57,
+          "sharpe": 2.92,
+          "win_days": 0.7,
+          "p_target": 0.4,
+          "max_dd": -1148.64,
+          "trades_per_day": 3.35,
+          "days": 20
+        },
+        {
+          "mean_day": -72.78,
+          "sharpe": -1.98,
+          "win_days": 0.4,
+          "p_target": 0.3,
+          "max_dd": -2739.81,
+          "trades_per_day": 3.45,
+          "days": 20
+        },
+        {
+          "mean_day": 164.85,
+          "sharpe": 3.75,
+          "win_days": 0.45,
+          "p_target": 0.35,
+          "max_dd": -2173.85,
+          "trades_per_day": 3.9,
+          "days": 20
+        },
+        {
+          "mean_day": 136.54,
+          "sharpe": 2.97,
+          "win_days": 0.45,
+          "p_target": 0.4,
+          "max_dd": -3102.22,
+          "trades_per_day": 4.45,
+          "days": 20
+        }
+      ]
+    },
+    {
+      "label": "orb30 vol>=1.0 vwap+ stop1.5atr rr2.0 hold<=36 risk1.0% x3",
+      "policy": {
+        "setup": "orb",
+        "or_minutes": 30,
+        "vol_ratio_min": 1.0,
+        "above_vwap": true,
+        "dev_entry_atr": 2.0,
+        "rsi_max": 100.0,
+        "stop_atr_mult": 1.5,
+        "rr": 2.0,
+        "max_hold_bars": 36,
+        "risk_pct": 1.0,
+        "max_trades_day": 6,
+        "max_concurrent": 3,
+        "entry_window": "all"
+      },
+      "test_mean_day": 69.87,
+      "train_mean_day": -110.27,
+      "overfit_gap": -180.13,
+      "all_folds_positive": false,
+      "test_sharpe": 1.84,
+      "test_win_days": 0.508,
+      "test_p_target": 0.375,
+      "trades_per_day": 5.99,
+      "folds": [
+        {
+          "mean_day": 10.86,
+          "sharpe": 0.35,
+          "win_days": 0.55,
+          "p_target": 0.4,
+          "max_dd": -2856.55,
+          "trades_per_day": 6.0,
+          "days": 20
+        },
+        {
+          "mean_day": 78.4,
+          "sharpe": 2.91,
+          "win_days": 0.55,
+          "p_target": 0.4,
+          "max_dd": -1476.85,
+          "trades_per_day": 6.0,
+          "days": 20
+        },
+        {
+          "mean_day": 13.4,
+          "sharpe": 0.5,
+          "win_days": 0.55,
+          "p_target": 0.35,
+          "max_dd": -1389.26,
+          "trades_per_day": 6.0,
+          "days": 20
+        },
+        {
+          "mean_day": -21.64,
+          "sharpe": -0.45,
+          "win_days": 0.4,
+          "p_target": 0.25,
+          "max_dd": -2520.29,
+          "trades_per_day": 5.95,
+          "days": 20
+        },
+        {
+          "mean_day": 160.93,
+          "sharpe": 3.58,
+          "win_days": 0.5,
+          "p_target": 0.4,
+          "max_dd": -2675.44,
+          "trades_per_day": 6.0,
+          "days": 20
+        },
+        {
+          "mean_day": 177.26,
+          "sharpe": 4.13,
+          "win_days": 0.5,
+          "p_target": 0.45,
+          "max_dd": -2435.37,
+          "trades_per_day": 6.0,
+          "days": 20
+        }
+      ]
+    },
+    {
+      "label": "orb30 vol>=1.0 vwap+ stop1.5atr rr3.0 hold<=36 risk1.0% x3 no_midday",
+      "policy": {
+        "setup": "orb",
+        "or_minutes": 30,
+        "vol_ratio_min": 1.0,
+        "above_vwap": true,
+        "dev_entry_atr": 2.0,
+        "rsi_max": 100.0,
+        "stop_atr_mult": 1.5,
+        "rr": 3.0,
+        "max_hold_bars": 36,
+        "risk_pct": 1.0,
+        "max_trades_day": 6,
+        "max_concurrent": 3,
+        "entry_window": "no_midday"
+      },
+      "test_mean_day": 67.58,
+      "train_mean_day": -120.16,
+      "overfit_gap": -187.74,
+      "all_folds_positive": false,
+      "test_sharpe": 1.96,
+      "test_win_days": 0.492,
+      "test_p_target": 0.4,
+      "trades_per_day": 5.86,
+      "folds": [
+        {
+          "mean_day": 74.12,
+          "sharpe": 3.07,
+          "win_days": 0.55,
+          "p_target": 0.5,
+          "max_dd": -1486.62,
+          "trades_per_day": 5.75,
+          "days": 20
+        },
+        {
+          "mean_day": -6.5,
+          "sharpe": -0.22,
+          "win_days": 0.4,
+          "p_target": 0.3,
+          "max_dd": -1780.47,
+          "trades_per_day": 5.9,
+          "days": 20
+        },
+        {
+          "mean_day": 143.35,
+          "sharpe": 4.54,
+          "win_days": 0.65,
+          "p_target": 0.45,
+          "max_dd": -1437.82,
+          "trades_per_day": 5.85,
+          "days": 20
+        },
+        {
+          "mean_day": -104.64,
+          "sharpe": -2.5,
+          "win_days": 0.4,
+          "p_target": 0.25,
+          "max_dd": -2968.75,
+          "trades_per_day": 5.7,
+          "days": 20
+        },
+        {
+          "mean_day": 123.45,
+          "sharpe": 2.98,
+          "win_days": 0.45,
+          "p_target": 0.4,
+          "max_dd": -2677.77,
+          "trades_per_day": 5.95,
+          "days": 20
+        },
+        {
+          "mean_day": 175.71,
+          "sharpe": 3.91,
+          "win_days": 0.5,
+          "p_target": 0.5,
+          "max_dd": -2880.74,
+          "trades_per_day": 6.0,
+          "days": 20
+        }
+      ]
+    },
+    {
+      "label": "orb15 vol>=1.5 vwap+ stop1.5atr rr3.0 hold<=36 risk1.0% x3 first90",
+      "policy": {
+        "setup": "orb",
+        "or_minutes": 15,
+        "vol_ratio_min": 1.5,
+        "above_vwap": true,
+        "dev_entry_atr": 2.0,
+        "rsi_max": 100.0,
+        "stop_atr_mult": 1.5,
+        "rr": 3.0,
+        "max_hold_bars": 36,
+        "risk_pct": 1.0,
+        "max_trades_day": 6,
+        "max_concurrent": 3,
+        "entry_window": "first90"
+      },
+      "test_mean_day": 67.16,
+      "train_mean_day": -31.64,
+      "overfit_gap": -98.8,
+      "all_folds_positive": false,
+      "test_sharpe": 0.98,
+      "test_win_days": 0.417,
+      "test_p_target": 0.317,
+      "trades_per_day": 3.25,
+      "folds": [
+        {
+          "mean_day": 46.08,
+          "sharpe": 1.83,
+          "win_days": 0.4,
+          "p_target": 0.3,
+          "max_dd": -1755.26,
+          "trades_per_day": 2.95,
+          "days": 20
+        },
+        {
+          "mean_day": 67.6,
+          "sharpe": 2.57,
+          "win_days": 0.45,
+          "p_target": 0.3,
+          "max_dd": -1607.74,
+          "trades_per_day": 3.25,
+          "days": 20
+        },
+        {
+          "mean_day": -144.0,
+          "sharpe": -5.79,
+          "win_days": 0.35,
+          "p_target": 0.3,
+          "max_dd": -4803.81,
+          "trades_per_day": 3.2,
+          "days": 20
+        },
+        {
+          "mean_day": -151.1,
+          "sharpe": -5.57,
+          "win_days": 0.15,
+          "p_target": 0.1,
+          "max_dd": -3700.34,
+          "trades_per_day": 3.0,
+          "days": 20
+        },
+        {
+          "mean_day": 174.36,
+          "sharpe": 4.18,
+          "win_days": 0.45,
+          "p_target": 0.4,
+          "max_dd": -2346.18,
+          "trades_per_day": 3.25,
+          "days": 20
+        },
+        {
+          "mean_day": 410.02,
+          "sharpe": 8.65,
+          "win_days": 0.7,
+          "p_target": 0.5,
+          "max_dd": -1254.57,
+          "trades_per_day": 3.85,
+          "days": 20
+        }
+      ]
+    },
+    {
+      "label": "orb30 vol>=1.0 vwap+ stop2.5atr rr1.5 hold<=12 risk1.0% x3",
+      "policy": {
+        "setup": "orb",
+        "or_minutes": 30,
+        "vol_ratio_min": 1.0,
+        "above_vwap": true,
+        "dev_entry_atr": 2.0,
+        "rsi_max": 100.0,
+        "stop_atr_mult": 2.5,
+        "rr": 1.5,
+        "max_hold_bars": 12,
+        "risk_pct": 1.0,
+        "max_trades_day": 6,
+        "max_concurrent": 3,
+        "entry_window": "all"
+      },
+      "test_mean_day": 66.92,
+      "train_mean_day": -107.87,
+      "overfit_gap": -174.79,
+      "all_folds_positive": false,
+      "test_sharpe": 1.86,
+      "test_win_days": 0.533,
+      "test_p_target": 0.375,
+      "trades_per_day": 5.97,
+      "folds": [
+        {
+          "mean_day": -13.26,
+          "sharpe": -0.51,
+          "win_days": 0.5,
+          "p_target": 0.35,
+          "max_dd": -2716.98,
+          "trades_per_day": 6.0,
+          "days": 20
+        },
+        {
+          "mean_day": -18.7,
+          "sharpe": -0.82,
+          "win_days": 0.45,
+          "p_target": 0.25,
+          "max_dd": -2072.27,
+          "trades_per_day": 5.9,
+          "days": 20
+        },
+        {
+          "mean_day": 122.08,
+          "sharpe": 4.73,
+          "win_days": 0.65,
+          "p_target": 0.4,
+          "max_dd": -1003.18,
+          "trades_per_day": 6.0,
+          "days": 20
+        },
+        {
+          "mean_day": -39.75,
+          "sharpe": -0.98,
+          "win_days": 0.45,
+          "p_target": 0.35,
+          "max_dd": -3569.88,
+          "trades_per_day": 5.95,
+          "days": 20
+        },
+        {
+          "mean_day": 142.4,
+          "sharpe": 4.1,
+          "win_days": 0.5,
+          "p_target": 0.4,
+          "max_dd": -1714.02,
+          "trades_per_day": 6.0,
+          "days": 20
+        },
+        {
+          "mean_day": 208.74,
+          "sharpe": 4.63,
+          "win_days": 0.65,
+          "p_target": 0.5,
+          "max_dd": -3073.62,
+          "trades_per_day": 6.0,
+          "days": 20
+        }
+      ]
+    },
+    {
+      "label": "orb30 vol>=1.0 vwap+ stop2.5atr rr1.5 hold<=36 risk1.0% x3 no_midday",
+      "policy": {
+        "setup": "orb",
+        "or_minutes": 30,
+        "vol_ratio_min": 1.0,
+        "above_vwap": true,
+        "dev_entry_atr": 2.0,
+        "rsi_max": 100.0,
+        "stop_atr_mult": 2.5,
+        "rr": 1.5,
+        "max_hold_bars": 36,
+        "risk_pct": 1.0,
+        "max_trades_day": 6,
+        "max_concurrent": 3,
+        "entry_window": "no_midday"
+      },
+      "test_mean_day": 66.82,
+      "train_mean_day": -99.07,
+      "overfit_gap": -165.89,
+      "all_folds_positive": false,
+      "test_sharpe": 2.26,
+      "test_win_days": 0.525,
+      "test_p_target": 0.367,
+      "trades_per_day": 5.82,
+      "folds": [
+        {
+          "mean_day": 155.37,
+          "sharpe": 7.76,
+          "win_days": 0.75,
+          "p_target": 0.45,
+          "max_dd": -643.33,
+          "trades_per_day": 5.7,
+          "days": 20
+        },
+        {
+          "mean_day": -17.19,
+          "sharpe": -0.57,
+          "win_days": 0.4,
+          "p_target": 0.3,
+          "max_dd": -2181.38,
+          "trades_per_day": 5.75,
+          "days": 20
+        },
+        {
+          "mean_day": 90.21,
+          "sharpe": 2.57,
+          "win_days": 0.55,
+          "p_target": 0.45,
+          "max_dd": -2260.55,
+          "trades_per_day": 5.85,
+          "days": 20
+        },
+        {
+          "mean_day": -42.94,
+          "sharpe": -0.95,
+          "win_days": 0.35,
+          "p_target": 0.2,
+          "max_dd": -2021.35,
+          "trades_per_day": 5.65,
+          "days": 20
+        },
+        {
+          "mean_day": 109.19,
+          "sharpe": 2.61,
+          "win_days": 0.55,
+          "p_target": 0.4,
+          "max_dd": -1899.46,
+          "trades_per_day": 5.95,
+          "days": 20
+        },
+        {
+          "mean_day": 106.26,
+          "sharpe": 2.13,
+          "win_days": 0.55,
+          "p_target": 0.4,
+          "max_dd": -3634.77,
+          "trades_per_day": 6.0,
+          "days": 20
+        }
+      ]
+    },
+    {
+      "label": "orb30 vol>=1.0 vwap+ stop2.5atr rr2.0 hold<=12 risk1.0% x3",
+      "policy": {
+        "setup": "orb",
+        "or_minutes": 30,
+        "vol_ratio_min": 1.0,
+        "above_vwap": true,
+        "dev_entry_atr": 2.0,
+        "rsi_max": 100.0,
+        "stop_atr_mult": 2.5,
+        "rr": 2.0,
+        "max_hold_bars": 12,
+        "risk_pct": 1.0,
+        "max_trades_day": 6,
+        "max_concurrent": 3,
+        "entry_window": "all"
+      },
+      "test_mean_day": 66.03,
+      "train_mean_day": -110.13,
+      "overfit_gap": -176.17,
+      "all_folds_positive": false,
+      "test_sharpe": 1.96,
+      "test_win_days": 0.533,
+      "test_p_target": 0.383,
+      "trades_per_day": 5.97,
+      "folds": [
+        {
+          "mean_day": -32.86,
+          "sharpe": -1.23,
+          "win_days": 0.45,
+          "p_target": 0.35,
+          "max_dd": -3150.28,
+          "trades_per_day": 6.0,
+          "days": 20
+        },
+        {
+          "mean_day": 6.39,
+          "sharpe": 0.28,
+          "win_days": 0.5,
+          "p_target": 0.25,
+          "max_dd": -1809.41,
+          "trades_per_day": 5.9,
+          "days": 20
+        },
+        {
+          "mean_day": 132.83,
+          "sharpe": 4.98,
+          "win_days": 0.65,
+          "p_target": 0.45,
+          "max_dd": -1003.18,
+          "trades_per_day": 6.0,
+          "days": 20
+        },
+        {
+          "mean_day": -41.25,
+          "sharpe": -1.01,
+          "win_days": 0.45,
+          "p_target": 0.35,
+          "max_dd": -3567.7,
+          "trades_per_day": 5.95,
+          "days": 20
+        },
+        {
+          "mean_day": 178.38,
+          "sharpe": 4.66,
+          "win_days": 0.5,
+          "p_target": 0.45,
+          "max_dd": -1714.02,
+          "trades_per_day": 6.0,
+          "days": 20
+        },
+        {
+          "mean_day": 152.7,
+          "sharpe": 4.08,
+          "win_days": 0.65,
+          "p_target": 0.45,
+          "max_dd": -2830.13,
+          "trades_per_day": 6.0,
+          "days": 20
+        }
+      ]
+    },
+    {
+      "label": "orb30 vol>=1.0 vwap+ stop1.5atr rr2.0 hold<=36 risk1.0% x3 no_midday",
+      "policy": {
+        "setup": "orb",
+        "or_minutes": 30,
+        "vol_ratio_min": 1.0,
+        "above_vwap": true,
+        "dev_entry_atr": 2.0,
+        "rsi_max": 100.0,
+        "stop_atr_mult": 1.5,
+        "rr": 2.0,
+        "max_hold_bars": 36,
+        "risk_pct": 1.0,
+        "max_trades_day": 6,
+        "max_concurrent": 3,
+        "entry_window": "no_midday"
+      },
+      "test_mean_day": 64.04,
+      "train_mean_day": -111.44,
+      "overfit_gap": -175.48,
+      "all_folds_positive": false,
+      "test_sharpe": 1.87,
+      "test_win_days": 0.5,
+      "test_p_target": 0.375,
+      "trades_per_day": 5.88,
+      "folds": [
+        {
+          "mean_day": 26.02,
+          "sharpe": 1.2,
+          "win_days": 0.5,
+          "p_target": 0.45,
+          "max_dd": -1780.74,
+          "trades_per_day": 5.75,
+          "days": 20
+        },
+        {
+          "mean_day": 49.01,
+          "sharpe": 1.84,
+          "win_days": 0.5,
+          "p_target": 0.35,
+          "max_dd": -1651.82,
+          "trades_per_day": 5.9,
+          "days": 20
+        },
+        {
+          "mean_day": 108.89,
+          "sharpe": 3.75,
+          "win_days": 0.7,
+          "p_target": 0.45,
+          "max_dd": -1548.73,
+          "trades_per_day": 6.0,
+          "days": 20
+        },
+        {
+          "mean_day": -71.83,
+          "sharpe": -1.65,
+          "win_days": 0.35,
+          "p_target": 0.2,
+          "max_dd": -3187.23,
+          "trades_per_day": 5.7,
+          "days": 20
+        },
+        {
+          "mean_day": 132.25,
+          "sharpe": 3.0,
+          "win_days": 0.5,
+          "p_target": 0.35,
+          "max_dd": -2800.11,
+          "trades_per_day": 5.95,
+          "days": 20
+        },
+        {
+          "mean_day": 139.9,
+          "sharpe": 3.08,
+          "win_days": 0.45,
+          "p_target": 0.45,
+          "max_dd": -3190.48,
+          "trades_per_day": 6.0,
+          "days": 20
+        }
+      ]
+    },
+    {
+      "label": "orb30 vol>=1.5 vwap+ stop2.5atr rr3.0 hold<=36 risk1.0% x3 first90",
+      "policy": {
+        "setup": "orb",
+        "or_minutes": 30,
+        "vol_ratio_min": 1.5,
+        "above_vwap": true,
+        "dev_entry_atr": 2.0,
+        "rsi_max": 100.0,
+        "stop_atr_mult": 2.5,
+        "rr": 3.0,
+        "max_hold_bars": 36,
+        "risk_pct": 1.0,
+        "max_trades_day": 6,
+        "max_concurrent": 3,
+        "entry_window": "first90"
+      },
+      "test_mean_day": 63.97,
+      "train_mean_day": -22.39,
+      "overfit_gap": -86.36,
+      "all_folds_positive": false,
+      "test_sharpe": 2.02,
+      "test_win_days": 0.4,
+      "test_p_target": 0.275,
+      "trades_per_day": 1.55,
+      "folds": [
+        {
+          "mean_day": 87.33,
+          "sharpe": 4.97,
+          "win_days": 0.35,
+          "p_target": 0.2,
+          "max_dd": -352.91,
+          "trades_per_day": 1.1,
+          "days": 20
+        },
+        {
+          "mean_day": 31.38,
+          "sharpe": 1.39,
+          "win_days": 0.45,
+          "p_target": 0.2,
+          "max_dd": -1250.84,
+          "trades_per_day": 1.65,
+          "days": 20
+        },
+        {
+          "mean_day": -23.73,
+          "sharpe": -1.25,
+          "win_days": 0.35,
+          "p_target": 0.25,
+          "max_dd": -1858.92,
+          "trades_per_day": 1.5,
+          "days": 20
+        },
+        {
+          "mean_day": -122.23,
+          "sharpe": -5.12,
+          "win_days": 0.2,
+          "p_target": 0.1,
+          "max_dd": -2067.76,
+          "trades_per_day": 1.25,
+          "days": 20
+        },
+        {
+          "mean_day": 163.21,
+          "sharpe": 6.03,
+          "win_days": 0.55,
+          "p_target": 0.4,
+          "max_dd": -919.79,
+          "trades_per_day": 1.6,
+          "days": 20
+        },
+        {
+          "mean_day": 247.85,
+          "sharpe": 6.08,
+          "win_days": 0.5,
+          "p_target": 0.5,
+          "max_dd": -1393.05,
+          "trades_per_day": 2.2,
+          "days": 20
+        }
+      ]
+    },
+    {
+      "label": "orb15 vol>=1.5 vwap+ stop2.5atr rr1.5 hold<=36 risk1.0% x3 first90",
+      "policy": {
+        "setup": "orb",
+        "or_minutes": 15,
+        "vol_ratio_min": 1.5,
+        "above_vwap": true,
+        "dev_entry_atr": 2.0,
+        "rsi_max": 100.0,
+        "stop_atr_mult": 2.5,
+        "rr": 1.5,
+        "max_hold_bars": 36,
+        "risk_pct": 1.0,
+        "max_trades_day": 6,
+        "max_concurrent": 3,
+        "entry_window": "first90"
+      },
+      "test_mean_day": 63.91,
+      "train_mean_day": -32.52,
+      "overfit_gap": -96.43,
+      "all_folds_positive": false,
+      "test_sharpe": 1.29,
+      "test_win_days": 0.458,
+      "test_p_target": 0.325,
+      "trades_per_day": 2.91,
+      "folds": [
+        {
+          "mean_day": -2.29,
+          "sharpe": -0.09,
+          "win_days": 0.45,
+          "p_target": 0.25,
+          "max_dd": -1395.19,
+          "trades_per_day": 2.6,
+          "days": 20
+        },
+        {
+          "mean_day": 165.21,
+          "sharpe": 5.44,
+          "win_days": 0.45,
+          "p_target": 0.4,
+          "max_dd": -1225.66,
+          "trades_per_day": 3.0,
+          "days": 20
+        },
+        {
+          "mean_day": -197.12,
+          "sharpe": -6.5,
+          "win_days": 0.4,
+          "p_target": 0.15,
+          "max_dd": -5744.98,
+          "trades_per_day": 2.95,
+          "days": 20
+        },
+        {
+          "mean_day": -42.3,
+          "sharpe": -1.39,
+          "win_days": 0.4,
+          "p_target": 0.25,
+          "max_dd": -2440.63,
+          "trades_per_day": 2.55,
+          "days": 20
+        },
+        {
+          "mean_day": 163.47,
+          "sharpe": 3.83,
+          "win_days": 0.45,
+          "p_target": 0.4,
+          "max_dd": -1840.45,
+          "trades_per_day": 2.8,
+          "days": 20
+        },
+        {
+          "mean_day": 296.49,
+          "sharpe": 6.47,
+          "win_days": 0.6,
+          "p_target": 0.5,
+          "max_dd": -879.12,
+          "trades_per_day": 3.55,
+          "days": 20
+        }
+      ]
+    },
+    {
+      "label": "orb30 vol>=1.0 vwap+ stop1.5atr rr3.0 hold<=36 risk1.0% x3 first90",
+      "policy": {
+        "setup": "orb",
+        "or_minutes": 30,
+        "vol_ratio_min": 1.0,
+        "above_vwap": true,
+        "dev_entry_atr": 2.0,
+        "rsi_max": 100.0,
+        "stop_atr_mult": 1.5,
+        "rr": 3.0,
+        "max_hold_bars": 36,
+        "risk_pct": 1.0,
+        "max_trades_day": 6,
+        "max_concurrent": 3,
+        "entry_window": "first90"
+      },
+      "test_mean_day": 63.66,
+      "train_mean_day": -70.64,
+      "overfit_gap": -134.31,
+      "all_folds_positive": false,
+      "test_sharpe": 1.72,
+      "test_win_days": 0.467,
+      "test_p_target": 0.367,
+      "trades_per_day": 3.39,
+      "folds": [
+        {
+          "mean_day": 27.67,
+          "sharpe": 1.03,
+          "win_days": 0.5,
+          "p_target": 0.4,
+          "max_dd": -2571.71,
+          "trades_per_day": 3.15,
+          "days": 20
+        },
+        {
+          "mean_day": 37.84,
+          "sharpe": 1.49,
+          "win_days": 0.3,
+          "p_target": 0.3,
+          "max_dd": -1275.76,
+          "trades_per_day": 3.15,
+          "days": 20
+        },
+        {
+          "mean_day": 102.69,
+          "sharpe": 3.64,
+          "win_days": 0.7,
+          "p_target": 0.4,
+          "max_dd": -1128.24,
+          "trades_per_day": 3.1,
+          "days": 20
+        },
+        {
+          "mean_day": -90.76,
+          "sharpe": -2.65,
+          "win_days": 0.4,
+          "p_target": 0.3,
+          "max_dd": -2092.02,
+          "trades_per_day": 3.3,
+          "days": 20
+        },
+        {
+          "mean_day": 163.18,
+          "sharpe": 3.8,
+          "win_days": 0.4,
+          "p_target": 0.4,
+          "max_dd": -2158.95,
+          "trades_per_day": 3.4,
+          "days": 20
+        },
+        {
+          "mean_day": 141.35,
+          "sharpe": 3.02,
+          "win_days": 0.5,
+          "p_target": 0.4,
+          "max_dd": -3337.49,
+          "trades_per_day": 4.25,
+          "days": 20
+        }
+      ]
+    },
+    {
+      "label": "orb30 vol>=1.0 vwap+ stop2.5atr rr2.0 hold<=36 risk1.0% x3 no_midday",
+      "policy": {
+        "setup": "orb",
+        "or_minutes": 30,
+        "vol_ratio_min": 1.0,
+        "above_vwap": true,
+        "dev_entry_atr": 2.0,
+        "rsi_max": 100.0,
+        "stop_atr_mult": 2.5,
+        "rr": 2.0,
+        "max_hold_bars": 36,
+        "risk_pct": 1.0,
+        "max_trades_day": 6,
+        "max_concurrent": 3,
+        "entry_window": "no_midday"
+      },
+      "test_mean_day": 63.41,
+      "train_mean_day": -97.89,
+      "overfit_gap": -161.31,
+      "all_folds_positive": false,
+      "test_sharpe": 2.03,
+      "test_win_days": 0.483,
+      "test_p_target": 0.358,
+      "trades_per_day": 5.82,
+      "folds": [
+        {
+          "mean_day": 191.65,
+          "sharpe": 7.97,
+          "win_days": 0.7,
+          "p_target": 0.5,
+          "max_dd": -783.14,
+          "trades_per_day": 5.7,
+          "days": 20
+        },
+        {
+          "mean_day": -42.33,
+          "sharpe": -1.34,
+          "win_days": 0.35,
+          "p_target": 0.3,
+          "max_dd": -2554.2,
+          "trades_per_day": 5.75,
+          "days": 20
+        },
+        {
+          "mean_day": 68.56,
+          "sharpe": 2.04,
+          "win_days": 0.45,
+          "p_target": 0.4,
+          "max_dd": -2457.84,
+          "trades_per_day": 5.85,
+          "days": 20
+        },
+        {
+          "mean_day": -54.3,
+          "sharpe": -1.17,
+          "win_days": 0.3,
+          "p_target": 0.2,
+          "max_dd": -2326.93,
+          "trades_per_day": 5.65,
+          "days": 20
+        },
+        {
+          "mean_day": 129.81,
+          "sharpe": 2.87,
+          "win_days": 0.55,
+          "p_target": 0.4,
+          "max_dd": -2222.64,
+          "trades_per_day": 5.95,
+          "days": 20
+        },
+        {
+          "mean_day": 87.07,
+          "sharpe": 1.8,
+          "win_days": 0.55,
+          "p_target": 0.35,
+          "max_dd": -3786.88,
+          "trades_per_day": 6.0,
+          "days": 20
+        }
+      ]
+    },
+    {
+      "label": "orb30 vol>=1.0 vwap+ stop1.5atr rr2.0 hold<=12 risk1.0% x3",
+      "policy": {
+        "setup": "orb",
+        "or_minutes": 30,
+        "vol_ratio_min": 1.0,
+        "above_vwap": true,
+        "dev_entry_atr": 2.0,
+        "rsi_max": 100.0,
+        "stop_atr_mult": 1.5,
+        "rr": 2.0,
+        "max_hold_bars": 12,
+        "risk_pct": 1.0,
+        "max_trades_day": 6,
+        "max_concurrent": 3,
+        "entry_window": "all"
+      },
+      "test_mean_day": 61.75,
+      "train_mean_day": -104.98,
+      "overfit_gap": -166.73,
+      "all_folds_positive": false,
+      "test_sharpe": 1.81,
+      "test_win_days": 0.525,
+      "test_p_target": 0.333,
+      "trades_per_day": 6.0,
+      "folds": [
+        {
+          "mean_day": -33.27,
+          "sharpe": -1.34,
+          "win_days": 0.5,
+          "p_target": 0.35,
+          "max_dd": -2612.94,
+          "trades_per_day": 6.0,
+          "days": 20
+        },
+        {
+          "mean_day": 96.25,
+          "sharpe": 4.47,
+          "win_days": 0.6,
+          "p_target": 0.35,
+          "max_dd": -591.94,
+          "trades_per_day": 6.0,
+          "days": 20
+        },
+        {
+          "mean_day": 71.93,
+          "sharpe": 2.95,
+          "win_days": 0.55,
+          "p_target": 0.3,
+          "max_dd": -854.97,
+          "trades_per_day": 6.0,
+          "days": 20
+        },
+        {
+          "mean_day": -125.55,
+          "sharpe": -3.31,
+          "win_days": 0.4,
+          "p_target": 0.2,
+          "max_dd": -3964.44,
+          "trades_per_day": 6.0,
+          "days": 20
+        },
+        {
+          "mean_day": 208.16,
+          "sharpe": 4.77,
+          "win_days": 0.6,
+          "p_target": 0.4,
+          "max_dd": -2158.89,
+          "trades_per_day": 6.0,
+          "days": 20
+        },
+        {
+          "mean_day": 152.99,
+          "sharpe": 3.35,
+          "win_days": 0.5,
+          "p_target": 0.4,
+          "max_dd": -2883.67,
+          "trades_per_day": 6.0,
+          "days": 20
+        }
+      ]
+    },
+    {
+      "label": "orb15 vol>=1.5 vwap+ stop2.5atr rr2.0 hold<=36 risk1.0% x3",
+      "policy": {
+        "setup": "orb",
+        "or_minutes": 15,
+        "vol_ratio_min": 1.5,
+        "above_vwap": true,
+        "dev_entry_atr": 2.0,
+        "rsi_max": 100.0,
+        "stop_atr_mult": 2.5,
+        "rr": 2.0,
+        "max_hold_bars": 36,
+        "risk_pct": 1.0,
+        "max_trades_day": 6,
+        "max_concurrent": 3,
+        "entry_window": "all"
+      },
+      "test_mean_day": 61.06,
+      "train_mean_day": -69.45,
+      "overfit_gap": -130.51,
+      "all_folds_positive": false,
+      "test_sharpe": 0.57,
+      "test_win_days": 0.475,
+      "test_p_target": 0.367,
+      "trades_per_day": 5.79,
+      "folds": [
+        {
+          "mean_day": -1.65,
+          "sharpe": -0.06,
+          "win_days": 0.45,
+          "p_target": 0.3,
+          "max_dd": -1367.77,
+          "trades_per_day": 5.7,
+          "days": 20
+        },
+        {
+          "mean_day": 26.03,
+          "sharpe": 0.91,
+          "win_days": 0.45,
+          "p_target": 0.4,
+          "max_dd": -1573.64,
+          "trades_per_day": 5.9,
+          "days": 20
+        },
+        {
+          "mean_day": -267.91,
+          "sharpe": -7.74,
+          "win_days": 0.4,
+          "p_target": 0.2,
+          "max_dd": -7218.07,
+          "trades_per_day": 5.75,
+          "days": 20
+        },
+        {
+          "mean_day": -47.13,
+          "sharpe": -1.1,
+          "win_days": 0.45,
+          "p_target": 0.3,
+          "max_dd": -3833.09,
+          "trades_per_day": 5.7,
+          "days": 20
+        },
+        {
+          "mean_day": 190.59,
+          "sharpe": 3.24,
+          "win_days": 0.5,
+          "p_target": 0.45,
+          "max_dd": -2558.41,
+          "trades_per_day": 5.7,
+          "days": 20
+        },
+        {
+          "mean_day": 466.43,
+          "sharpe": 8.16,
+          "win_days": 0.6,
+          "p_target": 0.55,
+          "max_dd": -1370.73,
+          "trades_per_day": 6.0,
+          "days": 20
+        }
+      ]
+    },
+    {
+      "label": "orb30 vol>=1.0 vwap+ stop2.5atr rr3.0 hold<=12 risk1.0% x3 no_midday",
+      "policy": {
+        "setup": "orb",
+        "or_minutes": 30,
+        "vol_ratio_min": 1.0,
+        "above_vwap": true,
+        "dev_entry_atr": 2.0,
+        "rsi_max": 100.0,
+        "stop_atr_mult": 2.5,
+        "rr": 3.0,
+        "max_hold_bars": 12,
+        "risk_pct": 1.0,
+        "max_trades_day": 6,
+        "max_concurrent": 3,
+        "entry_window": "no_midday"
+      },
+      "test_mean_day": 58.01,
+      "train_mean_day": -120.59,
+      "overfit_gap": -178.61,
+      "all_folds_positive": false,
+      "test_sharpe": 1.59,
+      "test_win_days": 0.533,
+      "test_p_target": 0.333,
+      "trades_per_day": 5.83,
+      "folds": [
+        {
+          "mean_day": 36.93,
+          "sharpe": 1.59,
+          "win_days": 0.55,
+          "p_target": 0.35,
+          "max_dd": -1507.72,
+          "trades_per_day": 5.65,
+          "days": 20
+        },
+        {
+          "mean_day": -43.67,
+          "sharpe": -1.92,
+          "win_days": 0.45,
+          "p_target": 0.25,
+          "max_dd": -2360.41,
+          "trades_per_day": 5.8,
+          "days": 20
+        },
+        {
+          "mean_day": 148.75,
+          "sharpe": 5.77,
+          "win_days": 0.7,
+          "p_target": 0.35,
+          "max_dd": -750.18,
+          "trades_per_day": 5.9,
+          "days": 20
+        },
+        {
+          "mean_day": -60.59,
+          "sharpe": -2.08,
+          "win_days": 0.4,
+          "p_target": 0.35,
+          "max_dd": -1961.51,
+          "trades_per_day": 5.65,
+          "days": 20
+        },
+        {
+          "mean_day": 102.06,
+          "sharpe": 2.64,
+          "win_days": 0.5,
+          "p_target": 0.35,
+          "max_dd": -1869.15,
+          "trades_per_day": 6.0,
+          "days": 20
+        },
+        {
+          "mean_day": 164.6,
+          "sharpe": 3.53,
+          "win_days": 0.6,
+          "p_target": 0.35,
+          "max_dd": -3227.92,
+          "trades_per_day": 6.0,
+          "days": 20
+        }
+      ]
+    },
+    {
+      "label": "orb30 vol>=1.0 vwap+ stop2.5atr rr1.5 hold<=36 risk1.0% x3",
+      "policy": {
+        "setup": "orb",
+        "or_minutes": 30,
+        "vol_ratio_min": 1.0,
+        "above_vwap": true,
+        "dev_entry_atr": 2.0,
+        "rsi_max": 100.0,
+        "stop_atr_mult": 2.5,
+        "rr": 1.5,
+        "max_hold_bars": 36,
+        "risk_pct": 1.0,
+        "max_trades_day": 6,
+        "max_concurrent": 3,
+        "entry_window": "all"
+      },
+      "test_mean_day": 57.91,
+      "train_mean_day": -116.97,
+      "overfit_gap": -174.88,
+      "all_folds_positive": true,
+      "test_sharpe": 1.43,
+      "test_win_days": 0.525,
+      "test_p_target": 0.392,
+      "trades_per_day": 5.92,
+      "folds": [
+        {
+          "mean_day": 82.72,
+          "sharpe": 3.12,
+          "win_days": 0.6,
+          "p_target": 0.35,
+          "max_dd": -1678.02,
+          "trades_per_day": 5.95,
+          "days": 20
+        },
+        {
+          "mean_day": 1.44,
+          "sharpe": 0.04,
+          "win_days": 0.4,
+          "p_target": 0.35,
+          "max_dd": -2588.65,
+          "trades_per_day": 5.85,
+          "days": 20
+        },
+        {
+          "mean_day": 14.01,
+          "sharpe": 0.37,
+          "win_days": 0.55,
+          "p_target": 0.45,
+          "max_dd": -2274.03,
+          "trades_per_day": 5.95,
+          "days": 20
+        },
+        {
+          "mean_day": 13.23,
+          "sharpe": 0.25,
+          "win_days": 0.5,
+          "p_target": 0.35,
+          "max_dd": -2602.64,
+          "trades_per_day": 5.85,
+          "days": 20
+        },
+        {
+          "mean_day": 106.14,
+          "sharpe": 2.39,
+          "win_days": 0.55,
+          "p_target": 0.4,
+          "max_dd": -2501.85,
+          "trades_per_day": 5.95,
+          "days": 20
+        },
+        {
+          "mean_day": 129.91,
+          "sharpe": 2.44,
+          "win_days": 0.55,
+          "p_target": 0.45,
+          "max_dd": -2866.03,
+          "trades_per_day": 6.0,
+          "days": 20
+        }
+      ]
+    }
+  ],
+  "winner": "orb30 vol>=1.0 vwap+ stop2.5atr rr1.5 hold<=36 risk1.0% x3",
+  "holdout": {
+    "label": "orb30 vol>=1.0 vwap+ stop2.5atr rr1.5 hold<=36 risk1.0% x3",
+    "mean_day": -275.5,
+    "sharpe": -5.5,
+    "win_days": 0.35,
+    "p_target": 0.2,
+    "max_dd": -13778.6,
+    "trades_per_day": 5.92,
+    "days": 40,
+    "daily": {
+      "2026-05-18": 374.8,
+      "2026-05-19": -69.73,
+      "2026-05-20": 159.6,
+      "2026-05-21": -1008.05,
+      "2026-05-22": 712.68,
+      "2026-05-26": -494.52,
+      "2026-05-27": -89.71,
+      "2026-05-28": -752.96,
+      "2026-05-29": 1742.47,
+      "2026-06-01": 1505.29,
+      "2026-06-02": -217.48,
+      "2026-06-03": -80.12,
+      "2026-06-04": 148.24,
+      "2026-06-05": -698.94,
+      "2026-06-08": -396.91,
+      "2026-06-09": -389.2,
+      "2026-06-10": -2170.85,
+      "2026-06-11": -2123.61,
+      "2026-06-12": -125.72,
+      "2026-06-15": -393.79,
+      "2026-06-16": -165.34,
+      "2026-06-17": -859.37,
+      "2026-06-18": -19.38,
+      "2026-06-22": -897.76,
+      "2026-06-23": -1848.71,
+      "2026-06-24": -903.5,
+      "2026-06-25": -1315.55,
+      "2026-06-26": -696.43,
+      "2026-06-29": 246.65,
+      "2026-06-30": 681.22,
+      "2026-07-01": 44.86,
+      "2026-07-02": 62.9,
+      "2026-07-06": -356.87,
+      "2026-07-07": -360.68,
+      "2026-07-08": 93.69,
+      "2026-07-09": 33.24,
+      "2026-07-10": 266.96,
+      "2026-07-13": -693.63,
+      "2026-07-14": -642.53,
+      "2026-07-15": 678.68
+    }
+  }
+}

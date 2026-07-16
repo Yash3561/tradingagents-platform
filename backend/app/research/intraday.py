@@ -514,7 +514,7 @@ def run_tournament(quick: bool = False, deep: bool = False) -> dict:
     }
     out = Path("/tmp/intraday_report_deep.json" if deep else "/tmp/intraday_report.json")
     out.write_text(json.dumps(report, indent=2, default=str))
-    print(f"[intraday] report → {out}")
+    print(f"[intraday] report -> {out}")
     if winner:
         print(f"[intraday] WINNER {winner['label']} | test ${winner['test_mean_day']}/day "
               f"| gap {winner['overfit_gap']} | holdout ${holdout_result['mean_day']}/day "
