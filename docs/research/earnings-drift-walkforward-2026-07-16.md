@@ -6,10 +6,12 @@ the two intraday rounds (price-pattern rules, no edge found), this is a document
 market anomaly (systematic underreaction to earnings surprises), so a positive result
 here would be a new signal family, not a re-tune of an exhausted one.
 
-**Answer: the first candidate across three tournaments to survive its holdout cleanly.**
-Not proof of a durable edge yet — five folds and one holdout window is a start, not a
-verdict — but this is qualitatively different from both intraday rounds, which failed
-at every stage.
+**Answer: the first candidate across three tournaments to show real signal — smaller
+and less universal than it first looked.** The time-based holdout survived cleanly
+(Sharpe 1.9). A same-day out-of-universe validation pass (see below) found the effect
+holds on stocks never used in fitting too, but roughly halves — genuine signal, not
+noise, but the specific parameters are calibrated to this universe, not yet a
+production-ready policy.
 
 ## Setup
 
@@ -48,6 +50,41 @@ at every stage.
   holdout showed: capital-preserving relative to a fully-invested benchmark, not
   beta-matching), but the risk-adjusted profile (Sharpe 1.9, ~6% drawdown, ~10-name
   concurrent cap) is real and coherent, not noise.
+
+## Validation pass: out-of-universe test (same day, second run)
+
+Cheap, high-value check before trusting the above: run the winning policy
+**unmodified, no refitting** against 46 liquid names that were never part of the
+59-ticker fitting universe (PYPL, ABNB, SNOW, COIN, RTX, LOW, DUK, etc. — full list in
+`validate_pead.py`, not committed, ad-hoc). Same two windows, pre-holdout and the
+identical 18-month holdout period:
+
+| Window | Fitting universe (original) | Held-out universe (never fitted) |
+|---|---|---|
+| Pre-holdout | train Sharpe 0.80 (in-sample) | Sharpe **0.35**, CAGR 2.4%, win rate 43.5% |
+| Holdout | Sharpe **1.9**, CAGR 12.36%, DD −6.04% | Sharpe **0.70**, CAGR 5.3%, DD −4.79% |
+
+**The edge does not fully generalize.** It's still net positive on completely
+different stocks in both windows (meaningfully different from either intraday
+tournament, where holdouts went deeply negative) — so this isn't pure noise. But the
+effect roughly halves on Sharpe and more than halves on CAGR when the specific
+59-ticker mega-cap-heavy universe is swapped out. That gap is a real signal that part
+of the original result is universe-specific curve-fitting on top of genuine signal,
+not just time-based overfitting (which the small fold-to-fold gap had already ruled
+out as the dominant issue).
+
+**Data-quality finding from the same pass**: 22 of 3,180 events on the held-out
+universe show |surprise%| > 500 (e.g. COIN, DDOG, WDAY) — classic EPS-estimate-near-
+zero blowups in the scrape data, not real surprises. They don't corrupt any result
+here (entry thresholds are ≤15%, far below where these outliers would ever fire), but
+flag it for anyone extending the surprise-threshold grid upward later.
+
+**Revised read**: PEAD as a category shows real (if modest) signal that survives both
+a time-based holdout AND a stock-universe holdout — still the strongest result across
+three tournaments. But the specific *parameters* found (10% threshold, gap-up
+required, 10-day hold) are calibrated to this particular universe and should be
+treated as a starting point for a broader, cross-universe walk-forward — not
+production-ready — before any live wiring.
 
 ## Reality check on $200/day
 
