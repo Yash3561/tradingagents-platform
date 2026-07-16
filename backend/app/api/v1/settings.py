@@ -62,10 +62,16 @@ NUMERIC_BOUNDS: dict[str, tuple[float, float, bool]] = {
     "intraday_max_trades_day": (1, 12, True),
     "intraday_max_concurrent": (1, 5, True),
     "intraday_daily_loss_halt_pct": (0.1, 3.0, False),
+    # Earnings PEAD policy profile
+    "earnings_surprise_min_pct": (1.0, 30.0, False),
+    "earnings_stop_atr_mult": (1.0, 5.0, False),
+    "earnings_rr_ratio": (1.0, 5.0, False),
+    "earnings_hold_days": (1, 40, True),
+    "earnings_position_size_pct": (1.0, 10.0, False),
 }
 
 ENUM_VALUES: dict[str, set[str]] = {
-    "strategy_mode": {"agents", "quant", "intraday"},
+    "strategy_mode": {"agents", "quant", "intraday", "earnings"},
     "intraday_setup": {"orb", "vwaprev", "mom"},
     "llm_model": ALLOWED_LLM_MODELS,
 }

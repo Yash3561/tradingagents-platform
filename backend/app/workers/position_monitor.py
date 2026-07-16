@@ -46,6 +46,8 @@ async def _load_open_trades(user_id: int | None) -> dict[str, dict]:
                 "side": t.side,
                 "stop_loss_pct": t.stop_loss_pct or DEFAULT_STOP_LOSS_PCT,
                 "take_profit_pct": t.take_profit_pct or DEFAULT_TAKE_PROFIT_PCT,
+                "submitted_at": t.submitted_at,
+                "reasoning_json": t.reasoning_json or {},
             }
     return seen
 
@@ -69,9 +71,12 @@ async def _save_close_notification(user_id: int | None, ticker: str, reason: str
     from app.db.models.notification import Notification
     from app.core.postgres import AsyncSessionLocal
 
-    notif_type = "stop_loss_hit" if reason == "stop_loss" else "take_profit_hit"
+    labels = {"stop_loss": ("stop_loss_hit", "Stop-loss"),
+             "take_profit": ("take_profit_hit", "Take-profit"),
+             "time_exit": ("trade_closed", "Time exit")}
+    notif_type, label = labels.get(reason, ("trade_closed", reason.replace("_", " ").title()))
     pnl_sign = "+" if pnl_dollar >= 0 else ""
-    title = f"{'Stop-loss' if reason == 'stop_loss' else 'Take-profit'} hit — {ticker}"
+    title = f"{label} — {ticker}"
     body = (
         f"{ticker} position automatically closed via {reason.replace('_', '-')}. "
         f"P&L: {pnl_sign}${pnl_dollar:,.2f} ({pnl_pct:+.2f}%)"
@@ -129,12 +134,26 @@ async def _check_account(user_id: int | None, broker) -> list[dict]:
             tp = trade_info.get("take_profit_pct") or DEFAULT_TAKE_PROFIT_PCT
 
             reason = None
-            if pnl_pct <= stop:
+
+            # Time-based exit — currently only the earnings-PEAD engine sets this.
+            # Bracket orders have no native time exit, so this loop is the only
+            # enforcement (same role it already plays as the stop/tp safety net).
+            rj = trade_info.get("reasoning_json") or {}
+            hold_days = rj.get("hold_days") if rj.get("engine") == "earnings-pead" else None
+            submitted_at = trade_info.get("submitted_at")
+            if hold_days and submitted_at:
+                st = submitted_at if submitted_at.tzinfo else submitted_at.replace(tzinfo=UTC)
+                if (datetime.now(UTC) - st).days >= int(hold_days):
+                    reason = "time_exit"
+                    log.info("monitor.time_exit_triggered", user_id=user_id, ticker=ticker,
+                             hold_days=hold_days, pnl_pct=round(pnl_pct, 2))
+
+            if reason is None and pnl_pct <= stop:
                 reason = "stop_loss"
                 log.warning("monitor.stop_loss_triggered",
                             user_id=user_id, ticker=ticker,
                             pnl_pct=round(pnl_pct, 2), threshold=stop)
-            elif pnl_pct >= tp:
+            elif reason is None and pnl_pct >= tp:
                 reason = "take_profit"
                 log.info("monitor.take_profit_triggered",
                          user_id=user_id, ticker=ticker,

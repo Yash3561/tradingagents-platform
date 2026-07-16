@@ -36,7 +36,7 @@ class RunRequest(BaseModel):
     model: str = "deepseek-ai/deepseek-v4-flash"
     # flash produces skeleton debates on the senior prompts — pro fills them
     senior_model: str | None = "deepseek-ai/deepseek-v4-pro"
-    strategy: str | None = None    # "agents" | "quant"; None = user's strategy_mode setting
+    strategy: str | None = None    # "agents" | "quant" | "intraday" | "earnings"; None = user's strategy_mode setting
 
     _models_ok = field_validator("model", "senior_model")(_check_model)
 
@@ -62,8 +62,16 @@ async def trigger_run(
 
     from app.db.models.user_settings import get_user_setting
     from app.agents.quant_baseline import run_quant_baseline_analysis, QUANT_MODEL_LABEL
+    from app.agents.earnings_pead import run_earnings_pead_analysis, EARNINGS_MODEL_LABEL
     strategy = body.strategy or await get_user_setting(user.id, "strategy_mode", "agents")
     use_quant = strategy == "quant"
+    use_earnings = strategy == "earnings"
+
+    model_label = body.model
+    if use_quant:
+        model_label = QUANT_MODEL_LABEL
+    elif use_earnings:
+        model_label = EARNINGS_MODEL_LABEL
 
     run = AgentRun(
         id=run_id,
@@ -71,8 +79,8 @@ async def trigger_run(
         ticker=body.ticker.upper(),
         analysis_date=analysis_date,
         status="pending",
-        llm_model=QUANT_MODEL_LABEL if use_quant else body.model,
-        debate_rounds=0 if use_quant else body.debate_rounds,
+        llm_model=model_label,
+        debate_rounds=0 if (use_quant or use_earnings) else body.debate_rounds,
     )
     db.add(run)
     await db.commit()
@@ -80,6 +88,10 @@ async def trigger_run(
     if use_quant:
         background_tasks.add_task(
             run_quant_baseline_analysis, run_id, body.ticker.upper(), analysis_date, user.id,
+        )
+    elif use_earnings:
+        background_tasks.add_task(
+            run_earnings_pead_analysis, run_id, body.ticker.upper(), analysis_date, user.id,
         )
     else:
         background_tasks.add_task(

@@ -52,6 +52,15 @@ DEFAULTS: dict = {
     "intraday_max_trades_day": 6,
     "intraday_max_concurrent": 3,
     "intraday_daily_loss_halt_pct": 0.5,
+    # Earnings PEAD policy profile — deploy walk-forward tournament winners here
+    # (defaults mirror EARNINGS_PARAM_DEFAULTS in agents/earnings_pead.py; validated
+    # against docs/research/earnings-drift-walkforward-2026-07-16.md)
+    "earnings_surprise_min_pct": 10.0,
+    "earnings_require_gap_up": True,
+    "earnings_stop_atr_mult": 3.5,
+    "earnings_rr_ratio": 3.0,
+    "earnings_hold_days": 10,
+    "earnings_position_size_pct": 5.0,
     # Quant policy profile — deploy walk-forward tournament winners here
     # (defaults mirror QUANT_PARAM_DEFAULTS in agents/quant_baseline.py)
     "quant_trend_rsi_min": 45.0,

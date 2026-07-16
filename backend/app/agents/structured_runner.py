@@ -1259,6 +1259,25 @@ async def _place_order_if_approved(run_id: str, ticker: str, result: dict,
             ticker, qty, stop_loss_pct, take_profit_pct, current_price
         )
 
+        # Carry engine-specific tags from the AgentRun's reasoning_json onto the
+        # Trade row — position_monitor.py reads Trade.reasoning_json directly
+        # (no AgentRun join), so engine-specific exit logic (e.g. the earnings
+        # PEAD engine's hold_days time exit) needs them here too.
+        source_rj = result.get("reasoning_json", {})
+        trade_reasoning_json = {
+            "decision": decision,
+            "confidence": confidence,
+            "position_pct": position_pct,
+            "current_price": current_price,
+            "stop_loss_pct": stop_loss_pct,
+            "take_profit_pct": take_profit_pct,
+            "alpaca_order": order,
+            "agent_summary": result.get("summary"),
+        }
+        for tag in ("engine", "hold_days"):
+            if source_rj.get(tag) is not None:
+                trade_reasoning_json[tag] = source_rj[tag]
+
         async with AsyncSessionLocal() as db:
             trade = Trade(
                 id=str(uuid.uuid4()),
@@ -1272,16 +1291,7 @@ async def _place_order_if_approved(run_id: str, ticker: str, result: dict,
                 status="submitted",  # normalize — sync worker will update from Alpaca
                 stop_loss_pct=stop_loss_pct,
                 take_profit_pct=take_profit_pct,
-                reasoning_json={
-                    "decision": decision,
-                    "confidence": confidence,
-                    "position_pct": position_pct,
-                    "current_price": current_price,
-                    "stop_loss_pct": stop_loss_pct,
-                    "take_profit_pct": take_profit_pct,
-                    "alpaca_order": order,
-                    "agent_summary": result.get("summary"),
-                },
+                reasoning_json=trade_reasoning_json,
             )
             db.add(trade)
             await db.commit()

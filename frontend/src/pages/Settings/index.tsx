@@ -115,6 +115,13 @@ const DEFAULTS = {
   intraday_risk_pct: 0.5,
   intraday_max_trades_day: 6,
   intraday_daily_loss_halt_pct: 0.5,
+  // Earnings PEAD policy profile (drives the earnings engine only)
+  earnings_surprise_min_pct: 10,
+  earnings_require_gap_up: true,
+  earnings_stop_atr_mult: 3.5,
+  earnings_rr_ratio: 3,
+  earnings_hold_days: 10,
+  earnings_position_size_pct: 5,
   // AI Model
   llm_model: "deepseek-ai/deepseek-v4-flash",
   debate_rounds: 2,
@@ -600,7 +607,7 @@ export default function Settings() {
       <Section title="AI Model">
         <Field
           label="Strategy Engine"
-          description="AI Agents = full LLM debate pipeline. Quant Baseline = deterministic regime-filtered trend + mean-reversion rules (no AI credits) — the control group the agents must beat. Intraday Rules = 5-minute-bar engine that trades during market hours and is always flat by the close (no AI credits)."
+          description="AI Agents = full LLM debate pipeline. Quant Baseline = deterministic regime-filtered trend + mean-reversion rules (no AI credits) — the control group the agents must beat. Intraday Rules = 5-minute-bar engine that trades during market hours and is always flat by the close (no AI credits). Earnings Drift = event-driven post-earnings-surprise entries, held for days (no AI credits)."
         >
           <select
             value={settings.strategy_mode}
@@ -611,6 +618,7 @@ export default function Settings() {
             <option value="agents">AI Agents (LLM pipeline)</option>
             <option value="quant">Quant Baseline (rules only, free)</option>
             <option value="intraday">Intraday Rules (5m bars, flat by close)</option>
+            <option value="earnings">Earnings Drift (post-earnings, multi-day hold)</option>
           </select>
         </Field>
 
@@ -786,6 +794,64 @@ export default function Settings() {
           min={0.1} max={3} step={0.1}
           format={v => `−${v}% equity`}
           onChange={v => update("intraday_daily_loss_halt_pct", v)}
+        />
+      </Section>
+
+      {/* ── Earnings Drift Policy ─────────────────────────────────────────────── */}
+      <Section title="Earnings Drift Policy">
+        <p className="text-xs text-text-muted -mt-1">
+          Parameters for the post-earnings-drift (PEAD) engine (only used when Strategy
+          Engine is Earnings Drift). Enters long the first session after a qualifying EPS
+          surprise, holds for days, exits by stop/target or the hold-days timer — rides the
+          normal market-open + midday scan, not a dedicated loop. Defaults are the
+          walk-forward research winner, validated on two independent held-out ticker
+          universes (docs/research/earnings-drift-walkforward-2026-07-16.md).
+        </p>
+        <SliderField
+          label="Min EPS Surprise"
+          description="Minimum earnings beat to trigger an entry"
+          value={settings.earnings_surprise_min_pct}
+          min={1} max={30} step={1}
+          format={v => `≥ ${v}%`}
+          onChange={v => update("earnings_surprise_min_pct", v)}
+        />
+        <Field label="Require Gap Up" description="Only enter if the reaction session opened above the prior close">
+          <Toggle
+            enabled={settings.earnings_require_gap_up}
+            onChange={v => update("earnings_require_gap_up", v)}
+          />
+        </Field>
+        <SliderField
+          label="Stop Distance (×ATR)"
+          description="Wider stops for a multi-day hold — research favored 3.5×"
+          value={settings.earnings_stop_atr_mult}
+          min={1} max={5} step={0.5}
+          format={v => `${v}× ATR(14)`}
+          onChange={v => update("earnings_stop_atr_mult", v)}
+        />
+        <SliderField
+          label="Reward : Risk Ratio"
+          description="Take-profit distance as a multiple of the stop"
+          value={settings.earnings_rr_ratio}
+          min={1} max={5} step={0.5}
+          format={v => `${v} : 1`}
+          onChange={v => update("earnings_rr_ratio", v)}
+        />
+        <SliderField
+          label="Hold Days"
+          description="Force-close via time exit after this many trading days"
+          value={settings.earnings_hold_days}
+          min={1} max={40} step={1}
+          format={v => `${v} trading days`}
+          onChange={v => update("earnings_hold_days", v)}
+        />
+        <SliderField
+          label="Position Size"
+          description="Percent of equity per entry"
+          value={settings.earnings_position_size_pct}
+          min={1} max={10} step={0.5}
+          format={v => `${v}%`}
+          onChange={v => update("earnings_position_size_pct", v)}
         />
       </Section>
 

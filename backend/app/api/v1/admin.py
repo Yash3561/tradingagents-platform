@@ -226,6 +226,8 @@ STRATEGY_KEYS = [
     "intraday_setup", "intraday_stop_atr_mult", "intraday_rr",
     "intraday_risk_pct", "intraday_max_trades_day", "intraday_max_concurrent",
     "intraday_daily_loss_halt_pct",
+    "earnings_surprise_min_pct", "earnings_require_gap_up", "earnings_stop_atr_mult",
+    "earnings_rr_ratio", "earnings_hold_days", "earnings_position_size_pct",
 ]
 
 

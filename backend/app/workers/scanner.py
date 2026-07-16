@@ -311,6 +311,24 @@ def _apply_criteria(results: list[dict], criteria: dict | None) -> list[dict]:
     return filtered
 
 
+def _run_earnings_prescreen(watchlist: list[str], params: dict) -> list[dict]:
+    """
+    Earnings mode's pre-screen: unlike the technical scanner, only tickers with
+    an actual fresh, qualifying earnings surprise today are candidates — the
+    generic RSI/MACD/momentum scoring in _run_pre_screen doesn't apply.
+    """
+    from app.agents.earnings_pead import check_recent_earnings_surprise
+
+    out = []
+    for ticker in watchlist:
+        sig = check_recent_earnings_surprise(ticker, params)
+        if sig:
+            out.append({"ticker": ticker, "direction": "BUY", "score": sig["surprise_pct"],
+                       "reason": f"PEAD: EPS surprise +{sig['surprise_pct']}% on "
+                                 f"{sig['report_date']}"})
+    return sorted(out, key=lambda x: x["score"], reverse=True)
+
+
 def _run_pre_screen(watchlist: list[str], criteria: dict | None = None) -> list[dict]:
     """Screen all tickers, apply optional criteria, return sorted by opportunity score."""
     results = []
@@ -362,6 +380,10 @@ async def run_market_scan(
     """
     from app.agents.structured_runner import run_structured_agent_analysis
     from app.agents.quant_baseline import run_quant_baseline_analysis, QUANT_MODEL_LABEL
+    from app.agents.earnings_pead import (
+        run_earnings_pead_analysis, EARNINGS_MODEL_LABEL,
+        check_recent_earnings_surprise, _load_params as _load_earnings_params,
+    )
     from app.core.postgres import AsyncSessionLocal
     from app.db.models.agent_run import AgentRun
     from app.api.v1.notifications import save_notification
@@ -411,6 +433,10 @@ async def run_market_scan(
     use_quant = strategy_mode == "quant"
     if use_quant:
         model = QUANT_MODEL_LABEL
+        debate_rounds_setting = 0
+    use_earnings = strategy_mode == "earnings"
+    if use_earnings:
+        model = EARNINGS_MODEL_LABEL
         debate_rounds_setting = 0
 
     # ── Circuit breaker gate ───────────────────────────────────────────────────
@@ -477,7 +503,12 @@ async def run_market_scan(
 
     # Step 1: Pre-screen (fast, free)
     loop = asyncio.get_running_loop()
-    candidates = await loop.run_in_executor(None, _run_pre_screen, scan_watchlist, criteria)
+    if use_earnings:
+        earnings_params = await _load_earnings_params(user_id)
+        candidates = await loop.run_in_executor(
+            None, _run_earnings_prescreen, scan_watchlist, earnings_params)
+    else:
+        candidates = await loop.run_in_executor(None, _run_pre_screen, scan_watchlist, criteria)
 
     # Apply VIX gate — drop all BUY candidates when volatility is extreme
     if vix_gate:
@@ -544,6 +575,13 @@ async def run_market_scan(
         try:
             if use_quant:
                 await run_quant_baseline_analysis(
+                    run_id=run_id,
+                    ticker=ticker,
+                    analysis_date=analysis_date,
+                    user_id=user_id,
+                )
+            elif use_earnings:
+                await run_earnings_pead_analysis(
                     run_id=run_id,
                     ticker=ticker,
                     analysis_date=analysis_date,
