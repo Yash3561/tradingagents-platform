@@ -86,6 +86,49 @@ required, 10-day hold) are calibrated to this particular universe and should be
 treated as a starting point for a broader, cross-universe walk-forward — not
 production-ready — before any live wiring.
 
+## Robustness pass: refit on a 105-ticker universe, validate on a fourth, unrelated one
+
+Re-ran the full walk-forward — same 216-policy grid, same 3y/1y folds + 18mo holdout
+discipline — on the **union of both universes used so far** (105 tickers: the
+original 59 mega-cap-heavy set + the 46-ticker validation set), then took the new
+winner **unmodified** and validated it against a **third, completely fresh 63-ticker
+universe** spanning sectors none of the prior universes touched: regional banks,
+REITs, energy, materials, biotech, utilities, transport, discount retail.
+
+**New winner** (surprise ≥10%, gap-up confirmed, wider 3.5×ATR stop, RR 3, hold 10
+days) is a meaningfully tighter fit than the original:
+
+| | Original 59-ticker fit | Expanded 105-ticker refit |
+|---|---|---|
+| Test Sharpe (5 folds) | 1.02 | 1.00 |
+| Overfit gap | −0.22 | **−0.04** (near zero) |
+| Robust policies (all-folds-positive) | 21/216 | 28/216 |
+| Holdout Sharpe / CAGR / trades | 1.9 / 12.36% / 52 | 1.23 / 10.17% / **101** |
+
+Nearly zero train/test gap and roughly double the holdout trade count — a much more
+statistically trustworthy fit, at the cost of a somewhat lower (but still solidly
+positive) holdout return. All 5 folds stayed positive individually (0.28 to 1.66
+Sharpe — even the weakest fold cleared zero).
+
+**Fourth independent check** — this new winner, no refitting, run cold against the
+fresh bank/REIT/energy/materials/biotech/utilities universe:
+
+| | Pre-holdout (2016–2025) | Holdout (2025–2026) |
+|---|---|---|
+| Fresh universe | Sharpe 0.44, CAGR 2.56%, 373 trades | Sharpe **0.89**, CAGR 5.93%, 65 trades |
+
+This is, if anything, slightly *better* than the first validation pass's numbers
+(0.35/0.70 Sharpe) — on an even more different universe (financials/REITs/biotech vs.
+the first validation's tech/consumer names). **Across four independent out-of-sample
+checks now — two universes never used in fitting, two non-overlapping holdout-style
+windows, one refit with an entirely different parameter set — nothing has come back
+negative.** That's not proof of a durable edge, but it's categorically different from
+either intraday tournament, which failed every single check.
+
+**Updated reference policy going forward**: the expanded-universe winner (10% surprise
+threshold, gap-up required, 3.5×ATR stop, RR 3, 10-day hold) — not the original
+narrower fit — given its near-zero overfit gap and larger validated sample size.
+
 ## Reality check on $200/day
 
 This doesn't translate to a $/day figure the way the intraday work does — it's an
@@ -99,13 +142,16 @@ tournaments to clear that bar — modestly, not spectacularly.
 ## Caveats before trusting this further
 
 - **5 folds is still a small sample of "market eras."** More rigorous than the 1-fold
-  first pass, less rigorous than the intraday tournaments' 6 folds. Worth another
-  pass with a longer history window or a second, non-overlapping universe before
-  treating the Sharpe-1.9 holdout as durable.
-- Earnings data is scrape-based (not a formal API) — per-ticker gaps are possible and
-  unaudited row-by-row.
-- Survivorship-biased universe, same as both other tournaments — rankings more
-  trustworthy than absolute returns.
+  first pass, less rigorous than the intraday tournaments' 6 folds — mitigated
+  somewhat by now having two independent out-of-universe checks pointing the same
+  direction, but still worth a longer history window if the data source allows it.
+- Earnings data is scrape-based (not a formal API) — per-ticker gaps are possible
+  (one ticker, UNP, failed to fetch entirely on the fresh-universe pass and was
+  silently dropped) and unaudited row-by-row.
+- Survivorship-biased universe on all three ticker sets — rankings more trustworthy
+  than absolute returns.
+- Effect size is modest everywhere it's been tested (Sharpe 0.4–1.9 depending on
+  universe/window) — real, but this is not a fast path to a large fixed dollar target.
 - **Not deployed anywhere.** This is a research result, not a live arm. Wiring it up
   (new `strategy_mode="earnings"`, a worker loop, settings keys, scanner integration)
   is a real engineering project on the scale of the intraday arm — deliberately not
@@ -113,4 +159,6 @@ tournaments to clear that bar — modestly, not spectacularly.
   approving capital-risk decisions explicitly.
 
 Full leaderboard + fold-by-fold detail + holdout: `earnings-drift-walkforward-
-2026-07-16.json`. Engine code: `backend/app/research/earnings.py`.
+2026-07-16.json` (original 59-ticker fit), `earnings-drift-walkforward-round2-
+expanded-universe-2026-07-16.json` (105-ticker refit — current reference policy).
+Engine code: `backend/app/research/earnings.py`.

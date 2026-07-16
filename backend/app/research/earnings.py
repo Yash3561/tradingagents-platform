@@ -306,9 +306,12 @@ def _folds(dates: pd.DatetimeIndex, train_years: int, test_years: int,
 
 def run_tournament(quick: bool = False, start: str = "2013-01-01", end: str | None = None,
                    train_years: int = 5, test_years: int = 2, holdout_months: int = 24,
-                   top_k: int = 25) -> dict:
+                   top_k: int = 25, tickers: list[str] | None = None) -> dict:
     end = end or pd.Timestamp.today().strftime("%Y-%m-%d")
-    tickers = UNIVERSE[:15] if quick else UNIVERSE
+    if tickers is None:
+        tickers = UNIVERSE[:15] if quick else UNIVERSE
+    elif quick:
+        tickers = tickers[:15]
 
     hist = load_history(tickers, start, end)
     market = load_history(MARKET_TICKERS, start, end)
