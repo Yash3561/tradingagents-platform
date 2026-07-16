@@ -323,6 +323,28 @@ async def _day_pnl(sess: UserSession, broker) -> float:
     return realized + unrealized
 
 
+async def _resolve_bracket_exit(loop, broker, p: dict) -> tuple[float | None, str]:
+    """
+    Position vanished from the broker between polls — a stop or target leg
+    filled it (OCO). Pull the parent bracket order and read whichever child
+    leg shows status=filled for the real exit price, so pnl (and the daily
+    loss halt that sums it) reflects what actually happened instead of None.
+    """
+    order_id = p.get("order_id")
+    entry = p.get("entry")
+    qty = p.get("qty")
+    if order_id and entry and qty:
+        order = await loop.run_in_executor(None, broker.get_order, order_id)
+        for leg in (order or {}).get("legs") or []:
+            if leg.get("status") == "filled" and leg.get("filled_avg_price"):
+                exit_px = float(leg["filled_avg_price"])
+                pnl = round((exit_px - float(entry)) * float(qty), 2)
+                reason = ("stop_loss" if leg.get("type") in ("stop", "stop_limit")
+                          else "take_profit")
+                return pnl, reason
+    return None, "bracket_exit"
+
+
 async def _manage_positions(sess: UserSession, broker, policy, now_et: datetime):
     """Time exits + EOD flat + reconcile bracket-completed exits."""
     loop = asyncio.get_running_loop()
@@ -337,10 +359,13 @@ async def _manage_positions(sess: UserSession, broker, policy, now_et: datetime)
     held = {p.get("symbol") for p in positions}
 
     for ticker, p in list(sess.open.items()):
-        # bracket leg already closed it at the broker → just reconcile
+        # bracket leg already closed it at the broker → resolve the real fill
         if ticker not in held:
-            await _mark_closed(p["trade_id"], "bracket_exit", None)
+            pnl, reason = await _resolve_bracket_exit(loop, broker, p)
+            await _mark_closed(p["trade_id"], reason, pnl)
             sess.open.pop(ticker, None)
+            log.info("intraday.bracket_exit", user_id=sess.user_id, ticker=ticker,
+                     reason=reason, pnl=pnl)
             continue
         if policy.max_hold_bars and p.get("opened_at"):
             opened = p["opened_at"]
@@ -495,15 +520,24 @@ async def _cycle():
         # daily loss halt — flatten and stand down for the session
         if not sess.halted and (sess.open or sess.trades_today):
             equity_halt = None
+            broker_day_pnl = None
             try:
                 loop = asyncio.get_running_loop()
                 account = await loop.run_in_executor(None, broker.get_account)
-                equity_halt = float(account.get("equity", 100_000)) \
-                    * params["intraday_daily_loss_halt_pct"] / 100
+                equity_now = float(account.get("equity", 100_000))
+                equity_halt = equity_now * params["intraday_daily_loss_halt_pct"] / 100
+                # backstop: whole-account equity delta vs prior close catches
+                # this engine's real day P&L even if a trade's pnl wasn't
+                # recorded yet (e.g. bracket-exit reconciliation lag)
+                last_equity = account.get("last_equity")
+                if last_equity is not None:
+                    broker_day_pnl = equity_now - float(last_equity)
             except Exception:
                 pass
             if equity_halt:
                 pnl = await _day_pnl(sess, broker)
+                if broker_day_pnl is not None:
+                    pnl = min(pnl, broker_day_pnl)
                 if pnl <= -equity_halt:
                     log.warning("intraday.daily_loss_halt", user_id=uid,
                                 pnl=round(pnl, 2), halt_at=-equity_halt)
