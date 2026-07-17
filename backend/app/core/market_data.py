@@ -1,0 +1,235 @@
+"""
+Server-side market data core — Alpaca-first, Yahoo-last.
+
+Born 2026-07-17: Yahoo rate-limited Render's shared egress IP (429s on every
+yfinance call), silently starving every engine of data — scans "found nothing",
+runs failed with "Market data unavailable". yfinance is a scrape API; from a
+datacenter IP it can die at any moment. Everything trade-critical therefore
+goes through here:
+
+- Daily OHLCV bars:    Alpaca /v2/stocks/bars (keyed, our own quota) -> yfinance
+- Live snapshot / gap: Alpaca /v2/stocks/{sym}/snapshot            -> yfinance
+- Earnings surprises:  NASDAQ /api/company/{sym}/earnings-surprise  -> yfinance
+- Report timing (pre/post market): NASDAQ earnings calendar (per-date cached)
+
+yfinance remains acceptable for non-trade-critical enrichment (fundamentals,
+news, VIX) where a failure degrades quality instead of blocking trades.
+All functions are sync (called from thread executors) and fail soft: None
+instead of raising.
+"""
+from __future__ import annotations
+
+from datetime import datetime, timedelta, date as date_t, UTC
+
+import structlog
+
+log = structlog.get_logger()
+
+_NASDAQ_HEADERS = {"User-Agent": "Mozilla/5.0", "Accept": "application/json"}
+_ALPACA_TIMEOUT = 20.0
+
+# per-process cache: calendar date -> raw rows. Fetched while the date is
+# CURRENT, rows carry the report timing; NASDAQ strips it from past dates
+# ("time-not-supplied"), so a warm cache is also our timing memory.
+_calendar_rows_cache: dict[str, list[dict]] = {}
+
+
+def _alpaca_creds() -> tuple[str, str, str] | None:
+    from app.config import get_settings
+    s = get_settings()
+    key = getattr(s, "alpaca_api_key", "") or ""
+    sec = getattr(s, "alpaca_api_secret", "") or ""
+    if not (key and sec):
+        return None
+    return key, sec, getattr(s, "alpaca_data_url", "https://data.alpaca.markets")
+
+
+# ── Daily bars ───────────────────────────────────────────────────────────────
+
+def _alpaca_daily_bars(ticker: str, days: int):
+    import pandas as pd
+    import requests
+
+    creds = _alpaca_creds()
+    if creds is None:
+        return None
+    key, sec, data_url = creds
+    start = (datetime.now(UTC) - timedelta(days=days)).strftime("%Y-%m-%dT00:00:00Z")
+    headers = {"APCA-API-KEY-ID": key, "APCA-API-SECRET-KEY": sec}
+    rows: list = []
+    page = None
+    try:
+        while True:
+            params = {"symbols": ticker, "timeframe": "1Day", "start": start,
+                      "limit": 10_000, "adjustment": "all", "feed": "iex"}
+            if page:
+                params["page_token"] = page
+            r = requests.get(f"{data_url}/v2/stocks/bars", headers=headers,
+                             params=params, timeout=_ALPACA_TIMEOUT)
+            r.raise_for_status()
+            j = r.json()
+            rows.extend((j.get("bars") or {}).get(ticker) or [])
+            page = j.get("next_page_token")
+            if not page:
+                break
+    except Exception as e:
+        log.debug("market_data.alpaca_bars_failed", ticker=ticker, error=str(e)[:120])
+        return None
+    if not rows:
+        return None
+    df = pd.DataFrame(rows).rename(columns={
+        "o": "Open", "h": "High", "l": "Low", "c": "Close", "v": "Volume"})
+    df.index = pd.to_datetime(df["t"], utc=True).dt.tz_convert(None).dt.normalize()
+    return df[["Open", "High", "Low", "Close", "Volume"]].astype(float)
+
+
+def _yf_daily_bars(ticker: str, days: int):
+    try:
+        import yfinance as yf
+        period = "1y" if days > 240 else "6mo"
+        hist = yf.Ticker(ticker).history(period=period, interval="1d")
+        if hist is None or hist.empty:
+            return None
+        hist.index = hist.index.tz_localize(None)
+        return hist[["Open", "High", "Low", "Close", "Volume"]]
+    except Exception as e:
+        log.debug("market_data.yf_bars_failed", ticker=ticker, error=str(e)[:120])
+        return None
+
+
+def get_daily_bars(ticker: str, days: int = 400):
+    """Daily OHLCV DataFrame (Open/High/Low/Close/Volume) or None. Alpaca-first."""
+    df = _alpaca_daily_bars(ticker, days)
+    if df is not None and len(df) >= 30:
+        return df
+    return _yf_daily_bars(ticker, days)
+
+
+# ── Snapshot (live-ish price, today's open, prior close) ─────────────────────
+
+def get_snapshot(ticker: str) -> dict | None:
+    """{price, today_open, prev_close} or None. Alpaca snapshot -> yfinance."""
+    import requests
+
+    creds = _alpaca_creds()
+    if creds is not None:
+        key, sec, data_url = creds
+        try:
+            r = requests.get(f"{data_url}/v2/stocks/{ticker}/snapshot",
+                             headers={"APCA-API-KEY-ID": key, "APCA-API-SECRET-KEY": sec},
+                             params={"feed": "iex"}, timeout=_ALPACA_TIMEOUT)
+            r.raise_for_status()
+            j = r.json()
+            daily = j.get("dailyBar") or {}
+            prev = j.get("prevDailyBar") or {}
+            trade = j.get("latestTrade") or {}
+            out = {
+                "price": trade.get("p") or daily.get("c"),
+                "today_open": daily.get("o"),
+                "prev_close": prev.get("c"),
+            }
+            if out["today_open"] and out["prev_close"]:
+                return out
+        except Exception as e:
+            log.debug("market_data.snapshot_failed", ticker=ticker, error=str(e)[:120])
+
+    try:
+        import yfinance as yf
+        hist = yf.Ticker(ticker).history(period="5d", interval="1d")
+        if hist is None or len(hist) < 2:
+            return None
+        return {"price": float(hist["Close"].iloc[-1]),
+                "today_open": float(hist["Open"].iloc[-1]),
+                "prev_close": float(hist["Close"].iloc[-2])}
+    except Exception:
+        return None
+
+
+# ── Earnings surprises (NASDAQ-first) ────────────────────────────────────────
+
+def nasdaq_calendar_rows(day: date_t) -> list[dict]:
+    """Raw NASDAQ earnings-calendar rows for a date, cached per process."""
+    import requests
+
+    key = day.isoformat()
+    if key in _calendar_rows_cache:
+        return _calendar_rows_cache[key]
+    rows: list[dict] = []
+    try:
+        r = requests.get("https://api.nasdaq.com/api/calendar/earnings",
+                         params={"date": key}, headers=_NASDAQ_HEADERS, timeout=15)
+        r.raise_for_status()
+        rows = ((r.json().get("data") or {}).get("rows")) or []
+    except Exception as e:
+        log.debug("market_data.nasdaq_calendar_failed", date=key, error=str(e)[:120])
+    _calendar_rows_cache[key] = rows
+    return rows
+
+
+def _report_timing(ticker: str, report_date: date_t) -> bool | None:
+    """True=pre-market, False=after-hours, None=unknown."""
+    t = ""
+    for row in nasdaq_calendar_rows(report_date):
+        if (row.get("symbol") or "").strip().upper() == ticker.upper():
+            t = row.get("time") or ""
+            break
+    if t == "time-pre-market":
+        return True
+    if t == "time-after-hours":
+        return False
+    # NASDAQ strips timing from past dates — rescue via yfinance's timestamp
+    # (timing only; if Yahoo is rate-limited we stay unknown).
+    try:
+        from datetime import time as dtime
+        import yfinance as yf
+        ed = yf.Ticker(ticker).get_earnings_dates(limit=4)
+        if ed is not None and not ed.empty:
+            for ts in ed.index:
+                if ts.date() == report_date:
+                    return ts.time() < dtime(12, 0)
+    except Exception:
+        pass
+    return None
+
+
+def get_latest_earnings_surprise(ticker: str) -> dict | None:
+    """
+    Most recent REPORTED quarter for a ticker:
+    {report_date: date, surprise_pct: float, pre_market: bool|None}
+    NASDAQ earnings-surprise endpoint first; yfinance get_earnings_dates fallback.
+    pre_market=None means report timing unknown (callers should treat it as
+    after-hours, i.e. actionable the NEXT session — conservative, no lookahead).
+    """
+    import requests
+
+    try:
+        r = requests.get(f"https://api.nasdaq.com/api/company/{ticker}/earnings-surprise",
+                         headers=_NASDAQ_HEADERS, timeout=15)
+        r.raise_for_status()
+        rows = (((r.json().get("data") or {}).get("earningsSurpriseTable") or {})
+                .get("rows")) or []
+        if rows:
+            top = rows[0]  # most recent first
+            rep = datetime.strptime(top["dateReported"], "%m/%d/%Y").date()
+            surprise = float(top["percentageSurprise"])
+            return {"report_date": rep, "surprise_pct": surprise,
+                    "pre_market": _report_timing(ticker, rep), "source": "nasdaq"}
+    except Exception as e:
+        log.debug("market_data.nasdaq_surprise_failed", ticker=ticker, error=str(e)[:120])
+
+    # yfinance fallback — the pre-2026-07-17 primary path
+    try:
+        from datetime import time as dtime
+        import yfinance as yf
+        ed = yf.Ticker(ticker).get_earnings_dates(limit=4)
+        if ed is None or ed.empty:
+            return None
+        ed = ed.dropna(subset=["Reported EPS", "Surprise(%)"]).sort_index()
+        if ed.empty:
+            return None
+        ts = ed.index[-1]
+        return {"report_date": ts.date(), "surprise_pct": float(ed.iloc[-1]["Surprise(%)"]),
+                "pre_market": ts.time() < dtime(12, 0), "source": "yfinance"}
+    except Exception as e:
+        log.debug("market_data.yf_surprise_failed", ticker=ticker, error=str(e)[:120])
+        return None

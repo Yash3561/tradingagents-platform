@@ -83,49 +83,41 @@ def check_recent_earnings_surprise(ticker: str, params: dict) -> dict | None:
     """
     Sync (executor) — is TODAY the actionable session for a qualifying earnings
     surprise on this ticker? Returns None (no signal) or a dict with surprise/gap
-    context. Cheap: last 4 quarters only, not the research module's full history.
+    context. Surprise data is NASDAQ-first with yfinance fallback, gap check is
+    Alpaca-snapshot-first (core.market_data) — a Yahoo IP ban must not blind
+    this engine (it did on 2026-07-17).
     """
-    import yfinance as yf
+    import pandas as pd
+    from app.core.market_data import get_latest_earnings_surprise, get_snapshot
 
-    try:
-        t = yf.Ticker(ticker)
-        ed = t.get_earnings_dates(limit=4)
-    except Exception as e:
-        log.debug("earnings_pead.fetch_failed", ticker=ticker, error=str(e)[:120])
-        return None
-    if ed is None or ed.empty:
-        return None
-    ed = ed.dropna(subset=["Reported EPS", "Surprise(%)"]).sort_index()
-    if ed.empty:
+    sig = get_latest_earnings_surprise(ticker)
+    if sig is None:
         return None
 
-    report_ts = ed.index[-1]
-    surprise_pct = float(ed.iloc[-1]["Surprise(%)"])
+    surprise_pct = sig["surprise_pct"]
     if surprise_pct < params["earnings_surprise_min_pct"]:
         return None
 
-    pre_market = report_ts.time() < dtime(12, 0)
-    entry_day = _entry_day(report_ts, pre_market)
+    # Unknown report timing is treated as after-hours (actionable NEXT session)
+    # — conservative, never creates lookahead.
+    pre_market = bool(sig["pre_market"])
+    entry_day = _entry_day(pd.Timestamp(sig["report_date"]), pre_market)
     today = datetime.now(ET).date()
     if today != entry_day:
         return None  # too early, or the actionable window already passed
 
     gap_pct = None
     if params["earnings_require_gap_up"]:
-        hist = t.history(period="5d", interval="1d")
-        if len(hist) < 2:
-            return None
-        prior_close = float(hist["Close"].iloc[-2])
-        today_open = float(hist["Open"].iloc[-1])
-        gap_pct = round((today_open - prior_close) / prior_close * 100, 2)
+        snap = get_snapshot(ticker)
+        if not snap or not (snap.get("today_open") and snap.get("prev_close")):
+            return None  # fail closed: no gap data, no trade
+        gap_pct = round((float(snap["today_open"]) - float(snap["prev_close"]))
+                        / float(snap["prev_close"]) * 100, 2)
         if gap_pct <= 0:
             return None
 
-    return {"surprise_pct": round(surprise_pct, 1), "report_date": str(report_ts.date()),
+    return {"surprise_pct": round(surprise_pct, 1), "report_date": str(sig["report_date"]),
             "gap_pct": gap_pct}
-
-
-NASDAQ_CALENDAR_URL = "https://api.nasdaq.com/api/calendar/earnings"
 
 
 def fetch_earnings_reporters(min_market_cap: float = 2e9,
@@ -138,10 +130,12 @@ def fetch_earnings_reporters(min_market_cap: float = 2e9,
 
     check_recent_earnings_surprise remains the authoritative per-ticker gate
     (surprise size, entry-day timing, gap confirmation) — a calendar row can
-    never place a trade by itself. max_symbols caps the yfinance verification
-    loop; largest caps first keeps the pool closest to the validated universe.
+    never place a trade by itself. max_symbols caps the verification loop;
+    largest caps first keeps the pool closest to the validated universe.
+    Uses core.market_data's cached calendar rows — the same fetch also warms
+    the report-timing memory the prescreen's entry-day check reads.
     """
-    import httpx
+    from app.core.market_data import nasdaq_calendar_rows
 
     today = datetime.now(ET).date()
     prev = today - timedelta(days=1)
@@ -149,28 +143,18 @@ def fetch_earnings_reporters(min_market_cap: float = 2e9,
         prev -= timedelta(days=1)
 
     caps: dict[str, float] = {}
-    headers = {"User-Agent": "Mozilla/5.0", "Accept": "application/json"}
-    with httpx.Client(timeout=15.0, headers=headers) as client:
-        for day in (today, prev):
+    for day in (today, prev):
+        for row in nasdaq_calendar_rows(day):
+            sym = (row.get("symbol") or "").strip().upper()
+            if not sym.isalnum():
+                continue  # preferred shares / units — skip
             try:
-                r = client.get(NASDAQ_CALENDAR_URL, params={"date": day.isoformat()})
-                r.raise_for_status()
-                rows = ((r.json().get("data") or {}).get("rows")) or []
-            except Exception as e:
-                log.warning("earnings_pead.calendar_failed", date=str(day),
-                            error=str(e)[:120])
+                cap = float((row.get("marketCap") or "")
+                            .replace("$", "").replace(",", ""))
+            except ValueError:
                 continue
-            for row in rows:
-                sym = (row.get("symbol") or "").strip().upper()
-                if not sym.isalnum():
-                    continue  # preferred shares / units — skip
-                try:
-                    cap = float((row.get("marketCap") or "")
-                                .replace("$", "").replace(",", ""))
-                except ValueError:
-                    continue
-                if cap >= min_market_cap:
-                    caps[sym] = max(cap, caps.get(sym, 0.0))
+            if cap >= min_market_cap:
+                caps[sym] = max(cap, caps.get(sym, 0.0))
 
     ranked = sorted(caps, key=lambda s: caps[s], reverse=True)
     return ranked[:max_symbols]

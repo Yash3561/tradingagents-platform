@@ -59,16 +59,15 @@ async def get_active_watchlist(user_id: int | None = None) -> list[str]:
 
 def _screen_ticker(ticker: str) -> dict | None:
     """
-    Pre-screen a ticker using yfinance. No Claude calls — just math.
-    Returns a scored dict or None if data unavailable.
+    Pre-screen a ticker — no Claude calls, just math. Bars come from the
+    Alpaca-first source in core.market_data (yfinance only as fallback) so a
+    Yahoo IP ban can't silently blank every scan. Returns None if unavailable.
     """
     try:
-        import yfinance as yf
-        import numpy as np
+        from app.core.market_data import get_daily_bars
 
-        t = yf.Ticker(ticker)
-        hist = t.history(period="6mo", interval="1d")
-        if len(hist) < 30:
+        hist = get_daily_bars(ticker, days=200)
+        if hist is None or len(hist) < 30:
             return None
 
         close = hist["Close"]

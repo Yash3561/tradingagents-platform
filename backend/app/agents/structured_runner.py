@@ -38,17 +38,26 @@ settings = get_settings()
 # ── Real market data fetching ──────────────────────────────────────────────────
 
 def _fetch_market_data(ticker: str) -> dict:
-    """Fetch real price, technical, and fundamental data via yfinance."""
+    """
+    Real price + technicals from the Alpaca-first bar source (core.market_data)
+    — Yahoo 429s from datacenter IPs must never block a trade. Fundamentals
+    still come from yfinance in their own try: on failure they degrade to None
+    instead of failing the run (only the LLM agents read them).
+    """
     try:
-        import yfinance as yf
-        import numpy as np
+        from app.core.market_data import get_daily_bars
 
-        t = yf.Ticker(ticker)
-        hist = t.history(period="1y", interval="1d")
-        info = t.info or {}
-
-        if hist.empty:
+        hist = get_daily_bars(ticker, days=400)
+        if hist is None or hist.empty:
             return {"error": "No price history available"}
+
+        info = {}
+        try:
+            import yfinance as yf
+            info = yf.Ticker(ticker).info or {}
+        except Exception as e:
+            log.warning("market_data.fundamentals_unavailable", ticker=ticker,
+                        error=str(e)[:120])
 
         close = hist["Close"]
         volume = hist["Volume"]
