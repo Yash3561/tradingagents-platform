@@ -1,0 +1,86 @@
+{
+  "policy": "surprise>=10% gap+ stop3.5atr rr3.0 hold10d risk1.0% x10",
+  "sizing": "flat 10.0% equity, max 10 concurrent",
+  "full_span": {
+    "span": "2013-01-01..2026-07-16",
+    "total_return_pct": 110.85,
+    "cagr_pct": 7.36,
+    "sharpe": 0.78,
+    "max_drawdown_pct": -19.24,
+    "n_trades": 817,
+    "win_rate_pct": 55.1,
+    "avg_trade_pct": 0.97
+  },
+  "holdout": {
+    "span": "2025-01-16..2026-07-15",
+    "total_return_pct": 15.37,
+    "cagr_pct": 10.11,
+    "sharpe": 1.09,
+    "max_drawdown_pct": -6.48,
+    "n_trades": 102,
+    "win_rate_pct": 55.9,
+    "avg_trade_pct": 1.39
+  },
+  "holdout_weekly_pnl_usd_on_100k": {
+    "n_periods": 78,
+    "mean": 192.0,
+    "median": 0.0,
+    "std": 1257.0,
+    "pct_positive": 46.2,
+    "p10": -1233.0,
+    "p25": -593.0,
+    "p75": 741.0,
+    "p90": 1483.0,
+    "best": 4699.0,
+    "worst": -2128.0
+  },
+  "holdout_monthly_pnl_usd_on_100k": {
+    "n_periods": 18,
+    "mean": 835.0,
+    "median": -236.0,
+    "std": 3237.0,
+    "pct_positive": 44.4,
+    "p10": -1842.0,
+    "p25": -905.0,
+    "p75": 2258.0,
+    "p90": 4710.0,
+    "best": 9844.0,
+    "worst": -4200.0
+  },
+  "fullspan_weekly_pnl_usd": {
+    "n_periods": 549,
+    "mean": 202.0,
+    "median": 0.0,
+    "std": 1889.0,
+    "pct_positive": 46.6,
+    "p10": -1793.0,
+    "p25": -513.0,
+    "p75": 873.0,
+    "p90": 2145.0,
+    "best": 10549.0,
+    "worst": -6333.0
+  },
+  "fullspan_monthly_pnl_usd": {
+    "n_periods": 126,
+    "mean": 873.0,
+    "median": 288.0,
+    "std": 4279.0,
+    "pct_positive": 55.6,
+    "p10": -3674.0,
+    "p25": -1450.0,
+    "p75": 2680.0,
+    "p90": 5463.0,
+    "best": 18051.0,
+    "worst": -9442.0
+  },
+  "holdout_trades_per_month": {
+    "mean": 5.7,
+    "max": 15,
+    "min": 0
+  },
+  "holdout_exit_reasons": {
+    "time_exit": 85,
+    "stop": 15,
+    "take_profit": 2
+  }
+}
