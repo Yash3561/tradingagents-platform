@@ -108,6 +108,26 @@ class MarketScheduler:
             self._market_open_notified = False
             log.info("scheduler.new_day", date=today)
 
+    async def _already_ran(self, today: str, label: str) -> bool:
+        """Redis-backed dedupe so a restart inside a scan window can't double-run."""
+        if label in self._scans_run_today:
+            return True
+        try:
+            from app.core.redis_client import get_redis
+            r = await get_redis()
+            return await r.get(f"sched:ran:{today}:{label}") is not None
+        except Exception:
+            return False
+
+    async def _mark_ran(self, today: str, label: str):
+        self._scans_run_today.add(label)
+        try:
+            from app.core.redis_client import get_redis
+            r = await get_redis()
+            await r.set(f"sched:ran:{today}:{label}", "1", ex=86400)
+        except Exception:
+            pass
+
     async def _run_scan(self, label: str, vix: float | None):
         """
         Trigger scheduled scans — one per user who opted in (scan_enabled=true
@@ -173,7 +193,14 @@ class MarketScheduler:
         """
         loop = asyncio.get_running_loop()
         broker = await _any_broker()
-        clock = await loop.run_in_executor(None, _get_market_clock, broker)
+        # Hard timeout — a hung Alpaca call must not stall the scheduler loop
+        # (a stalled tick means every scan window that day is silently missed).
+        try:
+            clock = await asyncio.wait_for(
+                loop.run_in_executor(None, _get_market_clock, broker), timeout=15)
+        except asyncio.TimeoutError:
+            log.warning("scheduler.clock_timeout", note="treating market as closed this tick")
+            clock = {"is_open": False, "next_open": None}
 
         now_utc = datetime.now(timezone.utc)
         today = now_utc.strftime("%Y-%m-%d")
@@ -181,11 +208,22 @@ class MarketScheduler:
 
         is_open = clock.get("is_open", False)
 
+        # Heartbeat — proof of life in the logs twice an hour during ET daytime
+        if now_utc.minute % 30 == 0 and 13 <= now_utc.hour <= 21:
+            log.info("scheduler.heartbeat", is_open=is_open,
+                     scans_run=sorted(self._scans_run_today))
+
         if not is_open:
             return
 
-        # Fetch VIX once per tick (cached implicitly via yfinance)
-        vix = await loop.run_in_executor(None, _get_vix)
+        # Fetch VIX once per tick — same rule: never let yfinance hang the loop.
+        # No VIX just means the >30 BUY-suppression gate can't apply this tick.
+        try:
+            vix = await asyncio.wait_for(
+                loop.run_in_executor(None, _get_vix), timeout=15)
+        except asyncio.TimeoutError:
+            log.warning("scheduler.vix_fetch_timeout", note="scanning without VIX gate")
+            vix = None
 
         # Determine current time in ET by using Alpaca's next_close
         # We work in UTC hours to avoid pytz dependency
@@ -194,27 +232,32 @@ class MarketScheduler:
         utc_minute = now_utc.minute
         utc_time = utc_hour * 60 + utc_minute  # minutes since midnight UTC
 
-        # Morning scan: 9:35 ET = 13:35 UTC (EDT) or 14:35 UTC (EST)
-        # Use a 5-min window to avoid missing it
-        MORNING_UTC_MIN = 13 * 60 + 35   # 13:35
-        MIDDAY_UTC_MIN = 17 * 60 + 0     # 13:00 ET = 17:00 UTC
-        EOD_UTC_MIN = 19 * 60 + 45       # 15:45 ET = 19:45 UTC
+        # Morning scan: 9:35 ET = 13:35 UTC (EDT). Wide catch-up windows — a
+        # restart or one hung tick used to mean the 5-min window (and the whole
+        # trading day) was silently skipped. The _already_ran Redis guard makes
+        # wide windows safe: each scan still fires at most once per day.
+        MORNING_UTC_MIN = 13 * 60 + 35   # 13:35 (9:35 ET)
+        MORNING_UTC_MAX = 15 * 60 + 30   # 15:30 (11:30 ET)
+        MIDDAY_UTC_MIN = 17 * 60 + 0     # 17:00 (13:00 ET)
+        MIDDAY_UTC_MAX = 19 * 60 + 0     # 19:00 (15:00 ET)
+        EOD_UTC_MIN = 19 * 60 + 45       # 19:45 (15:45 ET)
+        EOD_UTC_MAX = 19 * 60 + 55       # 19:55 (15:55 ET)
 
-        if "morning" not in self._scans_run_today:
-            if MORNING_UTC_MIN <= utc_time <= MORNING_UTC_MIN + 5:
-                self._scans_run_today.add("morning")
-                log.info("scheduler.morning_scan_triggered")
+        if MORNING_UTC_MIN <= utc_time <= MORNING_UTC_MAX:
+            if not await self._already_ran(today, "morning"):
+                await self._mark_ran(today, "morning")
+                log.info("scheduler.morning_scan_triggered", utc_minutes=utc_time)
                 asyncio.create_task(self._run_scan("morning", vix))
 
-        if "midday" not in self._scans_run_today:
-            if MIDDAY_UTC_MIN <= utc_time <= MIDDAY_UTC_MIN + 5:
-                self._scans_run_today.add("midday")
-                log.info("scheduler.midday_scan_triggered")
+        if MIDDAY_UTC_MIN <= utc_time <= MIDDAY_UTC_MAX:
+            if not await self._already_ran(today, "midday"):
+                await self._mark_ran(today, "midday")
+                log.info("scheduler.midday_scan_triggered", utc_minutes=utc_time)
                 asyncio.create_task(self._run_scan("midday", vix))
 
-        if "eod_snapshot" not in self._scans_run_today:
-            if EOD_UTC_MIN <= utc_time <= EOD_UTC_MIN + 5:
-                self._scans_run_today.add("eod_snapshot")
+        if EOD_UTC_MIN <= utc_time <= EOD_UTC_MAX:
+            if not await self._already_ran(today, "eod_snapshot"):
+                await self._mark_ran(today, "eod_snapshot")
                 from app.workers.equity_tracker import take_snapshot
                 log.info("scheduler.eod_snapshot")
                 asyncio.create_task(take_snapshot())
