@@ -1,0 +1,52 @@
+name: Scan watchdog
+
+# The forward track record is the product — a silently dead scheduler (see
+# 2026-07-15..16 incident) burns weeks of it. This runs after each market
+# close and FAILS (GitHub emails the owner) if the platform produced zero
+# completed analyses that day. Uses only the public track-record endpoint —
+# no secrets required.
+#
+# Known false-alarm: US market holidays (~9/yr). A failure email on a
+# holiday can be ignored.
+
+on:
+  schedule:
+    - cron: "50 20 * * 1-5"   # 16:50 ET (EDT) after market close
+  workflow_dispatch: {}
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Backend health + today's scan activity
+        run: |
+          python3 - <<'EOF'
+          import json, sys, urllib.request
+          from datetime import datetime
+          from zoneinfo import ZoneInfo
+
+          BASE = "https://tradingagents-backend-p8ef.onrender.com"
+
+          def get(path):
+              req = urllib.request.Request(BASE + path, headers={"User-Agent": "scan-watchdog"})
+              with urllib.request.urlopen(req, timeout=30) as r:
+                  return r.status, r.read().decode()
+
+          status, _ = get("/health")
+          if status != 200:
+              print(f"FAIL: /health returned {status}")
+              sys.exit(1)
+          print("OK: backend healthy")
+
+          _, body = get("/api/v1/track-record/")
+          data = json.loads(body)
+          today_et = datetime.now(ZoneInfo("America/New_York")).strftime("%Y-%m-%d")
+          todays = [r for r in data.get("recent", []) if r.get("date") == today_et]
+          if not todays:
+              print(f"FAIL: zero completed analyses dated {today_et} — "
+                    "scheduler dead, scans blocked, or all runs failed. "
+                    "Check Render logs (scheduler.heartbeat should appear 2x/hour).")
+              sys.exit(1)
+          print(f"OK: {len(todays)} analyses today: "
+                + ", ".join(f"{r['ticker']}:{r['decision']}" for r in todays[:10]))
+          EOF

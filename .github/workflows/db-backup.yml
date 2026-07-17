@@ -1,0 +1,48 @@
+name: Nightly DB backup
+
+# Reliability backlog #1: the immutable trade rows + user data ARE the
+# company; without this we are one provider incident from zero.
+#
+# Setup (repo Settings -> Secrets and variables -> Actions):
+#   NEON_DATABASE_URL   full postgres:// connection string from Neon
+#   BACKUP_PASSPHRASE   any long random string — dumps are AES-256 encrypted
+#                       BEFORE upload because artifacts on a public repo are
+#                       downloadable by anyone logged into GitHub.
+#
+# Restore: openssl enc -d -aes-256-cbc -pbkdf2 -in dump.sql.gz.enc \
+#            -pass pass:$BACKUP_PASSPHRASE | gunzip | psql $TARGET_URL
+#
+# Until both secrets are set, the job exits cleanly with a notice.
+
+on:
+  schedule:
+    - cron: "15 7 * * *"   # 03:15 ET daily, well outside market hours
+  workflow_dispatch: {}
+
+jobs:
+  backup:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Dump, encrypt, upload
+        env:
+          NEON_DATABASE_URL: ${{ secrets.NEON_DATABASE_URL }}
+          BACKUP_PASSPHRASE: ${{ secrets.BACKUP_PASSPHRASE }}
+        run: |
+          if [ -z "$NEON_DATABASE_URL" ] || [ -z "$BACKUP_PASSPHRASE" ]; then
+            echo "::notice::NEON_DATABASE_URL / BACKUP_PASSPHRASE secrets not set — backup skipped."
+            exit 0
+          fi
+          sudo apt-get -qq update && sudo apt-get -qq install -y postgresql-client
+          pg_dump "$NEON_DATABASE_URL" --no-owner --no-privileges \
+            | gzip \
+            | openssl enc -aes-256-cbc -pbkdf2 -pass env:BACKUP_PASSPHRASE \
+                -out "backup-$(date -u +%Y%m%d).sql.gz.enc"
+          ls -lh backup-*.sql.gz.enc
+
+      - name: Store artifact (30-day retention)
+        uses: actions/upload-artifact@v4
+        with:
+          name: db-backup-${{ github.run_id }}
+          path: backup-*.sql.gz.enc
+          retention-days: 30
+          if-no-files-found: ignore

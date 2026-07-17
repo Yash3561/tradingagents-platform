@@ -1,0 +1,434 @@
+[
+  {
+    "label": "surprise>=10% gap+ stop3.5atr rr2.0 hold10d risk1.0% x10",
+    "mean_test_sharpe": 0.57,
+    "all_folds_positive": true,
+    "mean_test_cagr": 6.32,
+    "mean_test_dd": -13.86,
+    "trades_per_fold": 187.0
+  },
+  {
+    "label": "surprise>=10% gap+ stop3.5atr rr3.0 hold40d risk1.0% x10",
+    "mean_test_sharpe": 0.55,
+    "all_folds_positive": true,
+    "mean_test_cagr": 8.06,
+    "mean_test_dd": -20.41,
+    "trades_per_fold": 114.5
+  },
+  {
+    "label": "surprise>=10% gap+ stop3.5atr hold10d risk1.0% x10",
+    "mean_test_sharpe": 0.54,
+    "all_folds_positive": true,
+    "mean_test_cagr": 5.87,
+    "mean_test_dd": -13.99,
+    "trades_per_fold": 186.0
+  },
+  {
+    "label": "surprise>=10% gap+ stop3.5atr rr2.0 hold40d risk1.0% x10",
+    "mean_test_sharpe": 0.53,
+    "all_folds_positive": true,
+    "mean_test_cagr": 7.1,
+    "mean_test_dd": -18.96,
+    "trades_per_fold": 125.0
+  },
+  {
+    "label": "surprise>=10% gap+ stop3.5atr rr3.0 hold10d risk1.0% x10",
+    "mean_test_sharpe": 0.53,
+    "all_folds_positive": true,
+    "mean_test_cagr": 5.72,
+    "mean_test_dd": -14.0,
+    "trades_per_fold": 186.0
+  },
+  {
+    "label": "surprise>=15% gap+ stop3.5atr rr2.0 hold10d risk1.0% x10",
+    "mean_test_sharpe": 0.53,
+    "all_folds_positive": true,
+    "mean_test_cagr": 5.5,
+    "mean_test_dd": -12.52,
+    "trades_per_fold": 156.5
+  },
+  {
+    "label": "surprise>=10% gap+ stop2.5atr rr2.0 hold10d risk1.0% x10",
+    "mean_test_sharpe": 0.51,
+    "all_folds_positive": true,
+    "mean_test_cagr": 5.02,
+    "mean_test_dd": -13.34,
+    "trades_per_fold": 193.0
+  },
+  {
+    "label": "surprise>=15% gap+ stop3.5atr hold10d risk1.0% x10",
+    "mean_test_sharpe": 0.51,
+    "all_folds_positive": true,
+    "mean_test_cagr": 5.3,
+    "mean_test_dd": -12.64,
+    "trades_per_fold": 156.0
+  },
+  {
+    "label": "surprise>=10% gap+ stop2.5atr rr3.0 hold10d risk1.0% x10",
+    "mean_test_sharpe": 0.49,
+    "all_folds_positive": true,
+    "mean_test_cagr": 4.93,
+    "mean_test_dd": -14.3,
+    "trades_per_fold": 189.0
+  },
+  {
+    "label": "surprise>=15% gap+ stop3.5atr rr3.0 hold10d risk1.0% x10",
+    "mean_test_sharpe": 0.49,
+    "all_folds_positive": true,
+    "mean_test_cagr": 5.15,
+    "mean_test_dd": -12.64,
+    "trades_per_fold": 156.0
+  },
+  {
+    "label": "surprise>=15% gap+ stop2.5atr rr2.0 hold10d risk1.0% x10",
+    "mean_test_sharpe": 0.48,
+    "all_folds_positive": true,
+    "mean_test_cagr": 4.64,
+    "mean_test_dd": -11.37,
+    "trades_per_fold": 160.0
+  },
+  {
+    "label": "surprise>=15% gap+ stop2.5atr hold10d risk1.0% x10",
+    "mean_test_sharpe": 0.48,
+    "all_folds_positive": true,
+    "mean_test_cagr": 4.83,
+    "mean_test_dd": -12.73,
+    "trades_per_fold": 159.0
+  },
+  {
+    "label": "surprise>=10% gap+ stop2.5atr hold10d risk1.0% x10",
+    "mean_test_sharpe": 0.47,
+    "all_folds_positive": true,
+    "mean_test_cagr": 4.82,
+    "mean_test_dd": -14.3,
+    "trades_per_fold": 189.5
+  },
+  {
+    "label": "surprise>=15% gap+ stop2.5atr rr2.0 hold40d risk1.0% x10",
+    "mean_test_sharpe": 0.46,
+    "all_folds_positive": true,
+    "mean_test_cagr": 5.6,
+    "mean_test_dd": -17.52,
+    "trades_per_fold": 136.5
+  },
+  {
+    "label": "surprise>=15% gap+ stop2.5atr rr3.0 hold10d risk1.0% x10",
+    "mean_test_sharpe": 0.45,
+    "all_folds_positive": true,
+    "mean_test_cagr": 4.39,
+    "mean_test_dd": -12.54,
+    "trades_per_fold": 158.5
+  },
+  {
+    "label": "surprise>=15% gap+ stop1.5atr rr3.0 hold40d risk1.0% x10",
+    "mean_test_sharpe": 0.44,
+    "all_folds_positive": true,
+    "mean_test_cagr": 4.71,
+    "mean_test_dd": -11.74,
+    "trades_per_fold": 157.0
+  },
+  {
+    "label": "surprise>=15% gap+ stop3.5atr rr3.0 hold20d risk1.0% x10",
+    "mean_test_sharpe": 0.4,
+    "all_folds_positive": true,
+    "mean_test_cagr": 4.46,
+    "mean_test_dd": -14.92,
+    "trades_per_fold": 133.5
+  },
+  {
+    "label": "surprise>=15% gap+ stop2.5atr rr2.0 hold20d risk1.0% x10",
+    "mean_test_sharpe": 0.39,
+    "all_folds_positive": true,
+    "mean_test_cagr": 4.15,
+    "mean_test_dd": -14.96,
+    "trades_per_fold": 149.0
+  },
+  {
+    "label": "surprise>=15% gap+ stop3.5atr rr2.0 hold20d risk1.0% x10",
+    "mean_test_sharpe": 0.38,
+    "all_folds_positive": true,
+    "mean_test_cagr": 4.15,
+    "mean_test_dd": -15.51,
+    "trades_per_fold": 136.5
+  },
+  {
+    "label": "surprise>=10% gap+ stop1.5atr rr3.0 hold10d risk1.0% x10",
+    "mean_test_sharpe": 0.37,
+    "all_folds_positive": true,
+    "mean_test_cagr": 3.32,
+    "mean_test_dd": -11.34,
+    "trades_per_fold": 202.0
+  },
+  {
+    "label": "surprise>=10% gap+ stop1.5atr rr3.0 hold40d risk1.0% x10",
+    "mean_test_sharpe": 0.32,
+    "all_folds_positive": true,
+    "mean_test_cagr": 3.01,
+    "mean_test_dd": -14.14,
+    "trades_per_fold": 183.5
+  },
+  {
+    "label": "surprise>=15% gap+ stop3.5atr rr3.0 hold40d risk1.0% x10",
+    "mean_test_sharpe": 0.32,
+    "all_folds_positive": true,
+    "mean_test_cagr": 3.63,
+    "mean_test_dd": -18.46,
+    "trades_per_fold": 105.5
+  },
+  {
+    "label": "surprise>=15% gap+ stop3.5atr hold20d risk1.0% x10",
+    "mean_test_sharpe": 0.29,
+    "all_folds_positive": true,
+    "mean_test_cagr": 3.0,
+    "mean_test_dd": -16.66,
+    "trades_per_fold": 134.0
+  },
+  {
+    "label": "surprise>=15% gap+ stop2.5atr rr3.0 hold20d risk1.0% x10",
+    "mean_test_sharpe": 0.25,
+    "all_folds_positive": true,
+    "mean_test_cagr": 2.48,
+    "mean_test_dd": -14.27,
+    "trades_per_fold": 144.0
+  },
+  {
+    "label": "surprise>=10% gap+ stop1.5atr rr3.0 hold20d risk1.0% x10",
+    "mean_test_sharpe": 0.22,
+    "all_folds_positive": true,
+    "mean_test_cagr": 1.93,
+    "mean_test_dd": -13.52,
+    "trades_per_fold": 191.5
+  },
+  {
+    "label": "surprise>=15% gap+ stop1.5atr hold40d risk1.0% x10",
+    "mean_test_sharpe": 0.22,
+    "all_folds_positive": true,
+    "mean_test_cagr": 2.3,
+    "mean_test_dd": -15.56,
+    "trades_per_fold": 138.5
+  },
+  {
+    "label": "surprise>=10% gap+ stop3.5atr hold40d risk1.0% x10",
+    "mean_test_sharpe": 0.21,
+    "all_folds_positive": true,
+    "mean_test_cagr": 2.07,
+    "mean_test_dd": -23.78,
+    "trades_per_fold": 110.5
+  },
+  {
+    "label": "surprise>=15% gap+ stop2.5atr hold20d risk1.0% x10",
+    "mean_test_sharpe": 0.19,
+    "all_folds_positive": true,
+    "mean_test_cagr": 1.76,
+    "mean_test_dd": -15.97,
+    "trades_per_fold": 142.0
+  },
+  {
+    "label": "surprise>=15% gap+ stop2.5atr hold40d risk1.0% x10",
+    "mean_test_sharpe": 0.15,
+    "all_folds_positive": true,
+    "mean_test_cagr": 1.03,
+    "mean_test_dd": -19.86,
+    "trades_per_fold": 115.5
+  },
+  {
+    "label": "surprise>=10% gap+ stop2.5atr rr2.0 hold40d risk1.0% x10",
+    "mean_test_sharpe": 0.42,
+    "all_folds_positive": false,
+    "mean_test_cagr": 4.82,
+    "mean_test_dd": -18.78,
+    "trades_per_fold": 157.0
+  },
+  {
+    "label": "surprise>=10% gap+ stop3.5atr rr2.0 hold20d risk1.0% x10",
+    "mean_test_sharpe": 0.4,
+    "all_folds_positive": false,
+    "mean_test_cagr": 4.54,
+    "mean_test_dd": -15.95,
+    "trades_per_fold": 159.0
+  },
+  {
+    "label": "surprise>=15% gap+ stop1.5atr hold20d risk1.0% x10",
+    "mean_test_sharpe": 0.38,
+    "all_folds_positive": false,
+    "mean_test_cagr": 4.38,
+    "mean_test_dd": -13.23,
+    "trades_per_fold": 154.0
+  },
+  {
+    "label": "surprise>=15% gap+ stop3.5atr rr2.0 hold40d risk1.0% x10",
+    "mean_test_sharpe": 0.36,
+    "all_folds_positive": false,
+    "mean_test_cagr": 4.04,
+    "mean_test_dd": -19.3,
+    "trades_per_fold": 112.5
+  },
+  {
+    "label": "surprise>=15% gap+ stop2.5atr rr3.0 hold40d risk1.0% x10",
+    "mean_test_sharpe": 0.33,
+    "all_folds_positive": false,
+    "mean_test_cagr": 3.6,
+    "mean_test_dd": -16.84,
+    "trades_per_fold": 125.5
+  },
+  {
+    "label": "surprise>=15% gap+ stop1.5atr hold10d risk1.0% x10",
+    "mean_test_sharpe": 0.32,
+    "all_folds_positive": false,
+    "mean_test_cagr": 3.12,
+    "mean_test_dd": -12.04,
+    "trades_per_fold": 164.0
+  },
+  {
+    "label": "surprise>=15% gap+ stop1.5atr rr3.0 hold10d risk1.0% x10",
+    "mean_test_sharpe": 0.29,
+    "all_folds_positive": false,
+    "mean_test_cagr": 2.73,
+    "mean_test_dd": -10.32,
+    "trades_per_fold": 165.5
+  },
+  {
+    "label": "surprise>=15% gap+ stop1.5atr rr3.0 hold20d risk1.0% x10",
+    "mean_test_sharpe": 0.27,
+    "all_folds_positive": false,
+    "mean_test_cagr": 2.96,
+    "mean_test_dd": -11.91,
+    "trades_per_fold": 160.5
+  },
+  {
+    "label": "surprise>=10% gap+ stop1.5atr hold10d risk1.0% x10",
+    "mean_test_sharpe": 0.26,
+    "all_folds_positive": false,
+    "mean_test_cagr": 2.33,
+    "mean_test_dd": -13.85,
+    "trades_per_fold": 198.0
+  },
+  {
+    "label": "surprise>=10% gap+ stop2.5atr rr2.0 hold20d risk1.0% x10",
+    "mean_test_sharpe": 0.24,
+    "all_folds_positive": false,
+    "mean_test_cagr": 2.2,
+    "mean_test_dd": -16.86,
+    "trades_per_fold": 176.5
+  },
+  {
+    "label": "surprise>=10% gap+ stop2.5atr rr3.0 hold20d risk1.0% x10",
+    "mean_test_sharpe": 0.24,
+    "all_folds_positive": false,
+    "mean_test_cagr": 2.32,
+    "mean_test_dd": -16.53,
+    "trades_per_fold": 166.0
+  },
+  {
+    "label": "surprise>=10% gap+ stop3.5atr rr3.0 hold20d risk1.0% x10",
+    "mean_test_sharpe": 0.22,
+    "all_folds_positive": false,
+    "mean_test_cagr": 1.97,
+    "mean_test_dd": -17.2,
+    "trades_per_fold": 157.0
+  },
+  {
+    "label": "surprise>=15% gap+ stop1.5atr rr2.0 hold40d risk1.0% x10",
+    "mean_test_sharpe": 0.22,
+    "all_folds_positive": false,
+    "mean_test_cagr": 1.79,
+    "mean_test_dd": -11.9,
+    "trades_per_fold": 165.0
+  },
+  {
+    "label": "surprise>=10% gap+ stop2.5atr rr3.0 hold40d risk1.0% x10",
+    "mean_test_sharpe": 0.2,
+    "all_folds_positive": false,
+    "mean_test_cagr": 1.45,
+    "mean_test_dd": -17.62,
+    "trades_per_fold": 140.5
+  },
+  {
+    "label": "surprise>=10% gap+ stop3.5atr hold20d risk1.0% x10",
+    "mean_test_sharpe": 0.17,
+    "all_folds_positive": false,
+    "mean_test_cagr": 1.35,
+    "mean_test_dd": -18.38,
+    "trades_per_fold": 156.0
+  },
+  {
+    "label": "surprise>=15% gap+ stop1.5atr rr2.0 hold20d risk1.0% x10",
+    "mean_test_sharpe": 0.11,
+    "all_folds_positive": false,
+    "mean_test_cagr": 0.96,
+    "mean_test_dd": -13.14,
+    "trades_per_fold": 166.0
+  },
+  {
+    "label": "surprise>=10% gap+ stop1.5atr rr2.0 hold40d risk1.0% x10",
+    "mean_test_sharpe": 0.04,
+    "all_folds_positive": false,
+    "mean_test_cagr": 0.02,
+    "mean_test_dd": -14.35,
+    "trades_per_fold": 204.0
+  },
+  {
+    "label": "surprise>=10% gap+ stop1.5atr rr2.0 hold20d risk1.0% x10",
+    "mean_test_sharpe": 0.02,
+    "all_folds_positive": false,
+    "mean_test_cagr": 0.14,
+    "mean_test_dd": -15.53,
+    "trades_per_fold": 205.5
+  },
+  {
+    "label": "surprise>=10% gap+ stop1.5atr rr2.0 hold10d risk1.0% x10",
+    "mean_test_sharpe": 0.01,
+    "all_folds_positive": false,
+    "mean_test_cagr": 0.39,
+    "mean_test_dd": -15.37,
+    "trades_per_fold": 208.5
+  },
+  {
+    "label": "surprise>=10% gap+ stop1.5atr hold20d risk1.0% x10",
+    "mean_test_sharpe": 0.01,
+    "all_folds_positive": false,
+    "mean_test_cagr": -0.51,
+    "mean_test_dd": -16.07,
+    "trades_per_fold": 179.5
+  },
+  {
+    "label": "surprise>=15% gap+ stop1.5atr rr2.0 hold10d risk1.0% x10",
+    "mean_test_sharpe": 0.01,
+    "all_folds_positive": false,
+    "mean_test_cagr": 0.29,
+    "mean_test_dd": -13.03,
+    "trades_per_fold": 166.5
+  },
+  {
+    "label": "surprise>=10% gap+ stop2.5atr hold20d risk1.0% x10",
+    "mean_test_sharpe": 0.0,
+    "all_folds_positive": false,
+    "mean_test_cagr": -0.99,
+    "mean_test_dd": -18.18,
+    "trades_per_fold": 163.0
+  },
+  {
+    "label": "surprise>=15% gap+ stop3.5atr hold40d risk1.0% x10",
+    "mean_test_sharpe": 0.0,
+    "all_folds_positive": false,
+    "mean_test_cagr": -1.39,
+    "mean_test_dd": -21.72,
+    "trades_per_fold": 103.0
+  },
+  {
+    "label": "surprise>=10% gap+ stop2.5atr hold40d risk1.0% x10",
+    "mean_test_sharpe": -0.04,
+    "all_folds_positive": false,
+    "mean_test_cagr": -2.14,
+    "mean_test_dd": -22.82,
+    "trades_per_fold": 130.5
+  },
+  {
+    "label": "surprise>=10% gap+ stop1.5atr hold40d risk1.0% x10",
+    "mean_test_sharpe": -0.07,
+    "all_folds_positive": false,
+    "mean_test_cagr": -2.13,
+    "mean_test_dd": -18.92,
+    "trades_per_fold": 159.0
+  }
+]

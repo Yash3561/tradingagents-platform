@@ -202,7 +202,7 @@ async def update_watchlist(body: dict, db: AsyncSession = Depends(get_db),
                            user=Depends(require_user)):
     """Replace this user's entire watchlist. Body: {"tickers": ["AAPL", ...]}"""
     tickers = body.get("tickers", [])
-    clean = list(dict.fromkeys(t.strip().upper() for t in tickers if t.strip()))[:100]
+    clean = list(dict.fromkeys(t.strip().upper() for t in tickers if t.strip()))[:150]
     await set_user_setting(db, user.id, "custom_watchlist", clean)
     await db.commit()
     return {"tickers": clean, "count": len(clean)}
