@@ -29,3 +29,6 @@ nginx/ssl/
 # OS
 .DS_Store
 Thumbs.db
+
+# private founder prep doc - never publish
+FOUNDER-BRIEF.md
