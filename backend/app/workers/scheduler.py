@@ -25,16 +25,21 @@ _last_cb_warnings: set[str] = set()
 
 
 def _get_market_clock(broker=None) -> dict:
-    """Market clock via any configured Alpaca client (env default or a user's)."""
+    """
+    Market clock via any configured Alpaca client (env default or a user's).
+    A FAILED clock call is marked clock_error=True — callers must not read it
+    as "market closed": stale env keys once silently killed every scheduled
+    scan for days because the two states were indistinguishable.
+    """
     from app.broker.alpaca_client import default_client
     try:
         client = broker or default_client()
         if not client.configured:
-            return {"is_open": False, "next_open": None}
+            return {"is_open": False, "next_open": None, "clock_error": True}
         return client.get_clock()
     except Exception as e:
         log.warning("scheduler.clock_failed", error=str(e))
-        return {"is_open": False, "next_open": None}
+        return {"is_open": False, "next_open": None, "clock_error": True}
 
 
 async def _any_broker():
@@ -221,14 +226,24 @@ class MarketScheduler:
             clock = await asyncio.wait_for(
                 loop.run_in_executor(None, _get_market_clock, broker), timeout=15)
         except asyncio.TimeoutError:
-            log.warning("scheduler.clock_timeout", note="treating market as closed this tick")
-            clock = {"is_open": False, "next_open": None}
+            log.warning("scheduler.clock_timeout")
+            clock = {"is_open": False, "next_open": None, "clock_error": True}
 
         now_utc = datetime.now(timezone.utc)
         today = now_utc.strftime("%Y-%m-%d")
         self._reset_if_new_day(today)
 
         is_open = clock.get("is_open", False)
+
+        # Broker clock UNAVAILABLE is not the same as market CLOSED. Fall back
+        # to local ET weekday/hours so broken env keys can't silently disable
+        # every scheduled scan (the 7/15-17 outage). Cost of the fallback: on
+        # a market holiday with a broken clock we'd scan pointlessly — scans
+        # on a closed market simply find stale candidates and place no fills.
+        if not is_open and clock.get("clock_error") and _is_market_hours_et():
+            log.warning("scheduler.clock_error_fallback",
+                        note="broker clock unavailable — using local ET market hours")
+            is_open = True
 
         # Heartbeat — proof of life in the logs twice an hour during ET daytime
         if now_utc.minute % 30 == 0 and 13 <= now_utc.hour <= 21:
