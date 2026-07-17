@@ -505,6 +505,19 @@ async def run_market_scan(
     loop = asyncio.get_running_loop()
     if use_earnings:
         earnings_params = await _load_earnings_params(user_id)
+        # Whole-market mode: candidate pool = every US company that reported
+        # today/yesterday (NASDAQ calendar, market-cap floored) instead of the
+        # watchlist. Falls back to the watchlist when the calendar is down.
+        wm = await _get_setting("earnings_whole_market", False)
+        if wm is True or str(wm).lower() in ("1", "true", "yes"):
+            from app.agents.earnings_pead import fetch_earnings_reporters
+            min_cap_b = float(await _get_setting("earnings_min_market_cap_b", 2.0))
+            reporters = await loop.run_in_executor(
+                None, fetch_earnings_reporters, min_cap_b * 1e9)
+            if reporters:
+                scan_watchlist = reporters
+                log.info("scanner.earnings_whole_market",
+                         reporters=len(reporters), min_cap_b=min_cap_b)
         candidates = await loop.run_in_executor(
             None, _run_earnings_prescreen, scan_watchlist, earnings_params)
     else:

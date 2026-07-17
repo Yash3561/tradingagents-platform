@@ -68,6 +68,7 @@ NUMERIC_BOUNDS: dict[str, tuple[float, float, bool]] = {
     "earnings_rr_ratio": (1.0, 5.0, False),
     "earnings_hold_days": (1, 40, True),
     "earnings_position_size_pct": (1.0, 10.0, False),
+    "earnings_min_market_cap_b": (0.5, 500.0, False),
 }
 
 ENUM_VALUES: dict[str, set[str]] = {

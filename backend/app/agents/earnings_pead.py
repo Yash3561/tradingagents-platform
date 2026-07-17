@@ -125,6 +125,57 @@ def check_recent_earnings_surprise(ticker: str, params: dict) -> dict | None:
             "gap_pct": gap_pct}
 
 
+NASDAQ_CALENDAR_URL = "https://api.nasdaq.com/api/calendar/earnings"
+
+
+def fetch_earnings_reporters(min_market_cap: float = 2e9,
+                             max_symbols: int = 60) -> list[str]:
+    """
+    Sync (executor) — every US ticker that reported today or the prior trading
+    day, from NASDAQ's public earnings calendar, largest market caps first.
+    Whole-market candidate pool for scanner.py's earnings prescreen (setting
+    `earnings_whole_market`) instead of the user's watchlist.
+
+    check_recent_earnings_surprise remains the authoritative per-ticker gate
+    (surprise size, entry-day timing, gap confirmation) — a calendar row can
+    never place a trade by itself. max_symbols caps the yfinance verification
+    loop; largest caps first keeps the pool closest to the validated universe.
+    """
+    import httpx
+
+    today = datetime.now(ET).date()
+    prev = today - timedelta(days=1)
+    while prev.weekday() >= 5:  # Sat/Sun -> prior Friday
+        prev -= timedelta(days=1)
+
+    caps: dict[str, float] = {}
+    headers = {"User-Agent": "Mozilla/5.0", "Accept": "application/json"}
+    with httpx.Client(timeout=15.0, headers=headers) as client:
+        for day in (today, prev):
+            try:
+                r = client.get(NASDAQ_CALENDAR_URL, params={"date": day.isoformat()})
+                r.raise_for_status()
+                rows = ((r.json().get("data") or {}).get("rows")) or []
+            except Exception as e:
+                log.warning("earnings_pead.calendar_failed", date=str(day),
+                            error=str(e)[:120])
+                continue
+            for row in rows:
+                sym = (row.get("symbol") or "").strip().upper()
+                if not sym.isalnum():
+                    continue  # preferred shares / units — skip
+                try:
+                    cap = float((row.get("marketCap") or "")
+                                .replace("$", "").replace(",", ""))
+                except ValueError:
+                    continue
+                if cap >= min_market_cap:
+                    caps[sym] = max(cap, caps.get(sym, 0.0))
+
+    ranked = sorted(caps, key=lambda s: caps[s], reverse=True)
+    return ranked[:max_symbols]
+
+
 def _evaluate(md: dict, signal: dict | None, params: dict) -> dict:
     """Pure rules evaluation. Returns decision, confidence, risk params, audit trail."""
     if signal is None:

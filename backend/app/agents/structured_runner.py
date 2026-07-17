@@ -1207,17 +1207,26 @@ async def _place_order_if_approved(run_id: str, ticker: str, result: dict,
         return
 
     try:
-        # Check ticker-level circuit breakers (earnings blackout etc.)
-        try:
-            from app.workers.circuit_breakers import check_ticker_blocked
-            ticker_blocked, ticker_block_reason = await check_ticker_blocked(ticker, user_id=user_id)
-            if ticker_blocked:
-                log.warning("broker.ticker_blocked", run_id=run_id, ticker=ticker,
-                            reason=ticker_block_reason)
-                return
-        except Exception as cb_err:
-            log.warning("broker.circuit_breaker_check_failed",
-                        ticker=ticker, error=str(cb_err))
+        # Check ticker-level circuit breakers (earnings blackout etc.).
+        # The earnings-drift engine is exempt: it enters the session right AFTER
+        # a report by design, and the just-passed report date still sitting on
+        # the calendar reads as "earnings within N days" — the blackout would
+        # veto every single PEAD entry at the order stage.
+        engine = (result.get("reasoning_json") or {}).get("engine")
+        if engine == "earnings-pead":
+            log.info("broker.earnings_blackout_bypassed", run_id=run_id,
+                     ticker=ticker, reason="PEAD enters post-report by design")
+        else:
+            try:
+                from app.workers.circuit_breakers import check_ticker_blocked
+                ticker_blocked, ticker_block_reason = await check_ticker_blocked(ticker, user_id=user_id)
+                if ticker_blocked:
+                    log.warning("broker.ticker_blocked", run_id=run_id, ticker=ticker,
+                                reason=ticker_block_reason)
+                    return
+            except Exception as cb_err:
+                log.warning("broker.circuit_breaker_check_failed",
+                            ticker=ticker, error=str(cb_err))
 
         # Don't stack positions — skip if we already hold this ticker
         existing = broker.get_position(ticker)
