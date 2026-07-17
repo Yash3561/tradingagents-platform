@@ -34,7 +34,10 @@ PLATFORM_KEY_ENV_MAP = {
 NUMERIC_BOUNDS: dict[str, tuple[float, float, bool]] = {
     # key: (min, max, is_int)
     "debate_rounds": (0, 3, True),
-    "scan_max_candidates": (1, 10, True),
+    # 25 is the storage ceiling; the LLM cost cap of 10 is enforced at scan
+    # time in scanner.py for agents mode only — zero-LLM engines (quant/
+    # earnings) may use the full 25 since their candidates cost nothing.
+    "scan_max_candidates": (1, 25, True),
     "min_confidence_to_trade": (0.0, 1.0, False),
     "max_position_pct": (0.5, 50.0, False),
     "position_size_pct": (0.5, 20.0, False),
@@ -67,7 +70,10 @@ NUMERIC_BOUNDS: dict[str, tuple[float, float, bool]] = {
     "earnings_stop_atr_mult": (1.0, 5.0, False),
     "earnings_rr_ratio": (1.0, 5.0, False),
     "earnings_hold_days": (1, 40, True),
-    "earnings_position_size_pct": (1.0, 10.0, False),
+    # >10% is aggression territory: holdout maxDD scales linearly with sizing
+    # (10% -> -6.5%, 25% -> ~-16% holdout / ~-48% full-span). Run sizes above
+    # 10 on a DEDICATED account, never the clean forward-test arm.
+    "earnings_position_size_pct": (1.0, 25.0, False),
     "earnings_min_market_cap_b": (0.5, 500.0, False),
 }
 

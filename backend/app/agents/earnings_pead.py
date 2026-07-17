@@ -129,7 +129,7 @@ NASDAQ_CALENDAR_URL = "https://api.nasdaq.com/api/calendar/earnings"
 
 
 def fetch_earnings_reporters(min_market_cap: float = 2e9,
-                             max_symbols: int = 60) -> list[str]:
+                             max_symbols: int = 150) -> list[str]:
     """
     Sync (executor) — every US ticker that reported today or the prior trading
     day, from NASDAQ's public earnings calendar, largest market caps first.

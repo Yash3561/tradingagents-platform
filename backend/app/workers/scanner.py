@@ -316,16 +316,25 @@ def _run_earnings_prescreen(watchlist: list[str], params: dict) -> list[dict]:
     Earnings mode's pre-screen: unlike the technical scanner, only tickers with
     an actual fresh, qualifying earnings surprise today are candidates — the
     generic RSI/MACD/momentum scoring in _run_pre_screen doesn't apply.
+    Parallelized (6 workers) so whole-market pools of 100+ reporters finish in
+    well under a minute instead of serially blocking the scan.
     """
+    from concurrent.futures import ThreadPoolExecutor
     from app.agents.earnings_pead import check_recent_earnings_surprise
 
+    def _check(ticker: str):
+        try:
+            return ticker, check_recent_earnings_surprise(ticker, params)
+        except Exception:
+            return ticker, None
+
     out = []
-    for ticker in watchlist:
-        sig = check_recent_earnings_surprise(ticker, params)
-        if sig:
-            out.append({"ticker": ticker, "direction": "BUY", "score": sig["surprise_pct"],
-                       "reason": f"PEAD: EPS surprise +{sig['surprise_pct']}% on "
-                                 f"{sig['report_date']}"})
+    with ThreadPoolExecutor(max_workers=6) as pool:
+        for ticker, sig in pool.map(_check, watchlist):
+            if sig:
+                out.append({"ticker": ticker, "direction": "BUY", "score": sig["surprise_pct"],
+                            "reason": f"PEAD: EPS surprise +{sig['surprise_pct']}% on "
+                                      f"{sig['report_date']}"})
     return sorted(out, key=lambda x: x["score"], reverse=True)
 
 
@@ -398,8 +407,12 @@ async def run_market_scan(
         model = str(await _get_setting("llm_model", "deepseek-ai/deepseek-v4-flash"))
     if max_candidates is None:
         max_candidates = int(await _get_setting("scan_max_candidates", MAX_AI_CANDIDATES))
-    # Hard server-side cap regardless of source — each candidate is a full LLM pipeline
-    max_candidates = min(max(max_candidates, 1), 10)
+    # Hard server-side cap regardless of source. For the agents engine each
+    # candidate is a full LLM pipeline — cap 10 (cost). Zero-LLM engines
+    # (quant/earnings) cost nothing per candidate — cap 25.
+    _mode_for_cap = str(await _get_setting("strategy_mode", "agents"))
+    _cand_ceiling = 10 if _mode_for_cap == "agents" else 25
+    max_candidates = min(max(max_candidates, 1), _cand_ceiling)
 
     # Respect scan_enabled flag
     scan_enabled = await _get_setting("scan_enabled", True)
