@@ -128,27 +128,49 @@ class MarketScheduler:
         except Exception:
             pass
 
-    async def _run_scan(self, label: str, vix: float | None):
+    async def _unmark_ran(self, today: str, label: str):
+        """Release the daily flag so a later tick in the window retries — a
+        crashed/user-less scan must not burn the whole day (cold starts)."""
+        self._scans_run_today.discard(label)
+        try:
+            from app.core.redis_client import get_redis
+            r = await get_redis()
+            await r.delete(f"sched:ran:{today}:{label}")
+        except Exception:
+            pass
+
+    async def _run_scan(self, label: str, vix: float | None, today: str | None = None):
         """
         Trigger scheduled scans — one per user who opted in (scan_enabled=true
         in their settings and a connected broker). Each scan trades in that
-        user's own paper account.
+        user's own paper account. On a crash or an empty user list the daily
+        dedupe flag is RELEASED so a later tick inside the window retries —
+        cold-started processes must not burn the day.
         """
-        import uuid as _uuid
-        from app.workers.scanner import run_market_scan
-        from app.core.websocket_manager import ws_manager
-        from app.api.v1.notifications import save_notification
+        try:
+            import uuid as _uuid
+            from app.workers.scanner import run_market_scan
+            from app.core.websocket_manager import ws_manager
+            from app.api.v1.notifications import save_notification
 
-        now_str = datetime.now(timezone.utc).isoformat()
+            now_str = datetime.now(timezone.utc).isoformat()
 
-        vix_high = vix is not None and vix > 30
-        if vix_high:
-            log.warning("scheduler.vix_gate_active", vix=round(vix, 1),
-                        note="BUYs suppressed — only SELL candidates will pass AI pipeline")
+            vix_high = vix is not None and vix > 30
+            if vix_high:
+                log.warning("scheduler.vix_gate_active", vix=round(vix, 1),
+                            note="BUYs suppressed — only SELL candidates will pass AI pipeline")
 
-        user_ids = await _autoscan_user_ids()
-        if not user_ids:
-            log.info(f"scheduler.scan.{label}.no_optin_users")
+            user_ids = await _autoscan_user_ids()
+            if not user_ids:
+                log.warning(f"scheduler.scan.{label}.no_optin_users",
+                            note="releasing daily flag so the window retries")
+                if today:
+                    await self._unmark_ran(today, label)
+                return
+        except Exception as e:
+            log.error(f"scheduler.scan.{label}.setup_crashed", error=str(e))
+            if today:
+                await self._unmark_ran(today, label)
             return
 
         log.info(f"scheduler.scan.{label}", vix=vix, users=len(user_ids))
@@ -247,13 +269,13 @@ class MarketScheduler:
             if not await self._already_ran(today, "morning"):
                 await self._mark_ran(today, "morning")
                 log.info("scheduler.morning_scan_triggered", utc_minutes=utc_time)
-                asyncio.create_task(self._run_scan("morning", vix))
+                asyncio.create_task(self._run_scan("morning", vix, today))
 
         if MIDDAY_UTC_MIN <= utc_time <= MIDDAY_UTC_MAX:
             if not await self._already_ran(today, "midday"):
                 await self._mark_ran(today, "midday")
                 log.info("scheduler.midday_scan_triggered", utc_minutes=utc_time)
-                asyncio.create_task(self._run_scan("midday", vix))
+                asyncio.create_task(self._run_scan("midday", vix, today))
 
         if EOD_UTC_MIN <= utc_time <= EOD_UTC_MAX:
             if not await self._already_ran(today, "eod_snapshot"):
