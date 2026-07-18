@@ -1,14 +1,50 @@
+import asyncio
 import uuid
 from datetime import datetime, UTC
 from fastapi import APIRouter, Depends
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, desc, func, update
 
+import structlog
+
 from app.core.postgres import get_db
 from app.core.auth import require_user
 from app.db.models.notification import Notification
 
+log = structlog.get_logger()
+
 router = APIRouter()
+
+# Money events also go out by EMAIL (when SMTP is configured and the user
+# hasn't turned off the email_trade_notifications setting). Scan chatter and
+# briefs stay in-app only — the inbox should only ring when money moved.
+EMAIL_TYPES = {"trade_placed", "stop_loss_hit", "take_profit_hit", "circuit_breaker"}
+
+
+async def _email_notification(user_id: int, title: str, body: str,
+                              ticker: str | None, pnl: float | None) -> None:
+    """Fire-and-forget email mirror of a money-event notification."""
+    try:
+        from app.core.postgres import AsyncSessionLocal
+        from app.db.models.user import User
+        from app.db.models.user_settings import get_user_setting
+        from app.core.mailer import send_email
+
+        enabled = await get_user_setting(user_id, "email_trade_notifications", True)
+        if str(enabled).lower() not in ("1", "true", "yes"):
+            return
+        async with AsyncSessionLocal() as db:
+            user = await db.get(User, user_id)
+        if not user or not user.email:
+            return
+        pnl_line = f"\nP&L: ${pnl:+,.2f}" if pnl is not None else ""
+        subject = f"[TradingAgents] {title}" + (f" ({ticker})" if ticker else "")
+        await send_email(
+            user.email, subject,
+            f"{body}{pnl_line}\n\n— TradingAgents · paper trading, simulated money",
+        )
+    except Exception as e:
+        log.warning("notification.email_failed", user_id=user_id, error=str(e)[:150])
 
 
 @router.get("/")
@@ -95,3 +131,8 @@ async def save_notification(
         )
         db.add(notif)
         await db.commit()
+
+    # Email mirror for money events — never blocks or fails the caller
+    # (this sits on the order-placement path).
+    if user_id is not None and type in EMAIL_TYPES:
+        asyncio.create_task(_email_notification(user_id, title, body, ticker, pnl))
