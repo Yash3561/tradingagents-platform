@@ -15,7 +15,10 @@ class Settings(BaseSettings):
     # User with this email is auto-promoted to admin on signup/login
     admin_email: str = ""
 
-    # SMTP (optional — unset host = reset/verify links are logged, not emailed)
+    # Email. Render blocks outbound SMTP ports — set BREVO_API_KEY there
+    # (HTTPS API, smtp_from must be a Brevo-verified sender). SMTP_* works
+    # locally / on SMTP-friendly hosts. Neither set = links logged only.
+    brevo_api_key: str = ""
     smtp_host: str = ""
     smtp_port: int = 587
     smtp_user: str = ""
