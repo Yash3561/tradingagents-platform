@@ -135,10 +135,18 @@ async def _check_account(user_id: int | None, broker) -> list[dict]:
 
             reason = None
 
+            rj = trade_info.get("reasoning_json") or {}
+
+            # Momentum-rotation positions have NO stop/target by design — the
+            # engine exits them itself when they fall out of the ranks. Without
+            # this skip the None stop above falls back to the 7%/15% defaults
+            # and this loop would silently dismantle the rotation book.
+            if rj.get("engine") == "momentum-rotation":
+                continue
+
             # Time-based exit — currently only the earnings-PEAD engine sets this.
             # Bracket orders have no native time exit, so this loop is the only
             # enforcement (same role it already plays as the stop/tp safety net).
-            rj = trade_info.get("reasoning_json") or {}
             hold_days = rj.get("hold_days") if rj.get("engine") == "earnings-pead" else None
             submitted_at = trade_info.get("submitted_at")
             if hold_days and submitted_at:

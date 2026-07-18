@@ -35,8 +35,18 @@ DEFAULTS: dict = {
     "min_confidence_to_trade": 0.48,
     "earnings_blackout_days": 5,
     # "agents" = LLM pipeline, "quant" = deterministic baseline (no LLM cost),
-    # "intraday" = 5-minute rule engine, flat by the close (no LLM cost)
+    # "intraday" = 5-minute rule engine, flat by the close (no LLM cost),
+    # "earnings" = post-earnings drift (no LLM cost),
+    # "momentum" = monthly top-N relative-momentum rotation (no LLM cost,
+    #              DEDICATED account — it rotates every universe position it sees)
     "strategy_mode": "agents",
+    # Momentum rotation policy profile (defaults = 2026-07-18 tournament winner)
+    "momentum_lookback_days": 126,
+    "momentum_skip_days": 0,
+    "momentum_top_n": 4,
+    "momentum_rebalance_days": 21,
+    "momentum_weighting": "inv_vol",
+    "momentum_exposure_pct": 95.0,
     # Intraday policy profile — deploy walk-forward tournament winners here
     # (defaults mirror INTRADAY_PARAM_DEFAULTS in workers/intraday_engine.py)
     "intraday_setup": "mom",

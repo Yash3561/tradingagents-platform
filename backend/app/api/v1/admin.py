@@ -228,6 +228,8 @@ STRATEGY_KEYS = [
     "intraday_daily_loss_halt_pct",
     "earnings_surprise_min_pct", "earnings_require_gap_up", "earnings_stop_atr_mult",
     "earnings_rr_ratio", "earnings_hold_days", "earnings_position_size_pct",
+    "momentum_lookback_days", "momentum_skip_days", "momentum_top_n",
+    "momentum_rebalance_days", "momentum_weighting", "momentum_exposure_pct",
 ]
 
 

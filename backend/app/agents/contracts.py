@@ -185,8 +185,11 @@ class RiskAssessment(BaseModel):
     risk_level: RiskLevel
     approved: bool = Field(description="Whether trade is approved to proceed to PM")
 
+    # le=40: deterministic engines run concentrated books (momentum rotation
+    # ~24-38%/name, earnings aggression arm 25%). LLM agents are still held to
+    # ~5% by the risk-manager prompt rules; this schema bound is the hard stop.
     recommended_position_pct: float | None = Field(
-        default=None, ge=0.0, le=20.0,
+        default=None, ge=0.0, le=40.0,
         description="Recommended position size as % of portfolio"
     )
     max_position_pct: float | None = Field(
@@ -243,8 +246,10 @@ class FinalDecision(BaseModel):
 
     # Order parameters (None if HOLD)
     order_side: str | None = Field(default=None, description="buy | sell")
+    # le=40: see RiskAssessment.recommended_position_pct — concentrated
+    # deterministic engines exceed the old 20 cap by design
     position_size_pct: float | None = Field(
-        default=None, ge=0.0, le=20.0,
+        default=None, ge=0.0, le=40.0,
         description="Actual position size to use, % of portfolio"
     )
     order_type: str = Field(default="market", description="market | limit | twap")

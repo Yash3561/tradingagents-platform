@@ -475,6 +475,15 @@ async def run_market_scan(
     except Exception as e:
         log.warning("scanner.circuit_breaker_check_failed", error=str(e))
 
+    if strategy_mode == "momentum":
+        # Portfolio-level engine: one rotation decision per ~month, computed
+        # cross-sectionally — the per-ticker candidate machinery below doesn't
+        # apply. Runs after the circuit-breaker gate on purpose (halts stop it)
+        # but skips the VIX candidate filter (the tournament showed vol filters
+        # only hurt this family; account-level breakers remain the safety net).
+        from app.agents.momentum_rotation import run_momentum_scan
+        return await run_momentum_scan(user_id)
+
     # ── Regime detection — adjusts strategy ───────────────────────────────────
     try:
         from app.workers.regime_detector import get_market_regime

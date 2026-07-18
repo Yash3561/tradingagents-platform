@@ -75,10 +75,19 @@ NUMERIC_BOUNDS: dict[str, tuple[float, float, bool]] = {
     # 10 on a DEDICATED account, never the clean forward-test arm.
     "earnings_position_size_pct": (1.0, 25.0, False),
     "earnings_min_market_cap_b": (0.5, 500.0, False),
+    # Momentum rotation policy profile. top_n floor of 3 keeps per-position
+    # weight under ~32% of equity at 95% exposure — this is already the
+    # concentrated arm, don't let a typo make it a single-stock account.
+    "momentum_lookback_days": (21, 378, True),
+    "momentum_skip_days": (0, 42, True),
+    "momentum_top_n": (3, 20, True),
+    "momentum_rebalance_days": (5, 63, True),
+    "momentum_exposure_pct": (10.0, 100.0, False),
 }
 
 ENUM_VALUES: dict[str, set[str]] = {
-    "strategy_mode": {"agents", "quant", "intraday", "earnings"},
+    "strategy_mode": {"agents", "quant", "intraday", "earnings", "momentum"},
+    "momentum_weighting": {"equal", "inv_vol"},
     "intraday_setup": {"orb", "vwaprev", "mom"},
     "llm_model": ALLOWED_LLM_MODELS,
 }

@@ -1203,12 +1203,17 @@ async def _place_order_if_approved(run_id: str, ticker: str, result: dict,
         return
 
     if decision == "SELL":
-        long_only = bool(await get_user_setting(user_id, "long_only", True))
-        if long_only:
-            log.info("broker.skipping_short", run_id=run_id, ticker=ticker,
-                     reason="Long-only strategy — SELL signals skipped")
-            return
-        # long_only off: SELL closes an existing long position — never a naked short
+        # Momentum-rotation SELLs are the engine's ONLY exit mechanism and are
+        # close-only by construction (_close_long_if_held never shorts) — they
+        # must work regardless of the long_only preference.
+        engine_tag = (result.get("reasoning_json") or {}).get("engine")
+        if engine_tag != "momentum-rotation":
+            long_only = bool(await get_user_setting(user_id, "long_only", True))
+            if long_only:
+                log.info("broker.skipping_short", run_id=run_id, ticker=ticker,
+                         reason="Long-only strategy — SELL signals skipped")
+                return
+        # SELL closes an existing long position — never a naked short
         await _close_long_if_held(run_id, ticker, result, broker, user_id, confidence)
         return
 
@@ -1222,9 +1227,12 @@ async def _place_order_if_approved(run_id: str, ticker: str, result: dict,
         # the calendar reads as "earnings within N days" — the blackout would
         # veto every single PEAD entry at the order stage.
         engine = (result.get("reasoning_json") or {}).get("engine")
-        if engine == "earnings-pead":
+        if engine in ("earnings-pead", "momentum-rotation"):
+            # earnings-pead enters the session right after a report; momentum
+            # rotation holds through earnings by design (monthly rebalance, no
+            # event awareness) — the blackout would randomly distort both.
             log.info("broker.earnings_blackout_bypassed", run_id=run_id,
-                     ticker=ticker, reason="PEAD enters post-report by design")
+                     ticker=ticker, engine=engine)
         else:
             try:
                 from app.workers.circuit_breakers import check_ticker_blocked
@@ -1261,8 +1269,15 @@ async def _place_order_if_approved(run_id: str, ticker: str, result: dict,
         min_pct = float(db_pos_size_high_conf) if confidence >= 0.70 else float(db_pos_size_pct)
         position_pct = max(position_pct or min_pct, min_pct)
 
-        stop_loss_pct = final.get("stop_loss_pct") or float(db_stop_loss_pct)
-        take_profit_pct = final.get("take_profit_pct") or float(db_take_profit_pct)
+        if engine == "momentum-rotation":
+            # Rotation positions have no stop/target by design — exits happen
+            # only when the name drops out of the ranks (position_monitor
+            # skips these rows; a None stop must NOT fall back to defaults)
+            stop_loss_pct = None
+            take_profit_pct = None
+        else:
+            stop_loss_pct = final.get("stop_loss_pct") or float(db_stop_loss_pct)
+            take_profit_pct = final.get("take_profit_pct") or float(db_take_profit_pct)
 
         # Calculate qty and force whole shares only
         import math
@@ -1272,10 +1287,13 @@ async def _place_order_if_approved(run_id: str, ticker: str, result: dict,
         qty = max(1, math.floor(dollar_amount / current_price))  # whole shares, minimum 1
 
         side = "buy"
-        # Use bracket order so Alpaca manages stop-loss and take-profit natively
-        order = broker.submit_bracket_order(
-            ticker, qty, stop_loss_pct, take_profit_pct, current_price
-        )
+        if engine == "momentum-rotation":
+            order = broker.submit_order(ticker, side, qty)
+        else:
+            # Bracket order so Alpaca manages stop-loss and take-profit natively
+            order = broker.submit_bracket_order(
+                ticker, qty, stop_loss_pct, take_profit_pct, current_price
+            )
 
         # Carry engine-specific tags from the AgentRun's reasoning_json onto the
         # Trade row — position_monitor.py reads Trade.reasoning_json directly

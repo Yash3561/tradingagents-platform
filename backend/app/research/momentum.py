@@ -72,6 +72,33 @@ def quick_grid() -> list[MomPolicy]:
             for lb in (126, 252) for n in (4, 8)]
 
 
+def latest_target_weights(close: pd.DataFrame, lookback_days: int, skip_days: int,
+                          top_n: int, weighting: str = "inv_vol",
+                          vol_window: int = 63) -> dict[str, float]:
+    """
+    Target weights at the most recent close — the LIVE engine's entry point
+    (agents/momentum_rotation.py). Same math as MomData/simulate_momentum:
+    momentum = close[t-skip] / close[t-skip-lookback] - 1, inverse-vol weights
+    from the 63d daily-return stddev. Keeping it in this module is what keeps
+    live and backtest from drifting apart.
+    Weights sum to 1.0 — the caller applies exposure scaling.
+    """
+    shifted = close.shift(skip_days)
+    mom = (shifted / shifted.shift(lookback_days) - 1).iloc[-1].dropna()
+    if mom.empty:
+        return {}
+    top = mom.nlargest(min(top_n, len(mom))).index
+    if weighting == "inv_vol":
+        vol = close[top].pct_change().rolling(vol_window).std().iloc[-1]
+        iv = 1.0 / vol.where(vol > 0)
+        fill = iv.mean() if np.isfinite(iv.mean()) else 1.0
+        iv = iv.fillna(fill)
+        w = iv / iv.sum()
+    else:
+        w = pd.Series(1.0 / len(top), index=top)
+    return {str(t): float(w[t]) for t in top}
+
+
 class MomData:
     """Per-day ranking inputs derived from a Panel, all shifted correctly."""
 
