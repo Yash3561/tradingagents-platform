@@ -25,6 +25,21 @@ from app.api.router import api_router
 log = structlog.get_logger()
 settings = get_settings()
 
+# Error alerting — no-op unless SENTRY_DSN is set (free tier is enough).
+# Init at import time so worker-loop crashes and startup failures report too.
+if getattr(settings, "sentry_dsn", ""):
+    try:
+        import sentry_sdk
+        sentry_sdk.init(
+            dsn=settings.sentry_dsn,
+            environment=settings.environment,
+            traces_sample_rate=0.0,   # errors only — stay inside free quota
+            send_default_pii=False,
+        )
+        log.info("sentry.enabled", env=settings.environment)
+    except Exception as e:  # never let alerting break the app
+        log.warning("sentry.init_failed", error=str(e))
+
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):

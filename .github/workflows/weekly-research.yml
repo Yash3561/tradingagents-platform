@@ -1,0 +1,85 @@
+name: Weekly research tournaments
+
+# Re-runs the walk-forward tournaments every Saturday as data accrues, so
+# leaderboard drift is visible without anyone remembering to run them.
+# Reports are uploaded as artifacts (30 days) + summarized in the job page.
+#
+# Holdout note: the holdout window rolls forward each week, so these runs
+# keep validating on data that did not exist when the grids were designed —
+# that is forward monitoring, not holdout re-use. The discipline that still
+# applies: never change a grid in reaction to a holdout number.
+#
+# Secrets (optional but recommended): ALPACA_API_KEY / ALPACA_API_SECRET —
+# without them the data layer falls back to yfinance, which often 429s from
+# shared GitHub egress IPs.
+
+on:
+  schedule:
+    - cron: "0 13 * * 6"   # Saturday 13:00 UTC
+  workflow_dispatch: {}
+
+jobs:
+  tournaments:
+    runs-on: ubuntu-latest
+    timeout-minutes: 300
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install research deps
+        run: pip install --quiet pandas numpy structlog requests yfinance pydantic pydantic-settings
+
+      - name: Momentum rotation tournament
+        env:
+          ALPACA_API_KEY: ${{ secrets.ALPACA_API_KEY }}
+          ALPACA_API_SECRET: ${{ secrets.ALPACA_API_SECRET }}
+          PYTHONPATH: backend
+        run: |
+          python -m app.research.momentum --out reports/momentum_report.json
+
+      - name: Quant rule-family tournament
+        if: always()
+        env:
+          ALPACA_API_KEY: ${{ secrets.ALPACA_API_KEY }}
+          ALPACA_API_SECRET: ${{ secrets.ALPACA_API_SECRET }}
+          PYTHONPATH: backend
+        run: |
+          python -m app.research.run --out reports/walkforward_report.json
+
+      - name: Job summary
+        if: always()
+        run: |
+          python3 - <<'EOF'
+          import json, os
+          from pathlib import Path
+          lines = ["# Weekly tournament results", ""]
+          for name, path in [("Momentum rotation", "reports/momentum_report.json"),
+                             ("Quant rule family", "reports/walkforward_report.json")]:
+              p = Path(path)
+              lines.append(f"## {name}")
+              if not p.exists():
+                  lines.append("_report missing — step failed_\n")
+                  continue
+              r = json.loads(p.read_text())
+              for row in r.get("leaderboard", [])[:3]:
+                  lines.append(f"- `{row['label']}` test Sharpe {row['test_sharpe']} "
+                               f"(gap {row['overfit_gap']})")
+              ho = r.get("holdout") or {}
+              if ho:
+                  m = ho.get("metrics", {})
+                  lines.append(f"- holdout: {m.get('total_return_pct')}% "
+                               f"(Sharpe {m.get('sharpe')}, maxDD {m.get('max_drawdown_pct')}%)")
+              lines.append("")
+          Path(os.environ["GITHUB_STEP_SUMMARY"]).write_text("\n".join(lines))
+          EOF
+
+      - name: Upload reports
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: research-reports-${{ github.run_id }}
+          path: reports/
+          retention-days: 30

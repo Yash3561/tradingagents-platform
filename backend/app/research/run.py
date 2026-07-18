@@ -19,6 +19,7 @@ def main() -> None:
     ap.add_argument("--holdout-months", type=int, default=12)
     ap.add_argument("--quick", action="store_true",
                     help="small grid + shorter span, for smoke testing")
+    ap.add_argument("--out", default="/tmp/research_report.json")
     args = ap.parse_args()
 
     from app.research.walkforward import run_walkforward, default_grid
@@ -35,7 +36,10 @@ def main() -> None:
                              test_years=args.test_years,
                              holdout_months=args.holdout_months, grid=grid)
 
-    with open("/tmp/research_report.json", "w") as f:
+    from pathlib import Path
+    out = Path(args.out)
+    out.parent.mkdir(parents=True, exist_ok=True)
+    with open(out, "w") as f:
         json.dump(report, f, indent=2, default=str)
 
     m = report["meta"]

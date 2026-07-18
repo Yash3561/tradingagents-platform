@@ -15,6 +15,9 @@ class Settings(BaseSettings):
     # User with this email is auto-promoted to admin on signup/login
     admin_email: str = ""
 
+    # Error alerting — Sentry backend DSN; empty = disabled
+    sentry_dsn: str = ""
+
     # Email. Render blocks outbound SMTP ports — set BREVO_API_KEY there
     # (HTTPS API, smtp_from must be a Brevo-verified sender). SMTP_* works
     # locally / on SMTP-friendly hosts. Neither set = links logged only.

@@ -16,8 +16,9 @@ Flow:
 """
 
 from __future__ import annotations
+import re
 from enum import Enum
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 
 
 # ── Enums ─────────────────────────────────────────────────────────────────────
@@ -216,6 +217,19 @@ class RiskAssessment(BaseModel):
     )
     risk_notes: list[str] = Field(default_factory=list, max_length=5)
     reasoning: str = Field(description="Risk assessment reasoning, max 150 words")
+
+    @field_validator("rejection_reason", mode="before")
+    @classmethod
+    def _strip_chain_of_thought(cls, v):
+        """Some models leak <think> blocks / raw deliberation into this field;
+        it is shown to users and stored on the run row, so keep it terse."""
+        if not isinstance(v, str):
+            return v
+        v = re.sub(r"<think(?:ing)?>.*?(?:</think(?:ing)?>|$)", "", v,
+                   flags=re.DOTALL | re.IGNORECASE).strip()
+        if len(v) > 400:
+            v = v[:397].rstrip() + "..."
+        return v or None
 
 
 # ── Final Decision Contract ───────────────────────────────────────────────────
