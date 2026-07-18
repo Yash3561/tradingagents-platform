@@ -12,6 +12,7 @@ export default function VerifyEmailBanner() {
   const [visible, setVisible] = useState(false);
   const [sending, setSending] = useState(false);
   const [sent, setSent] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
     if (sessionStorage.getItem("verify_banner_dismissed")) return;
@@ -32,11 +33,17 @@ export default function VerifyEmailBanner() {
 
   const resend = async () => {
     setSending(true);
+    setError(null);
     try {
       await api.post("/auth/resend-verification");
       setSent(true);
-    } catch {
-      // rate-limited or transient — keep the button available
+    } catch (err: any) {
+      const status = err?.response?.status;
+      setError(
+        status === 429
+          ? "Too many attempts — try again in an hour"
+          : "Couldn't send the email — try again later",
+      );
     } finally {
       setSending(false);
     }
@@ -56,14 +63,17 @@ export default function VerifyEmailBanner() {
       {sent ? (
         <span className="text-xs text-slate-400">Sent — check your inbox</span>
       ) : (
-        <button
-          onClick={resend}
-          disabled={sending}
-          className="text-xs font-medium text-warn hover:underline flex items-center gap-1.5 disabled:opacity-60"
-        >
-          {sending && <Loader2 size={11} className="animate-spin" />}
-          Resend email
-        </button>
+        <>
+          {error && <span className="text-xs text-loss">{error}</span>}
+          <button
+            onClick={resend}
+            disabled={sending}
+            className="text-xs font-medium text-warn hover:underline flex items-center gap-1.5 disabled:opacity-60"
+          >
+            {sending && <Loader2 size={11} className="animate-spin" />}
+            Resend email
+          </button>
+        </>
       )}
       <button onClick={dismiss} className="text-slate-500 hover:text-white" title="Dismiss">
         <X size={14} />

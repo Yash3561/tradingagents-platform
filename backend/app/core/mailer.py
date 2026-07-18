@@ -36,7 +36,11 @@ def _send_brevo(to: str, subject: str, body: str) -> None:
         },
         timeout=15,
     )
-    r.raise_for_status()
+    if r.status_code >= 400:
+        # Surface Brevo's error body — raise_for_status loses it, and it names
+        # the actual problem (unverified sender, suspended account, bad recipient)
+        raise RuntimeError(f"brevo {r.status_code}: {r.text[:500]}")
+    logger.info("[mailer] brevo accepted email to %s: %s", to, r.text[:200])
 
 
 def _frontend_base() -> str:

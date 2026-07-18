@@ -386,7 +386,17 @@ async def resend_verification(user=Depends(require_user)):
     if user.email_verified:
         return {"ok": True, "message": "Email already verified"}
     await enforce_rate_limit(f"resend-verify:{user.id}", limit=3, window_seconds=3600)
-    sent = await _send_verification(user)  # noqa: F841 — dev mode logs the link
+    sent = await _send_verification(user)
+    from app.config import get_settings
+    s = get_settings()
+    provider_configured = bool(getattr(s, "brevo_api_key", "") or s.smtp_host)
+    if provider_configured and not sent:
+        # Don't claim "sent" when the provider rejected it — the failure is in
+        # the server logs ([mailer] brevo send failed)
+        raise HTTPException(
+            status_code=502,
+            detail="The verification email could not be sent. Please try again later.",
+        )
     return {"ok": True, "message": "Verification email sent"}
 
 
