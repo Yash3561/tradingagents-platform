@@ -1,0 +1,310 @@
+{
+  "meta": {
+    "family": "cross-sectional momentum rotation (long-only top-N)",
+    "span": "2016-01-04..2026-07-17",
+    "universe_size": 59,
+    "policies_tested": 288,
+    "policies_qualified": 288,
+    "folds": [
+      "2017-01-04..2021-01-04 / test 2021-01-05..2022-01-04",
+      "2018-01-04..2022-01-04 / test 2022-01-05..2023-01-04",
+      "2019-01-04..2023-01-04 / test 2023-01-05..2024-01-04",
+      "2020-01-04..2024-01-04 / test 2024-01-05..2025-01-04"
+    ],
+    "holdout": "2025-07-18..2026-07-17",
+    "spy_test_period_return_pct": 79.99,
+    "equal_weight_universe_test_period": {
+      "total_return_pct": 103.33,
+      "cagr_pct": 17.0,
+      "sharpe": 0.96,
+      "max_drawdown_pct": -26.3
+    },
+    "elapsed_s": 90.5,
+    "caveats": [
+      "survivorship-biased universe (picked today) \u2014 momentum rotation on survivors is FLATTERED more than most families, because losers that would have ranked high before dying are absent",
+      "daily bars, 5bps slippage per dollar traded; weekly variants churn hard \u2014 check turnover_x_per_year before believing a Sharpe",
+      "rotation must beat the equal-weight universe benchmark, not just SPY, to prove the ranking adds value over the universe itself"
+    ]
+  },
+  "leaderboard": [
+    {
+      "label": "mom[126-0] top4 rb21d inv_vol off",
+      "policy": {
+        "lookback_days": 126,
+        "skip_days": 0,
+        "top_n": 4,
+        "rebalance_days": 21,
+        "weighting": "inv_vol",
+        "market_filter": "none",
+        "regime_mode": "off",
+        "exposure_pct": 95.0
+      },
+      "train_sharpe": 1.5,
+      "test_sharpe": 1.29,
+      "overfit_gap": 0.2,
+      "test_cagr_pct": 34.4,
+      "test_maxdd_pct": -14.62,
+      "test_turnover_x": 12.8,
+      "all_folds_positive": true
+    },
+    {
+      "label": "mom[63-21] top12 rb5d inv_vol off",
+      "policy": {
+        "lookback_days": 63,
+        "skip_days": 21,
+        "top_n": 12,
+        "rebalance_days": 5,
+        "weighting": "inv_vol",
+        "market_filter": "none",
+        "regime_mode": "off",
+        "exposure_pct": 95.0
+      },
+      "train_sharpe": 1.24,
+      "test_sharpe": 1.23,
+      "overfit_gap": 0.01,
+      "test_cagr_pct": 24.32,
+      "test_maxdd_pct": -13.41,
+      "test_turnover_x": 28.4,
+      "all_folds_positive": false
+    },
+    {
+      "label": "mom[126-0] top4 rb21d equal off",
+      "policy": {
+        "lookback_days": 126,
+        "skip_days": 0,
+        "top_n": 4,
+        "rebalance_days": 21,
+        "weighting": "equal",
+        "market_filter": "none",
+        "regime_mode": "off",
+        "exposure_pct": 95.0
+      },
+      "train_sharpe": 1.48,
+      "test_sharpe": 1.22,
+      "overfit_gap": 0.26,
+      "test_cagr_pct": 34.38,
+      "test_maxdd_pct": -15.81,
+      "test_turnover_x": 11.6,
+      "all_folds_positive": true
+    },
+    {
+      "label": "mom[63-21] top12 rb5d equal off",
+      "policy": {
+        "lookback_days": 63,
+        "skip_days": 21,
+        "top_n": 12,
+        "rebalance_days": 5,
+        "weighting": "equal",
+        "market_filter": "none",
+        "regime_mode": "off",
+        "exposure_pct": 95.0
+      },
+      "train_sharpe": 1.22,
+      "test_sharpe": 1.14,
+      "overfit_gap": 0.09,
+      "test_cagr_pct": 24.74,
+      "test_maxdd_pct": -14.54,
+      "test_turnover_x": 24.8,
+      "all_folds_positive": false
+    },
+    {
+      "label": "mom[63-0] top12 rb21d inv_vol off",
+      "policy": {
+        "lookback_days": 63,
+        "skip_days": 0,
+        "top_n": 12,
+        "rebalance_days": 21,
+        "weighting": "inv_vol",
+        "market_filter": "none",
+        "regime_mode": "off",
+        "exposure_pct": 95.0
+      },
+      "train_sharpe": 1.13,
+      "test_sharpe": 1.13,
+      "overfit_gap": 0.0,
+      "test_cagr_pct": 23.09,
+      "test_maxdd_pct": -14.19,
+      "test_turnover_x": 12.3,
+      "all_folds_positive": false
+    },
+    {
+      "label": "mom[63-21] top12 rb21d equal off",
+      "policy": {
+        "lookback_days": 63,
+        "skip_days": 21,
+        "top_n": 12,
+        "rebalance_days": 21,
+        "weighting": "equal",
+        "market_filter": "none",
+        "regime_mode": "off",
+        "exposure_pct": 95.0
+      },
+      "train_sharpe": 1.24,
+      "test_sharpe": 1.13,
+      "overfit_gap": 0.11,
+      "test_cagr_pct": 24.28,
+      "test_maxdd_pct": -14.51,
+      "test_turnover_x": 11.7,
+      "all_folds_positive": false
+    },
+    {
+      "label": "mom[63-21] top8 rb21d equal off",
+      "policy": {
+        "lookback_days": 63,
+        "skip_days": 21,
+        "top_n": 8,
+        "rebalance_days": 21,
+        "weighting": "equal",
+        "market_filter": "none",
+        "regime_mode": "off",
+        "exposure_pct": 95.0
+      },
+      "train_sharpe": 1.25,
+      "test_sharpe": 1.12,
+      "overfit_gap": 0.13,
+      "test_cagr_pct": 27.45,
+      "test_maxdd_pct": -16.05,
+      "test_turnover_x": 13.7,
+      "all_folds_positive": false
+    },
+    {
+      "label": "mom[126-21] top4 rb21d equal off",
+      "policy": {
+        "lookback_days": 126,
+        "skip_days": 21,
+        "top_n": 4,
+        "rebalance_days": 21,
+        "weighting": "equal",
+        "market_filter": "none",
+        "regime_mode": "off",
+        "exposure_pct": 95.0
+      },
+      "train_sharpe": 1.31,
+      "test_sharpe": 1.11,
+      "overfit_gap": 0.2,
+      "test_cagr_pct": 31.1,
+      "test_maxdd_pct": -17.26,
+      "test_turnover_x": 10.8,
+      "all_folds_positive": true
+    },
+    {
+      "label": "mom[126-21] top12 rb5d inv_vol off",
+      "policy": {
+        "lookback_days": 126,
+        "skip_days": 21,
+        "top_n": 12,
+        "rebalance_days": 5,
+        "weighting": "inv_vol",
+        "market_filter": "none",
+        "regime_mode": "off",
+        "exposure_pct": 95.0
+      },
+      "train_sharpe": 1.15,
+      "test_sharpe": 1.11,
+      "overfit_gap": 0.04,
+      "test_cagr_pct": 24.47,
+      "test_maxdd_pct": -14.01,
+      "test_turnover_x": 21.2,
+      "all_folds_positive": false
+    },
+    {
+      "label": "mom[63-21] top12 rb21d inv_vol off",
+      "policy": {
+        "lookback_days": 63,
+        "skip_days": 21,
+        "top_n": 12,
+        "rebalance_days": 21,
+        "weighting": "inv_vol",
+        "market_filter": "none",
+        "regime_mode": "off",
+        "exposure_pct": 95.0
+      },
+      "train_sharpe": 1.2,
+      "test_sharpe": 1.1,
+      "overfit_gap": 0.09,
+      "test_cagr_pct": 21.34,
+      "test_maxdd_pct": -13.03,
+      "test_turnover_x": 12.5,
+      "all_folds_positive": false
+    },
+    {
+      "label": "mom[126-21] top12 rb5d equal off",
+      "policy": {
+        "lookback_days": 126,
+        "skip_days": 21,
+        "top_n": 12,
+        "rebalance_days": 5,
+        "weighting": "equal",
+        "market_filter": "none",
+        "regime_mode": "off",
+        "exposure_pct": 95.0
+      },
+      "train_sharpe": 1.19,
+      "test_sharpe": 1.1,
+      "overfit_gap": 0.08,
+      "test_cagr_pct": 26.24,
+      "test_maxdd_pct": -15.21,
+      "test_turnover_x": 18.5,
+      "all_folds_positive": false
+    },
+    {
+      "label": "mom[252-21] top8 rb5d inv_vol off",
+      "policy": {
+        "lookback_days": 252,
+        "skip_days": 21,
+        "top_n": 8,
+        "rebalance_days": 5,
+        "weighting": "inv_vol",
+        "market_filter": "none",
+        "regime_mode": "off",
+        "exposure_pct": 95.0
+      },
+      "train_sharpe": 1.16,
+      "test_sharpe": 1.1,
+      "overfit_gap": 0.05,
+      "test_cagr_pct": 27.65,
+      "test_maxdd_pct": -15.37,
+      "test_turnover_x": 17.9,
+      "all_folds_positive": false
+    }
+  ],
+  "holdout": {
+    "policy": "mom[126-0] top4 rb21d inv_vol off",
+    "metrics": {
+      "total_return_pct": 132.68,
+      "cagr_pct": 133.46,
+      "sharpe": 1.97,
+      "max_drawdown_pct": -23.68,
+      "n_trades": 13,
+      "win_rate_pct": 61.5,
+      "avg_trade_pct": 1.57,
+      "by_regime": {
+        "BULL_TRENDING": {
+          "n": 10,
+          "win_rate_pct": 60.0,
+          "avg_trade_pct": 0.64
+        },
+        "SIDEWAYS": {
+          "n": 3,
+          "win_rate_pct": 66.7,
+          "avg_trade_pct": 4.7
+        }
+      },
+      "by_setup": {
+        "momentum": {
+          "n": 13,
+          "win_rate_pct": 61.5,
+          "avg_trade_pct": 1.57
+        }
+      },
+      "turnover_x_per_year": 12.1
+    },
+    "spy_return_pct": 19.76,
+    "equal_weight_universe": {
+      "total_return_pct": 35.42,
+      "cagr_pct": 35.58,
+      "sharpe": 1.93,
+      "max_drawdown_pct": -8.7
+    }
+  }
+}
