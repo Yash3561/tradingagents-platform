@@ -10,6 +10,7 @@ from app.api.v1 import orders
 from app.api.v1 import broker
 from app.api.v1 import admin
 from app.api.v1 import track_record
+from app.api.v1 import monitor
 
 api_router = APIRouter()
 
@@ -18,6 +19,10 @@ api_router = APIRouter()
 api_router.include_router(auth.router, prefix="/auth", tags=["auth"])
 api_router.include_router(websockets.router, prefix="/ws", tags=["websockets"])
 api_router.include_router(track_record.router, prefix="/track-record", tags=["track-record"])
+# Read-only automated monitoring — own key-based auth (require_monitoring_key
+# on each endpoint), deliberately NOT the JWT `AUTH` list below: no login,
+# no password, for unattended cloud/cron agents. Fails closed if unset.
+api_router.include_router(monitor.router, prefix="/monitor", tags=["monitor"])
 
 # Everything else requires a valid JWT
 AUTH = [Depends(require_user)]

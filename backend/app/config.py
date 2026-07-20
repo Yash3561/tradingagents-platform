@@ -18,6 +18,11 @@ class Settings(BaseSettings):
     # Error alerting — Sentry backend DSN; empty = disabled
     sentry_dsn: str = ""
 
+    # Read-only automated-monitoring endpoints (api/v1/monitor.py) — a static
+    # key, not a user login, for unattended cloud-agent health checks.
+    # Empty = the whole /monitor surface 403s (fail closed, never accidentally open).
+    monitoring_api_key: str = ""
+
     # Email. Render blocks outbound SMTP ports — set BREVO_API_KEY there
     # (HTTPS API, smtp_from must be a Brevo-verified sender). SMTP_* works
     # locally / on SMTP-friendly hosts. Neither set = links logged only.

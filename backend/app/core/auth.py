@@ -7,8 +7,9 @@ issued before this change carried 30-day lifetimes and stay valid until expiry.
 """
 from datetime import datetime, timedelta, UTC
 from typing import Optional
+import secrets as _secrets
 from jose import JWTError, jwt
-from fastapi import Depends, HTTPException, status
+from fastapi import Depends, Header, HTTPException, status
 from fastapi.security import OAuth2PasswordBearer
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
@@ -102,3 +103,16 @@ async def require_admin(user=Depends(require_user)):
     if not user.is_admin:
         raise HTTPException(status_code=403, detail="Admin access required")
     return user
+
+
+async def require_monitoring_key(x_monitoring_key: Optional[str] = Header(default=None)):
+    """
+    Read-only automated-monitoring endpoints — no user login involved, for
+    unattended cloud agents that don't and shouldn't hold anyone's password.
+    Fails closed: unset MONITORING_API_KEY means the whole surface is 403,
+    never accidentally open. Constant-time compare against timing attacks.
+    """
+    key = (settings.monitoring_api_key or "").strip()
+    if not key or not x_monitoring_key or not _secrets.compare_digest(x_monitoring_key, key):
+        raise HTTPException(status_code=403, detail="Invalid or missing monitoring key")
+    return True
