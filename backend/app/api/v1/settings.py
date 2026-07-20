@@ -83,6 +83,11 @@ NUMERIC_BOUNDS: dict[str, tuple[float, float, bool]] = {
     "momentum_top_n": (3, 20, True),
     "momentum_rebalance_days": (5, 63, True),
     "momentum_exposure_pct": (10.0, 100.0, False),
+    # Order seatbelts. Floor of 5 on daily count and 10 on notional keeps a
+    # user from accidentally disabling the safety net entirely; ceiling of
+    # 100/day and 50pct notional keeps it a backstop, not a normal limit.
+    "max_orders_per_day": (5, 100, True),
+    "max_order_notional_pct": (10.0, 50.0, False),
 }
 
 ENUM_VALUES: dict[str, set[str]] = {

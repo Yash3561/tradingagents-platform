@@ -230,6 +230,7 @@ STRATEGY_KEYS = [
     "earnings_rr_ratio", "earnings_hold_days", "earnings_position_size_pct",
     "momentum_lookback_days", "momentum_skip_days", "momentum_top_n",
     "momentum_rebalance_days", "momentum_weighting", "momentum_exposure_pct",
+    "max_orders_per_day", "max_order_notional_pct",
 ]
 
 

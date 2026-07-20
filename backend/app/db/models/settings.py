@@ -47,6 +47,12 @@ DEFAULTS: dict = {
     "momentum_rebalance_days": 21,
     "momentum_weighting": "inv_vol",
     "momentum_exposure_pct": 95.0,
+    # Order seatbelts — hard caps independent of strategy/risk-manager logic.
+    # 40 matches the momentum engine's own per-name cap and the earnings
+    # aggression arm's 25pct sizing with headroom; this is the backstop for
+    # a sizing bug, not a normal operating limit.
+    "max_orders_per_day": 20,
+    "max_order_notional_pct": 40.0,
     # Intraday policy profile — deploy walk-forward tournament winners here
     # (defaults mirror INTRADAY_PARAM_DEFAULTS in workers/intraday_engine.py)
     "intraday_setup": "mom",

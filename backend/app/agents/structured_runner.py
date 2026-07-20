@@ -1174,6 +1174,52 @@ async def _close_long_if_held(run_id: str, ticker: str, result: dict,
         await _emit(run_id, {"type": "order_failed", "error": str(e)})
 
 
+async def _order_seatbelt_blocked(run_id: str, user_id: int | None) -> str | None:
+    """
+    Hard caps independent of strategy logic — the backstop for "a bug places
+    500 orders" or "a sizing bug computes 400% instead of 40%", regardless of
+    which engine or what its risk manager approved. Returns a block reason,
+    or None if clear.
+    """
+    from app.db.models.trade import Trade
+    from app.db.models.user_settings import get_user_setting
+    from sqlalchemy import select, func
+
+    async with AsyncSessionLocal() as db:
+        # Duplicate-run guard: one AgentRun should ever place at most one order.
+        # Protects against a retry/race creating two orders for one decision.
+        existing = (await db.execute(
+            select(func.count(Trade.id)).where(Trade.agent_run_id == run_id)
+        )).scalar() or 0
+        if existing > 0:
+            return f"run {run_id} already has {existing} order(s) placed"
+
+        # Daily order cap, per account
+        today = datetime.now(UTC).date()
+        day_start = datetime(today.year, today.month, today.day, tzinfo=UTC)
+        today_count = (await db.execute(
+            select(func.count(Trade.id)).where(
+                Trade.user_id == user_id, Trade.submitted_at >= day_start)
+        )).scalar() or 0
+
+    max_per_day = int(await get_user_setting(user_id, "max_orders_per_day", 20))
+    if today_count >= max_per_day:
+        return f"{today_count} orders already placed today (cap {max_per_day})"
+    return None
+
+
+def _order_notional_blocked(qty: float, price: float, equity: float, max_pct: float) -> str | None:
+    """Hard ceiling on any single order's size vs. equity, independent of
+    whatever position-sizing math produced qty — catches a sizing bug loudly
+    (reject + log) rather than silently clipping to a different size."""
+    if equity <= 0:
+        return None
+    notional_pct = (qty * price) / equity * 100
+    if notional_pct > max_pct:
+        return f"order notional {notional_pct:.1f}% of equity exceeds cap {max_pct:.0f}%"
+    return None
+
+
 async def _place_order_if_approved(run_id: str, ticker: str, result: dict,
                                    user_id: int | None = None):
     """
@@ -1231,6 +1277,19 @@ async def _place_order_if_approved(run_id: str, ticker: str, result: dict,
             "type": "order_skipped",
             "reason": "below_min_confidence",
             "message": f"Confidence {confidence:.0%} is below your {min_confidence:.0%} auto-trade floor.",
+        })
+        return
+
+    # Order seatbelts — independent of strategy/risk-manager logic, applies
+    # to every decision path below (BUY and the SELL-closes-a-long path).
+    seatbelt_reason = await _order_seatbelt_blocked(run_id, user_id)
+    if seatbelt_reason:
+        log.warning("broker.seatbelt_blocked", run_id=run_id, ticker=ticker,
+                   user_id=user_id, reason=seatbelt_reason)
+        await _emit(run_id, {
+            "type": "order_skipped",
+            "reason": "seatbelt_blocked",
+            "message": f"Order blocked by a safety limit: {seatbelt_reason}.",
         })
         return
 
@@ -1317,6 +1376,21 @@ async def _place_order_if_approved(run_id: str, ticker: str, result: dict,
         equity = float(account.get("equity", 100_000))
         dollar_amount = equity * (position_pct / 100.0)
         qty = max(1, math.floor(dollar_amount / current_price))  # whole shares, minimum 1
+
+        # Hard notional ceiling, independent of the position_pct math above —
+        # catches a sizing bug (e.g. position_pct computed as 400 instead of
+        # 40) loudly instead of silently placing an oversized order.
+        max_notional_pct = float(await get_user_setting(user_id, "max_order_notional_pct", 40.0))
+        notional_blocked = _order_notional_blocked(qty, current_price, equity, max_notional_pct)
+        if notional_blocked:
+            log.error("broker.seatbelt_blocked", run_id=run_id, ticker=ticker,
+                     user_id=user_id, reason=notional_blocked, position_pct=position_pct)
+            await _emit(run_id, {
+                "type": "order_skipped",
+                "reason": "seatbelt_blocked",
+                "message": f"Order blocked by a safety limit: {notional_blocked}.",
+            })
+            return
 
         side = "buy"
         if engine == "momentum-rotation":
