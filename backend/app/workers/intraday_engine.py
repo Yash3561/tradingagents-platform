@@ -556,7 +556,14 @@ async def _cycle():
                or (now_et - sess.last_bar_scan).total_seconds() >= BAR_SECONDS)
         if due and not sess.halted:
             sess.last_bar_scan = now_et
-            await _scan_and_enter(sess, broker, policy, params, now_et)
+            # Platform kill switch gates NEW entries only — _manage_positions
+            # above (stop/target exits, daily-loss flatten) always keeps
+            # running regardless, same reasoning as the scanner/order-seatbelt
+            # checks: a "stop everything" halt should never disable the
+            # safety net that protects capital already at risk.
+            from app.db.models.settings import get_setting as _get_platform_setting
+            if not await _get_platform_setting("trading_halted", False):
+                await _scan_and_enter(sess, broker, policy, params, now_et)
 
 
 async def run_intraday_engine():

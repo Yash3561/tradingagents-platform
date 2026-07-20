@@ -1183,7 +1183,14 @@ async def _order_seatbelt_blocked(run_id: str, user_id: int | None) -> str | Non
     """
     from app.db.models.trade import Trade
     from app.db.models.user_settings import get_user_setting
+    from app.db.models.settings import get_setting as _get_platform_setting
     from sqlalchemy import select, func
+
+    # Kill switch, checked again right here as the final line of defense —
+    # a scan that started before the flag flipped on shouldn't still be able
+    # to place an order after it did. Platform-wide, not per-user-overridable.
+    if await _get_platform_setting("trading_halted", False):
+        return "platform-wide trading halt is active"
 
     async with AsyncSessionLocal() as db:
         # Duplicate-run guard: one AgentRun should ever place at most one order.

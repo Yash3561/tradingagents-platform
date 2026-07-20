@@ -453,6 +453,22 @@ async def run_market_scan(
     _cand_ceiling = 10 if _mode_for_cap == "agents" else 25
     max_candidates = min(max(max_candidates, 1), _cand_ceiling)
 
+    # Platform-wide kill switch — the human big red button, checked BEFORE the
+    # per-user scan_enabled flag and read directly from platform_settings
+    # (not the per-user-overridable lookup) so no account setting can bypass
+    # it. Distinct from per-strategy circuit breakers: this is "something
+    # looks wrong, stop everything right now", not a market-condition gate.
+    from app.db.models.settings import get_setting as _get_platform_setting
+    if await _get_platform_setting("trading_halted", False):
+        log.warning("scanner.trading_halted", user_id=user_id)
+        return {
+            "status": "trading_halted",
+            "screened": 0,
+            "candidates": 0,
+            "trades_placed": 0,
+            "duration_s": 0,
+        }
+
     # Respect scan_enabled flag
     scan_enabled = await _get_setting("scan_enabled", True)
     if not scan_enabled:

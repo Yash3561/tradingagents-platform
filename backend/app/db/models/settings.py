@@ -29,6 +29,13 @@ DEFAULTS: dict = {
     "debate_rounds": 2,
     "llm_model": "deepseek-ai/deepseek-v4-flash",
     "scan_enabled": True,
+    # Operator kill switch — platform-wide, read directly via get_setting()
+    # (not the per-user-overridable lookup) so no account setting can bypass
+    # it. The human big-red-button for "something looks wrong, stop
+    # everything now" — distinct from the per-strategy circuit breakers.
+    # Blocks new scans/entries everywhere; stop-loss/exit enforcement
+    # (position_monitor, intraday _manage_positions) is NEVER gated by this.
+    "trading_halted": False,
     "intraday_monitor_enabled": True,
     "overnight_agent_enabled": True,
     "long_only": True,

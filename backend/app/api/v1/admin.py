@@ -5,6 +5,7 @@ Router is registered with require_admin — only is_admin users get through.
 import secrets
 from datetime import datetime, timedelta, UTC
 
+import structlog
 from fastapi import APIRouter, Depends, HTTPException, BackgroundTasks
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, func
@@ -20,6 +21,7 @@ from app.db.models.agent_run import AgentRun
 from app.db.models.trade import Trade
 from app.db.models.equity_snapshot import EquitySnapshot
 from app.db.models.user_settings import UserSettings
+from app.db.models.settings import PlatformSettings
 
 router = APIRouter()
 
@@ -124,6 +126,34 @@ async def revoke_invite(
     invite.revoked = True
     await db.commit()
     return {"ok": True}
+
+
+@router.get("/trading-halt")
+async def get_trading_halt(admin=Depends(require_admin)):
+    """Current state of the platform-wide kill switch."""
+    from app.db.models.settings import get_setting
+    return {"halted": bool(await get_setting("trading_halted", False))}
+
+
+@router.post("/trading-halt")
+async def set_trading_halt(body: dict, admin=Depends(require_admin), db: AsyncSession = Depends(get_db)):
+    """
+    The human big-red-button: halted=true stops every new scan and order
+    across every account, immediately (checked at scan start, at order
+    placement, and inside the intraday loop's entry gate — three separate
+    call sites, same platform_settings row). Does NOT touch stop-loss/exit
+    enforcement, which must keep protecting capital regardless.
+    """
+    import json
+    halted = bool(body.get("halted", False))
+    row = await db.get(PlatformSettings, "trading_halted")
+    if row is None:
+        db.add(PlatformSettings(key="trading_halted", value=json.dumps(halted)))
+    else:
+        row.value = json.dumps(halted)
+    await db.commit()
+    structlog.get_logger().warning("admin.trading_halt_set", halted=halted, admin_id=admin.id)
+    return {"ok": True, "halted": halted}
 
 
 @router.get("/analytics")
