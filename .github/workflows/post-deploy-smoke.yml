@@ -1,0 +1,87 @@
+name: Post-deploy smoke test
+
+# Reliability backlog item 6. Render auto-deploys on push to main; this
+# catches a broken deploy (crash loop, missing migration, bad import) before
+# a user does, instead of relying on someone noticing. No secrets needed —
+# checks health, that the auth path responds sanely to a bogus login (proves
+# the DB + auth stack are alive without storing any real credentials in this
+# repo), and that a real data endpoint returns valid JSON.
+#
+# Render's free tier can take a couple minutes to build+deploy and the
+# service spins down on inactivity (cold start ~50s) — this polls with
+# generous retries rather than assuming the first request lands after the
+# new build is live.
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch: {}
+
+jobs:
+  smoke:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Wait for deploy, then smoke test
+        run: |
+          python3 - <<'EOF'
+          import json, sys, time, urllib.request, urllib.error
+
+          BASE = "https://tradingagents-backend-p8ef.onrender.com"
+
+          def get(path, timeout=30):
+              req = urllib.request.Request(BASE + path, headers={"User-Agent": "post-deploy-smoke"})
+              with urllib.request.urlopen(req, timeout=timeout) as r:
+                  return r.status, r.read().decode()
+
+          def post(path, body, timeout=30):
+              data = json.dumps(body).encode()
+              req = urllib.request.Request(
+                  BASE + path, data=data, method="POST",
+                  headers={"User-Agent": "post-deploy-smoke", "Content-Type": "application/json"})
+              try:
+                  with urllib.request.urlopen(req, timeout=timeout) as r:
+                      return r.status, r.read().decode()
+              except urllib.error.HTTPError as e:
+                  return e.code, e.read().decode()
+
+          # Give Render's build+deploy pipeline time to land the new commit,
+          # then poll health through any cold-start delay.
+          healthy = False
+          for attempt in range(10):
+              try:
+                  status, body = get("/health", timeout=60)
+                  if status == 200 and json.loads(body).get("status") == "ok":
+                      healthy = True
+                      break
+                  print(f"attempt {attempt+1}: /health returned {status}: {body[:200]}")
+              except Exception as e:
+                  print(f"attempt {attempt+1}: /health failed: {e}")
+              time.sleep(30)
+          if not healthy:
+              print("FAIL: /health never returned a healthy response after 10 attempts (~5min)")
+              sys.exit(1)
+          print("OK: /health")
+
+          # Auth path is alive — expect a clean 401 for bogus credentials,
+          # not a 500 (which would mean the DB or auth stack is broken).
+          status, body = post("/api/v1/auth/login",
+                              {"email": "smoke-test-nonexistent@example.invalid",
+                               "password": "not-a-real-password"})
+          if status not in (401, 400):
+              print(f"FAIL: /auth/login with bad creds returned {status} (expected 401/400): {body[:300]}")
+              sys.exit(1)
+          print(f"OK: /auth/login responds correctly ({status})")
+
+          # A real public data endpoint returns valid, shaped JSON.
+          status, body = get("/api/v1/track-record/")
+          if status != 200:
+              print(f"FAIL: /api/v1/track-record/ returned {status}")
+              sys.exit(1)
+          data = json.loads(body)
+          if "total_analyses" not in data or "recent" not in data:
+              print(f"FAIL: /api/v1/track-record/ response missing expected fields: {list(data.keys())}")
+              sys.exit(1)
+          print(f"OK: /api/v1/track-record/ ({data['total_analyses']} total analyses)")
+
+          print("All smoke checks passed.")
+          EOF
