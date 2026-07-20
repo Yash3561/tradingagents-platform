@@ -273,17 +273,60 @@ class OptionsRequest(BaseModel):
     expiry_preference: str = "2weeks"   # "1week", "2weeks", "1month", "3months"
 
 
+def _norm_cdf(x: float) -> float:
+    import math
+    return 0.5 * (1.0 + math.erf(x / math.sqrt(2.0)))
+
+
+def _bs_delta(spot: float, strike: float, t_years: float, r: float, sigma: float, is_call: bool) -> float:
+    """Black-Scholes delta. yfinance's chain has no delta column, and every
+    other field here (strike, premium, IV) is real chain data — this is the
+    one number that's genuinely computed rather than invented, from real
+    inputs, not asked of an LLM."""
+    import math
+    if t_years <= 0 or sigma <= 0:
+        return 1.0 if (is_call and spot > strike) else (-1.0 if not is_call and spot < strike else 0.0)
+    d1 = (math.log(spot / strike) + (r + 0.5 * sigma ** 2) * t_years) / (sigma * math.sqrt(t_years))
+    return _norm_cdf(d1) if is_call else _norm_cdf(d1) - 1.0
+
+
+def _bs_price(spot: float, strike: float, t_years: float, r: float, sigma: float, is_call: bool) -> float:
+    import math
+    if t_years <= 0:
+        return max(0.0, spot - strike) if is_call else max(0.0, strike - spot)
+    d1 = (math.log(spot / strike) + (r + 0.5 * sigma ** 2) * t_years) / (sigma * math.sqrt(t_years))
+    d2 = d1 - sigma * math.sqrt(t_years)
+    if is_call:
+        return spot * _norm_cdf(d1) - strike * math.exp(-r * t_years) * _norm_cdf(d2)
+    return strike * math.exp(-r * t_years) * _norm_cdf(-d2) - spot * _norm_cdf(-d1)
+
+
+RISK_FREE_RATE = 0.045  # approximate — this tool is a screener, not a pricing engine
+
+
 @router.post("/options/analyze")
 async def analyze_options(body: OptionsRequest, background_tasks: BackgroundTasks,
                           user=Depends(require_user)):
     """
-    Options analysis endpoint.
-    Fetches market data (yfinance), then runs a structured AI analysis via NIM/DeepSeek
-    to recommend CALL, PUT, or NO_PLAY with full risk/greek details.
+    Options analysis: technicals decide direction (LLM's job — pattern
+    recognition from price action), then a REAL listed contract is selected
+    from the live chain and every number reported (strike, expiry, premium,
+    max risk, delta, IV) comes from that real contract or is computed from
+    it via Black-Scholes — never invented by the LLM.
+
+    2026-07-20 incident: the previous version asked the LLM to also invent
+    strike_price/max_risk_pct/delta_estimate/target_return_pct as free-form
+    "estimates" with no real chain data in its prompt at all. It produced a
+    MSFT $410C 2026-07-24 recommendation with "Max Risk 0.0%" — the real
+    listed contract's actual ask was $0.01 (a deep-OTM, 4-days-to-expiry
+    near-worthless option, correctly cheap but not a clean 1%-risk play).
+    A user nearly acted on it. max_risk_pct=0.0 is impossible for any real
+    long option position — that was the tell.
     """
     await enforce_rate_limit(f"options_analyze:{user.id}", OPTIONS_PER_HOUR, 3600)
     import json as _json
     import math
+    from datetime import date as _date
     from concurrent.futures import ThreadPoolExecutor
     from app.config import get_settings
 
@@ -292,8 +335,9 @@ async def analyze_options(body: OptionsRequest, background_tasks: BackgroundTask
         raise HTTPException(400, "ticker is required")
 
     settings = get_settings()
+    target_days = {"1week": 7, "2weeks": 14, "1month": 30, "3months": 90}.get(body.expiry_preference, 14)
 
-    # ── Fetch market data synchronously in thread executor ─────────────────────
+    # ── Fetch market data + the REAL options chain synchronously ───────────────
     def _fetch_market_data():
         import yfinance as yf
         import numpy as np
@@ -326,24 +370,17 @@ async def analyze_options(body: OptionsRequest, background_tasks: BackgroundTask
         week1_return = float((closes.iloc[-1] / closes.iloc[-5] - 1) * 100) if len(closes) >= 5 else 0.0
         month1_return = float((closes.iloc[-1] / closes.iloc[-21] - 1) * 100) if len(closes) >= 21 else 0.0
 
-        # Historical vol → IV estimate
+        # Historical vol (used for the LLM's context only, not for pricing)
         log_returns = np.log(closes / closes.shift(1)).dropna()
         hist_vol = float(log_returns.rolling(20).std().iloc[-1] * math.sqrt(252) * 100)
 
-        # Options chain IV
-        iv_estimate = hist_vol  # fallback
-        expiries = []
-        try:
-            expiries = list(t.options)
-            if expiries:
-                chain = t.option_chain(expiries[0])
-                atm_calls = chain.calls.copy()
-                atm_calls["dist"] = (atm_calls["strike"] - current_price).abs()
-                atm_row = atm_calls.sort_values("dist").iloc[0]
-                if atm_row.get("impliedVolatility", 0) > 0:
-                    iv_estimate = float(atm_row["impliedVolatility"]) * 100
-        except Exception:
-            pass
+        expiries = list(t.options)
+        chain_expiry = None
+        if expiries:
+            today = _date.today()
+            chain_expiry = min(
+                expiries,
+                key=lambda e: abs((_date.fromisoformat(e) - today).days - target_days))
 
         return {
             "current_price": current_price,
@@ -354,8 +391,8 @@ async def analyze_options(body: OptionsRequest, background_tasks: BackgroundTask
             "week1_return_pct": round(week1_return, 2),
             "month1_return_pct": round(month1_return, 2),
             "hist_vol_pct": round(hist_vol, 1),
-            "iv_estimate_pct": round(iv_estimate, 1),
             "nearest_expiries": expiries[:5],
+            "chain_expiry": chain_expiry,
         }
 
     loop = __import__("asyncio").get_running_loop()
@@ -367,30 +404,29 @@ async def analyze_options(body: OptionsRequest, background_tasks: BackgroundTask
     except Exception as e:
         raise HTTPException(502, f"Market data fetch failed: {e}")
 
-    # ── Build AI prompt ────────────────────────────────────────────────────────
+    if not mkt["chain_expiry"]:
+        raise HTTPException(502, f"No listed options chain found for {ticker}")
+
+    # ── Ask the LLM ONLY for direction — the thing it can actually judge ───────
     strategy_desc = {
         "directional": "directional momentum (bet on the trend continuing)",
         "earnings": "earnings play (position around upcoming earnings event)",
         "hedge": "hedge an existing long position (buy protective puts or collar)",
     }.get(body.strategy, "directional momentum")
 
-    expiry_map = {"1week": "~7 days", "2weeks": "~14 days", "1month": "~30 days", "3months": "~90 days"}
-    expiry_desc = expiry_map.get(body.expiry_preference, "~14 days")
-
     system_prompt = (
-        "You are an expert options trader with 20 years of experience. "
-        "Analyze whether to buy a CALL, PUT, or avoid options entirely (NO_PLAY). "
-        "Base your recommendation on technical momentum, implied volatility, and risk/reward. "
-        "Always prefer defined-risk strategies (buying options only — never naked selling). "
-        "Be specific: give a real strike price and expiry date. "
-        "If IV is elevated (>40%), reduce position sizing and widen strikes. "
-        "If the setup is unclear or risk/reward is poor, recommend NO_PLAY."
+        "You are an options trading analyst. Judge ONLY the directional thesis — "
+        "whether the technical setup supports a CALL (bullish), PUT (bearish), or "
+        "NO_PLAY (unclear/poor setup). Do NOT estimate strike prices, premiums, "
+        "greeks, or returns — you have not been given the options chain, and "
+        "guessing those numbers is how a past version of this tool nearly caused "
+        "a user to buy a near-worthless contract it invented a fake 0% risk for. "
+        "A separate step selects the real listed contract and computes real "
+        "risk numbers from it. Your job is direction and reasoning only."
     )
-
     user_content = (
-        f"Analyze options for {ticker}.\n\n"
-        f"Strategy requested: {strategy_desc}\n"
-        f"Preferred expiry: {expiry_desc}\n\n"
+        f"Judge the directional setup for {ticker}.\n\n"
+        f"Strategy requested: {strategy_desc}\n\n"
         f"Market data:\n"
         f"- Current price: ${mkt['current_price']:.2f}\n"
         f"- RSI-14: {mkt['rsi_14']}\n"
@@ -398,75 +434,24 @@ async def analyze_options(body: OptionsRequest, background_tasks: BackgroundTask
         f"(MACD={mkt['macd_value']}, Signal={mkt['macd_signal']})\n"
         f"- 1-week return: {mkt['week1_return_pct']:+.2f}%\n"
         f"- 1-month return: {mkt['month1_return_pct']:+.2f}%\n"
-        f"- Historical volatility (20d annualized): {mkt['hist_vol_pct']:.1f}%\n"
-        f"- Implied volatility estimate: {mkt['iv_estimate_pct']:.1f}%\n"
-        f"- Available expiries: {', '.join(mkt['nearest_expiries'][:3]) if mkt['nearest_expiries'] else 'unknown'}\n\n"
-        "Provide your structured recommendation."
+        f"- Historical volatility (20d annualized): {mkt['hist_vol_pct']:.1f}%\n\n"
+        "Provide CALL/PUT/NO_PLAY with reasoning and risk warnings."
     )
-
-    # ── Tool schema ────────────────────────────────────────────────────────────
     tool_schema = {
-        "name": "options_recommendation",
-        "description": "Structured options trading recommendation",
+        "name": "options_direction",
+        "description": "Directional judgment only — no pricing numbers",
         "input_schema": {
             "type": "object",
-            "required": [
-                "recommendation", "strike_price", "expiry_date",
-                "max_risk_pct", "target_return_pct", "reasoning",
-                "delta_estimate", "iv_estimate", "risk_warnings"
-            ],
+            "required": ["recommendation", "reasoning", "risk_warnings"],
             "properties": {
-                "recommendation": {
-                    "type": "string",
-                    "enum": ["CALL", "PUT", "NO_PLAY"],
-                    "description": "Whether to buy a CALL, PUT, or avoid options entirely"
-                },
-                "strike_price": {
-                    "type": "number",
-                    "description": "Recommended strike price (use current price if NO_PLAY)"
-                },
-                "expiry_date": {
-                    "type": "string",
-                    "description": "Recommended expiry date as YYYY-MM-DD string"
-                },
-                "max_risk_pct": {
-                    "type": "number",
-                    "description": "Option premium as % of stock price (the max you can lose)"
-                },
-                "target_return_pct": {
-                    "type": "number",
-                    "description": "Expected % return on the option premium if thesis plays out"
-                },
-                "reasoning": {
-                    "type": "string",
-                    "description": "Detailed AI reasoning for the recommendation (3-5 sentences)"
-                },
-                "delta_estimate": {
-                    "type": "number",
-                    "description": "Estimated delta for the recommended option (0-1 for calls, -1-0 for puts)"
-                },
-                "gamma_estimate": {
-                    "type": "number",
-                    "description": "Estimated gamma (optional)"
-                },
-                "theta_estimate": {
-                    "type": "number",
-                    "description": "Estimated daily theta decay in $ per contract (optional, negative)"
-                },
-                "iv_estimate": {
-                    "type": "number",
-                    "description": "Implied volatility estimate as a decimal (e.g. 0.35 = 35%)"
-                },
-                "risk_warnings": {
-                    "type": "array",
-                    "items": {"type": "string"},
-                    "description": "List of 2-5 specific risk warnings for this trade"
-                },
+                "recommendation": {"type": "string", "enum": ["CALL", "PUT", "NO_PLAY"]},
+                "reasoning": {"type": "string", "description": "3-5 sentences on the directional thesis"},
+                "risk_warnings": {"type": "array", "items": {"type": "string"},
+                                  "description": "2-5 risk warnings for this setup"},
             },
         },
     }
 
-    # ── Call NIM/DeepSeek ──────────────────────────────────────────────────────
     try:
         from openai import OpenAI
         api_key = settings.nvidia_api_key or settings.anthropic_api_key
@@ -486,31 +471,126 @@ async def analyze_options(body: OptionsRequest, background_tasks: BackgroundTask
                 "parameters": tool_schema["input_schema"],
             }}],
             tool_choice="required",
-            max_tokens=1024,
+            max_tokens=768,
             temperature=0.3,
         )
-
         msg = response.choices[0].message
         if msg.tool_calls:
-            result = _json.loads(msg.tool_calls[0].function.arguments)
+            direction = _json.loads(msg.tool_calls[0].function.arguments)
         else:
-            # Fallback: parse JSON from content if tool_calls is empty
             import re
             raw = msg.content or ""
             m = re.search(r'\{.*\}', raw, re.DOTALL)
             if not m:
                 raise ValueError("No structured output from model")
-            result = _json.loads(m.group())
-
+            direction = _json.loads(m.group())
     except Exception as e:
         raise HTTPException(502, f"AI analysis failed: {e}")
 
-    # Normalise iv_estimate — ensure it's a decimal fraction (not %)
-    iv_raw = float(result.get("iv_estimate", mkt["iv_estimate_pct"] / 100))
-    if iv_raw > 5:  # was passed as % like 35.0 instead of 0.35
-        iv_raw = iv_raw / 100
-    result["iv_estimate"] = round(iv_raw, 4)
+    recommendation = direction.get("recommendation", "NO_PLAY")
+    result = {
+        "recommendation": recommendation,
+        "reasoning": direction.get("reasoning", ""),
+        "risk_warnings": direction.get("risk_warnings", []),
+        "strike_price": round(mkt["current_price"], 2),
+        "expiry_date": mkt["chain_expiry"],
+        "max_risk_pct": 0.0,
+        "target_return_pct": 0.0,
+        "delta_estimate": 0.0,
+        "iv_estimate": 0.0,
+        "contract_source": "none — NO_PLAY",
+    }
+    if recommendation == "NO_PLAY":
+        return result
 
+    # ── Select a REAL listed contract and compute REAL risk numbers ────────────
+    def _pick_contract():
+        import yfinance as yf
+        t = yf.Ticker(ticker)
+        chain = t.option_chain(mkt["chain_expiry"])
+        is_call = recommendation == "CALL"
+        legs = (chain.calls if is_call else chain.puts).copy()
+        if legs.empty:
+            return None
+
+        spot = mkt["current_price"]
+        today = _date.today()
+        t_years = max((_date.fromisoformat(mkt["chain_expiry"]) - today).days, 1) / 365.0
+
+        # Liquid contracts only — bid==0 means no real buyer, that's the
+        # exact "$0.01 lottery ticket" failure mode this rewrite exists to stop.
+        liquid = legs[(legs["bid"] > 0) & ((legs["volume"].fillna(0) > 0) | (legs["openInterest"].fillna(0) > 0))]
+        if liquid.empty:
+            return None
+
+        # Target ~0.35 delta (moderate OTM, defined-risk directional exposure) —
+        # compute delta for every liquid strike from ITS OWN real IV, pick closest.
+        best_row, best_diff = None, None
+        for _, row in liquid.iterrows():
+            iv = float(row.get("impliedVolatility") or 0)
+            if iv <= 0:
+                continue
+            d = _bs_delta(spot, float(row["strike"]), t_years, RISK_FREE_RATE, iv, is_call)
+            diff = abs(abs(d) - 0.35)
+            if best_diff is None or diff < best_diff:
+                best_row, best_diff = row, diff
+        if best_row is None:
+            return None
+
+        premium = float(best_row["ask"]) if best_row["ask"] > 0 else float(best_row["lastPrice"])
+        iv = float(best_row["impliedVolatility"])
+        strike = float(best_row["strike"])
+        delta = _bs_delta(spot, strike, t_years, RISK_FREE_RATE, iv, is_call)
+
+        # Target return: reprice via Black-Scholes if spot moves by the
+        # trailing 1-month return magnitude in the favorable direction —
+        # a labeled scenario, not a promise.
+        move_pct = abs(mkt["month1_return_pct"]) / 100.0
+        scenario_spot = spot * (1 + move_pct) if is_call else spot * (1 - move_pct)
+        t_at_target = max(t_years - (7 / 365.0), 1 / 365.0)  # assume ~1wk holding period
+        scenario_price = _bs_price(scenario_spot, strike, t_at_target, RISK_FREE_RATE, iv, is_call)
+        target_return_pct = ((scenario_price / premium) - 1) * 100 if premium > 0 else 0.0
+
+        return {
+            "strike": strike, "premium": premium, "iv": iv, "delta": delta,
+            "target_return_pct": target_return_pct,
+            "volume": int(best_row.get("volume") or 0),
+            "open_interest": int(best_row.get("openInterest") or 0),
+        }
+
+    try:
+        with ThreadPoolExecutor(max_workers=1) as ex:
+            contract = await loop.run_in_executor(ex, _pick_contract)
+    except Exception as e:
+        contract = None
+        result["risk_warnings"].append(f"Real chain lookup failed ({e}); showing direction only, no contract.")
+
+    if contract is None:
+        result["recommendation"] = "NO_PLAY"
+        result["risk_warnings"] = result["risk_warnings"] + [
+            "No liquid listed contract found near the target delta for this "
+            "expiry — the directional thesis may be right but there is no "
+            "clean way to express it with real, tradeable liquidity right now."
+        ]
+        result["reasoning"] += (
+            " Downgraded to NO_PLAY: no real contract with an actual bid and "
+            "volume/open interest was found — recommending a contract nobody "
+            "is actually trading is how the previous version of this tool "
+            "produced a fabricated near-zero-risk number."
+        )
+        return result
+
+    result.update({
+        "strike_price": round(contract["strike"], 2),
+        "max_risk_pct": round(contract["premium"] / mkt["current_price"] * 100, 2),
+        "target_return_pct": round(contract["target_return_pct"], 1),
+        "delta_estimate": round(contract["delta"], 3),
+        "iv_estimate": round(contract["iv"], 4),
+        "premium_usd": round(contract["premium"], 2),
+        "contract_volume": contract["volume"],
+        "contract_open_interest": contract["open_interest"],
+        "contract_source": "real listed contract — premium/IV/delta computed from live chain",
+    })
     return result
 
 
