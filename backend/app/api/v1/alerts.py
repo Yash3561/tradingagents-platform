@@ -65,32 +65,51 @@ async def get_alerts(user=Depends(require_user),
     total_market_value = sum(float(p.get("market_value", 0)) for p in positions)
 
     # ── 1. Concentration alerts ─────────────────────────────────────────────
+    # Threshold scales with what this account's OWN strategy actually targets
+    # per position — a flat 20% for everyone flags every single successful
+    # entry on accounts deliberately sized bigger (earnings aggression at
+    # 25%, momentum rotation up to ~38% on a top-4 book) as "critical" even
+    # when the position is exactly hitting its intended size. That's noise,
+    # not signal — a concentration alert should mean "bigger than intended",
+    # not "bigger than some other account's default".
+    from app.db.models.user_settings import get_user_setting
+    strategy_mode = await get_user_setting(user.id, "strategy_mode", "agents")
+    if strategy_mode == "earnings":
+        target_pct = float(await get_user_setting(user.id, "earnings_position_size_pct", 5.0))
+    elif strategy_mode == "momentum":
+        target_pct = 40.0  # matches the per-name weight cap in momentum_rotation.py
+    else:
+        target_pct = float(await get_user_setting(user.id, "max_position_pct", 20.0))
+    critical_threshold = target_pct * 1.25   # meaningfully past intended size, not just price drift
+    warning_threshold = target_pct * 1.05
+
     for p in positions:
         ticker = p.get("symbol", "")
         market_value = float(p.get("market_value", 0))
         pct_of_portfolio = market_value / equity * 100 if equity else 0
 
-        if pct_of_portfolio > 20:
+        if pct_of_portfolio > critical_threshold:
             alerts.append({
                 "id": f"concentration_{ticker}",
                 "type": "concentration",
                 "severity": "critical",
                 "ticker": ticker,
                 "title": f"{ticker} is {pct_of_portfolio:.1f}% of portfolio",
-                "message": f"Position exceeds 20% concentration limit. Consider trimming to reduce single-stock risk.",
+                "message": f"Position exceeds this account's {target_pct:.0f}% target size by more than 25%. "
+                          f"Consider trimming to reduce single-stock risk.",
                 "value": round(pct_of_portfolio, 1),
-                "threshold": 20,
+                "threshold": round(critical_threshold, 1),
             })
-        elif pct_of_portfolio > 12:
+        elif pct_of_portfolio > warning_threshold:
             alerts.append({
                 "id": f"concentration_{ticker}",
                 "type": "concentration",
                 "severity": "warning",
                 "ticker": ticker,
                 "title": f"{ticker} at {pct_of_portfolio:.1f}% of portfolio",
-                "message": f"Approaching concentration limit (20%). Monitor closely.",
+                "message": f"Above this account's {target_pct:.0f}% target position size. Monitor closely.",
                 "value": round(pct_of_portfolio, 1),
-                "threshold": 20,
+                "threshold": round(warning_threshold, 1),
             })
 
     # ── 2. Stop-loss proximity + large unrealized loss ──────────────────────
