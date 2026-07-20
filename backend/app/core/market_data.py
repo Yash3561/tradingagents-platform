@@ -145,6 +145,68 @@ def get_snapshot(ticker: str) -> dict | None:
         return None
 
 
+# ── Intraday volume imbalance (order-flow proxy) ──────────────────────────────
+
+def intraday_volume_imbalance(ticker: str) -> dict | None:
+    """
+    Today's up-volume vs down-volume from 5-minute bars — a lightweight,
+    tick-classification-free proxy for "are people net buying or net
+    selling right now" (uptick/downtick volume rule: a bar that closed
+    above the prior bar's close counts its volume as buying pressure, below
+    counts as selling). Not true trade-level order flow (Alpaca's free/IEX
+    tier doesn't expose that), but it's real traded volume, not a guess —
+    unlike the Sentiment analyst's institutional_flow/put_call_ratio fields,
+    which stay null with no data source behind them.
+
+    Returns {"imbalance": float in [-1, 1], "up_volume": int,
+    "down_volume": int, "bars": int} or None (pre-market, no Alpaca keys,
+    fetch failure, or under 6 bars — too little signal to trust).
+    """
+    import requests
+
+    creds = _alpaca_creds()
+    if creds is None:
+        return None
+    key, sec, data_url = creds
+    today = datetime.now(UTC).strftime("%Y-%m-%d")
+    try:
+        r = requests.get(
+            f"{data_url}/v2/stocks/bars",
+            headers={"APCA-API-KEY-ID": key, "APCA-API-SECRET-KEY": sec},
+            params={"symbols": ticker, "timeframe": "5Min", "start": f"{today}T00:00:00Z",
+                   "limit": 500, "adjustment": "raw", "feed": "iex"},
+            timeout=_ALPACA_TIMEOUT,
+        )
+        r.raise_for_status()
+        bars = (r.json().get("bars") or {}).get(ticker) or []
+    except Exception as e:
+        log.debug("market_data.intraday_imbalance_failed", ticker=ticker, error=str(e)[:120])
+        return None
+
+    if len(bars) < 6:
+        return None
+
+    up_vol = down_vol = 0.0
+    prev_close = bars[0]["c"]
+    for b in bars[1:]:
+        v = b.get("v") or 0
+        if b["c"] > prev_close:
+            up_vol += v
+        elif b["c"] < prev_close:
+            down_vol += v
+        prev_close = b["c"]
+
+    total = up_vol + down_vol
+    if total <= 0:
+        return None
+    return {
+        "imbalance": round((up_vol - down_vol) / total, 3),
+        "up_volume": int(up_vol),
+        "down_volume": int(down_vol),
+        "bars": len(bars),
+    }
+
+
 # ── Earnings surprises (NASDAQ-first) ────────────────────────────────────────
 
 def nasdaq_calendar_rows(day: date_t) -> list[dict]:

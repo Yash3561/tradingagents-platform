@@ -156,6 +156,16 @@ def _screen_ticker(ticker: str) -> dict | None:
         big_move = float(recent_returns.abs().max()) * 100  # biggest 1-day move in last 5 days
         pead_signal = big_move > 5  # >5% single-day move = likely earnings/catalyst
 
+        # Real intraday buy/sell pressure (today's up/down-tick volume) —
+        # None pre-market or on fetch failure; scoring below handles that.
+        vol_imbalance = None
+        try:
+            from app.core.market_data import intraday_volume_imbalance
+            imb = intraday_volume_imbalance(ticker)
+            vol_imbalance = imb.get("imbalance") if imb else None
+        except Exception:
+            pass
+
         # ── Scoring (0-100) ──────────────────────────────────────────────────
         score = 50.0
         direction = "NEUTRAL"
@@ -256,6 +266,14 @@ def _screen_ticker(ticker: str) -> dict | None:
         elif roc_10 < -5:
             score -= 5
 
+        # Real intraday order-flow confirmation — weighted lower than the
+        # multi-day factors above since it's same-day only and noisier
+        if vol_imbalance is not None:
+            if vol_imbalance > 0.3:
+                score += 6
+            elif vol_imbalance < -0.3:
+                score -= 6
+
         # Recalculate direction after all factors
         if score > 62:
             direction = "BUY"
@@ -288,6 +306,7 @@ def _screen_ticker(ticker: str) -> dict | None:
             "near_52w_high": near_52w_high,
             "pead_signal": pead_signal,
             "big_move_pct": round(big_move, 2),
+            "vol_imbalance": vol_imbalance,
         }
     except Exception as e:
         log.warning("scanner.screen_failed", ticker=ticker, error=str(e))

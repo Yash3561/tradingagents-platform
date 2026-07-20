@@ -91,6 +91,15 @@ def _fetch_market_data(ticker: str) -> dict:
         today_vol = int(volume.iloc[-1])
         vol_ratio = round(today_vol / avg_vol_30d, 2) if avg_vol_30d else 1.0
 
+        # Real intraday buy/sell pressure from today's 5-min bars (up/down-tick
+        # volume) — None pre-market or if the fetch fails; degrades gracefully.
+        vol_imb = None
+        try:
+            from app.core.market_data import intraday_volume_imbalance
+            vol_imb = intraday_volume_imbalance(ticker)
+        except Exception:
+            pass
+
         # Price momentum
         price_1w = float(close.iloc[-6]) if len(close) >= 6 else current_price
         price_1m = float(close.iloc[-22]) if len(close) >= 22 else current_price
@@ -117,6 +126,9 @@ def _fetch_market_data(ticker: str) -> dict:
             "volume_today": today_vol,
             "avg_volume_30d": avg_vol_30d,
             "volume_ratio": vol_ratio,
+            "intraday_buy_sell_imbalance": vol_imb.get("imbalance") if vol_imb else None,
+            "intraday_up_volume": vol_imb.get("up_volume") if vol_imb else None,
+            "intraday_down_volume": vol_imb.get("down_volume") if vol_imb else None,
             "atr_14": round(atr_14, 4),
             "atr_pct": atr_pct,
             # Fundamentals from info
@@ -469,6 +481,12 @@ def _run_sentiment_analyst(ticker: str, date: str, model: str, market_data: dict
         "num_analyst_opinions": market_data.get("num_analyst_opinions"),
         "beta": market_data.get("beta"),
         "current_price": market_data.get("current_price"),
+        # Real traded volume today, classified by up-tick/down-tick — a cheap
+        # order-flow proxy. -1 = all volume on down bars, +1 = all on up bars.
+        # None = pre-market or unavailable; never fabricate this one.
+        "intraday_buy_sell_imbalance": market_data.get("intraday_buy_sell_imbalance"),
+        "intraday_up_volume": market_data.get("intraday_up_volume"),
+        "intraday_down_volume": market_data.get("intraday_down_volume"),
     }
     data_block = json.dumps(sentiment_data, indent=2, default=str)
 
@@ -482,6 +500,16 @@ INSTITUTIONAL FLOW ANALYSIS:
 - Rising institutional ownership (QoQ) is bullish; declining is bearish/distribution
 - "Dumb money" retail flows to a stock after institutions have already positioned
 - 13F filings lag by 45 days — treat them as directional bias, not entry timing
+
+INTRADAY VOLUME IMBALANCE (real data, not a proxy for options/institutional flow):
+- intraday_buy_sell_imbalance is computed from today's actual 5-minute bars:
+  volume on bars that closed up minus volume on bars that closed down, normalized to [-1, 1]
+- This is real traded volume, unlike institutional_flow/put_call_ratio below, which have
+  no live data source and should be left null rather than guessed
+- Strong positive (>0.3) with rising price = real buying pressure, not just noise
+- Strong negative (<-0.3) with flat/rising price = distribution into strength — a warning sign
+  even if the headline trend looks fine
+- Treat as same-day, not multi-day — it says nothing about yesterday or next week
 
 OPTIONS FLOW ANALYSIS:
 - Put/call ratio (PCR) interpretation: PCR < 0.7 = complacency (contrarian bearish); PCR > 1.3 = fear (contrarian bullish)
