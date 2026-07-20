@@ -166,6 +166,61 @@ def nasdaq_calendar_rows(day: date_t) -> list[dict]:
     return rows
 
 
+# per-process cache: "YYYY-MM-DD" -> ranked ticker list (refreshes once per day)
+_market_universe_cache: dict[str, list[str]] = {}
+
+
+def nasdaq_market_universe(max_symbols: int = 150) -> list[str]:
+    """
+    The whole US equity market (NASDAQ's public screener, common stocks on
+    NASDAQ/NYSE/AMEX), ranked by market cap, largest first, capped to
+    max_symbols. This is the general-purpose "don't restrict me to a curated
+    watchlist" universe for the agents/quant scanners — distinct from
+    fetch_earnings_reporters() in earnings_pead.py, which additionally
+    requires a fresh earnings surprise.
+
+    Capped rather than truly unbounded: thousands of illiquid/OTC tickers
+    would blow the scan's time budget for _run_pre_screen's per-ticker bar
+    fetch and add mostly untradeable noise. 150 matches the platform's
+    existing custom_watchlist hard cap and the earnings whole-market pool —
+    at 95%+ percentile market cap this already covers every name that could
+    plausibly take a meaningful position size.
+    """
+    import requests
+
+    key = datetime.now(UTC).strftime("%Y-%m-%d")
+    if key in _market_universe_cache:
+        return _market_universe_cache[key]
+
+    ranked: list[str] = []
+    try:
+        r = requests.get(
+            "https://api.nasdaq.com/api/screener/stocks",
+            params={"tableonly": "true", "limit": "0", "download": "true"},
+            headers=_NASDAQ_HEADERS, timeout=20,
+        )
+        r.raise_for_status()
+        rows = (r.json().get("data") or {}).get("rows") or []
+        caps: dict[str, float] = {}
+        for row in rows:
+            sym = (row.get("symbol") or "").strip().upper()
+            if not sym or not sym.isalnum():
+                continue  # preferred shares / units / warrants — skip
+            try:
+                cap = float((row.get("marketCap") or "0").replace("$", "").replace(",", ""))
+            except ValueError:
+                continue
+            if cap > 0:
+                caps[sym] = max(cap, caps.get(sym, 0.0))
+        ranked = sorted(caps, key=lambda s: caps[s], reverse=True)[:max_symbols]
+    except Exception as e:
+        log.warning("market_data.nasdaq_universe_failed", error=str(e)[:200])
+
+    if ranked:
+        _market_universe_cache[key] = ranked
+    return ranked
+
+
 def _report_timing(ticker: str, report_date: date_t) -> bool | None:
     """True=pre-market, False=after-hours, None=unknown."""
     t = ""

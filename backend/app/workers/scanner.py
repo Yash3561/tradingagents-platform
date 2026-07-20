@@ -43,7 +43,13 @@ MAX_AI_CANDIDATES = 8
 
 
 async def get_active_watchlist(user_id: int | None = None) -> list[str]:
-    """Returns the user's custom watchlist if set, else the default WATCHLIST."""
+    """
+    Returns the user's custom watchlist if set; else the whole-market universe
+    (2026-07-20: replaced the static 39-ticker default — a user explicitly
+    asked not to be limited to a small curated list). Falls back to the old
+    static WATCHLIST if the NASDAQ screener fetch fails, so a transient
+    outage never zeroes out a scan.
+    """
     try:
         from app.db.models.user_settings import get_user_setting
         import json
@@ -54,6 +60,14 @@ async def get_active_watchlist(user_id: int | None = None) -> list[str]:
                 return tickers
     except Exception:
         pass
+    try:
+        from app.core.market_data import nasdaq_market_universe
+        loop = asyncio.get_running_loop()
+        universe = await loop.run_in_executor(None, nasdaq_market_universe, 150)
+        if universe:
+            return universe
+    except Exception as e:
+        log.warning("scanner.whole_market_universe_failed", error=str(e)[:200])
     return WATCHLIST
 
 
@@ -338,12 +352,19 @@ def _run_earnings_prescreen(watchlist: list[str], params: dict) -> list[dict]:
 
 
 def _run_pre_screen(watchlist: list[str], criteria: dict | None = None) -> list[dict]:
-    """Screen all tickers, apply optional criteria, return sorted by opportunity score."""
+    """
+    Screen all tickers, apply optional criteria, return sorted by opportunity
+    score. Parallelized (6 workers, mirrors _run_earnings_prescreen) — the
+    whole-market default watchlist can be up to 150 tickers, and a serial
+    per-ticker bar fetch at that size would blow the scan's time budget.
+    """
+    from concurrent.futures import ThreadPoolExecutor
+
     results = []
-    for ticker in watchlist:
-        r = _screen_ticker(ticker)
-        if r and r["direction"] != "NEUTRAL":
-            results.append(r)
+    with ThreadPoolExecutor(max_workers=6) as pool:
+        for r in pool.map(_screen_ticker, watchlist):
+            if r and r["direction"] != "NEUTRAL":
+                results.append(r)
 
     # Apply custom criteria before scoring sort
     results = _apply_criteria(results, criteria)
