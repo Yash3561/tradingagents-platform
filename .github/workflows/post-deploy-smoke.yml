@@ -64,8 +64,12 @@ jobs:
 
           # Auth path is alive — expect a clean 401 for bogus credentials,
           # not a 500 (which would mean the DB or auth stack is broken).
+          # Domain must be syntactically real (not a reserved TLD like
+          # .invalid/.test) or Pydantic's EmailStr validator 422s before the
+          # request ever reaches the login logic - that's a validation-layer
+          # response, not proof the DB+auth stack executed.
           status, body = post("/api/v1/auth/login",
-                              {"email": "smoke-test-nonexistent@example.invalid",
+                              {"email": "smoke-test-nonexistent-ci-check@gmail.com",
                                "password": "not-a-real-password"})
           if status not in (401, 400):
               print(f"FAIL: /auth/login with bad creds returned {status} (expected 401/400): {body[:300]}")
