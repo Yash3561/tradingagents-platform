@@ -255,7 +255,11 @@ def _nim_structured(
             break
         except Exception as e:
             status = getattr(e, "status_code", None)
-            transient = status in (429, 500, 502, 503, 504) \
+            # 404 included: observed live 2026-07-20 as a transient NIM routing
+            # hiccup, not a bad model name — same model/call succeeded for other
+            # tickers within the same minute. A genuinely wrong model name still
+            # fails, just after burning the retry budget instead of immediately.
+            transient = status in (404, 429, 500, 502, 503, 504) \
                 or "timed out" in str(e).lower() or "connection" in str(e).lower()
             if not transient or attempt == 3:
                 raise
