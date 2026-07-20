@@ -341,12 +341,18 @@ async def analyze_options(body: OptionsRequest, background_tasks: BackgroundTask
     def _fetch_market_data():
         import yfinance as yf
         import numpy as np
+        from app.core.market_data import get_daily_bars
 
-        t = yf.Ticker(ticker)
-        hist = t.history(period="3mo")
-        if hist.empty:
+        # Alpaca-first, yfinance-fallback — same data layer the rest of the
+        # platform uses since the 2026-07-17 outage post-mortem (Yahoo rate
+        # limits Render's shared egress IP). Only the options CHAIN itself
+        # still has to go through yfinance below (Alpaca's free tier has no
+        # options data) — that dependency can't be removed the same way.
+        hist = get_daily_bars(ticker, days=90)
+        if hist is None or hist.empty:
             raise ValueError(f"No price data for {ticker}")
 
+        t = yf.Ticker(ticker)
         current_price = float(hist["Close"].iloc[-1])
 
         # RSI-14
