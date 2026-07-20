@@ -1,5 +1,6 @@
 import uuid
 from datetime import datetime, UTC
+import structlog
 from fastapi import APIRouter, Depends, HTTPException, BackgroundTasks
 from sqlalchemy.ext.asyncio import AsyncSession
 from pydantic import BaseModel, Field, field_validator
@@ -14,6 +15,7 @@ from app.agents.contracts import get_all_schemas, get_contract_schema
 from app.core.websocket_manager import ws_manager
 
 router = APIRouter()
+log = structlog.get_logger()
 
 # Per-user quotas on LLM-spending endpoints (sliding 1h window)
 RUNS_PER_HOUR = 30
@@ -380,13 +382,24 @@ async def analyze_options(body: OptionsRequest, background_tasks: BackgroundTask
         log_returns = np.log(closes / closes.shift(1)).dropna()
         hist_vol = float(log_returns.rolling(20).std().iloc[-1] * math.sqrt(252) * 100)
 
-        expiries = list(t.options)
+        # Soft-fail: this is the one call in this function still on yfinance
+        # (no Alpaca options data on the free tier). Yahoo rate-limits
+        # Render's shared egress IP periodically (same root cause as the
+        # 2026-07-17 outage) - when it does, the directional judgment below
+        # (now running on reliable Alpaca price data) can still complete;
+        # only real-contract selection has to sit out. A hard failure here
+        # used to take the whole analysis down with it.
+        expiries: list[str] = []
         chain_expiry = None
-        if expiries:
-            today = _date.today()
-            chain_expiry = min(
-                expiries,
-                key=lambda e: abs((_date.fromisoformat(e) - today).days - target_days))
+        try:
+            expiries = list(t.options)
+            if expiries:
+                today = _date.today()
+                chain_expiry = min(
+                    expiries,
+                    key=lambda e: abs((_date.fromisoformat(e) - today).days - target_days))
+        except Exception as e:
+            log.warning("options.chain_expiry_unavailable", ticker=ticker, error=str(e)[:150])
 
         return {
             "current_price": current_price,
@@ -410,8 +423,10 @@ async def analyze_options(body: OptionsRequest, background_tasks: BackgroundTask
     except Exception as e:
         raise HTTPException(502, f"Market data fetch failed: {e}")
 
-    if not mkt["chain_expiry"]:
-        raise HTTPException(502, f"No listed options chain found for {ticker}")
+    # No hard-fail here: chain_expiry can legitimately be unavailable (Yahoo
+    # rate-limiting Render's IP) while the Alpaca-sourced technicals below
+    # are still perfectly good — the LLM can still give a directional read.
+    # Contract selection just gets skipped further down if this is None.
 
     # ── Ask the LLM ONLY for direction — the thing it can actually judge ───────
     strategy_desc = {
@@ -564,25 +579,39 @@ async def analyze_options(body: OptionsRequest, background_tasks: BackgroundTask
             "open_interest": int(best_row.get("openInterest") or 0),
         }
 
-    try:
-        with ThreadPoolExecutor(max_workers=1) as ex:
-            contract = await loop.run_in_executor(ex, _pick_contract)
-    except Exception as e:
+    if mkt["chain_expiry"] is None:
         contract = None
-        result["risk_warnings"].append(f"Real chain lookup failed ({e}); showing direction only, no contract.")
+        chain_unavailable_msg = (
+            "Options chain data is temporarily unavailable (Yahoo rate-limiting "
+            "Render's shared IP) — directional read only, no real contract "
+            "could be selected right now. Try again shortly."
+        )
+    else:
+        chain_unavailable_msg = None
+        try:
+            with ThreadPoolExecutor(max_workers=1) as ex:
+                contract = await loop.run_in_executor(ex, _pick_contract)
+        except Exception as e:
+            contract = None
+            result["risk_warnings"].append(f"Real chain lookup failed ({e}); showing direction only, no contract.")
 
     if contract is None:
         result["recommendation"] = "NO_PLAY"
         result["risk_warnings"] = result["risk_warnings"] + [
-            "No liquid listed contract found near the target delta for this "
-            "expiry — the directional thesis may be right but there is no "
-            "clean way to express it with real, tradeable liquidity right now."
+            chain_unavailable_msg or (
+                "No liquid listed contract found near the target delta for this "
+                "expiry — the directional thesis may be right but there is no "
+                "clean way to express it with real, tradeable liquidity right now."
+            )
         ]
         result["reasoning"] += (
-            " Downgraded to NO_PLAY: no real contract with an actual bid and "
-            "volume/open interest was found — recommending a contract nobody "
-            "is actually trading is how the previous version of this tool "
-            "produced a fabricated near-zero-risk number."
+            " Downgraded to NO_PLAY: " + (
+                chain_unavailable_msg or
+                "no real contract with an actual bid and volume/open interest "
+                "was found — recommending a contract nobody is actually trading "
+                "is how the previous version of this tool produced a fabricated "
+                "near-zero-risk number."
+            )
         )
         return result
 
