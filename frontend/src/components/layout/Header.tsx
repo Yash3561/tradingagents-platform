@@ -368,12 +368,12 @@ export default function Header({ onMenuClick }: { onMenuClick?: () => void }) {
       {/* Search */}
       <TickerSearch />
 
-      <div className="hidden sm:block">
+      <div className="hidden sm:block" data-tour="header-clock">
         <MarketClock />
       </div>
 
       {/* Bell with notification badge and dropdown */}
-      <div className="relative" ref={dropdownRef}>
+      <div className="relative" ref={dropdownRef} data-tour="header-notifications">
         <button
           onClick={handleBellClick}
           className="relative p-2 rounded-lg hover:bg-bg-elevated transition-colors"

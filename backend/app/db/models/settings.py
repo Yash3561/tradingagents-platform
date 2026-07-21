@@ -50,6 +50,10 @@ DEFAULTS: dict = {
     #              defined-risk long call instead of stock (no LLM cost,
     #              needs a REAL Alpaca options-enabled account)
     "strategy_mode": "agents",
+    # First-run interactive product tour — set true once a user finishes or
+    # skips it (Settings/How-It-Works both expose a "take the tour again"
+    # button that re-shows it without touching this flag).
+    "onboarding_tour_completed": False,
     # PEAD-options policy profile (see agents/earnings_pead_options.py)
     "pead_options_target_days": 14.0,
     "pead_options_target_delta": 0.35,

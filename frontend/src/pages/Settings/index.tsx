@@ -1,9 +1,10 @@
 import { motion, AnimatePresence } from "framer-motion";
 import { useState, useEffect, useRef, useCallback } from "react";
-import { CheckCircle, KeyRound, Link2, Loader2, ShieldAlert, ShieldCheck, ShieldX, Unplug } from "lucide-react";
+import { CheckCircle, Compass, KeyRound, Link2, Loader2, ShieldAlert, ShieldCheck, ShieldX, Unplug } from "lucide-react";
 import { api } from "../../lib/api";
 import { cn } from "../../lib/cn";
 import { saveAuth } from "../../lib/auth";
+import { OPEN_TOUR_EVENT } from "../../components/onboarding/GuidedTour";
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
@@ -522,28 +523,38 @@ export default function Settings() {
           <p className="text-sm text-text-muted mt-0.5">Configure risk, AI model, and agent behaviour</p>
         </div>
 
-        <AnimatePresence>
-          {saveState !== "idle" && (
-            <motion.div
-              initial={{ opacity: 0, y: -6 }}
-              animate={{ opacity: 1, y: 0 }}
-              exit={{ opacity: 0, y: -6 }}
-              transition={{ duration: 0.2 }}
-              className={cn(
-                "flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium",
-                saveState === "saving"
-                  ? "bg-accent/10 text-accent"
-                  : "bg-gain/10 text-gain"
-              )}
-            >
-              {saveState === "saving" ? (
-                <><Loader2 size={12} className="animate-spin" /> Saving...</>
-              ) : (
-                <><CheckCircle size={12} /> Saved</>
-              )}
-            </motion.div>
-          )}
-        </AnimatePresence>
+        <div className="flex items-center gap-3">
+          <button
+            onClick={() => window.dispatchEvent(new Event(OPEN_TOUR_EVENT))}
+            className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-border hover:border-accent/50 text-text-muted hover:text-text-primary transition-all text-xs shrink-0"
+          >
+            <Compass size={13} />
+            Take the tour again
+          </button>
+
+          <AnimatePresence>
+            {saveState !== "idle" && (
+              <motion.div
+                initial={{ opacity: 0, y: -6 }}
+                animate={{ opacity: 1, y: 0 }}
+                exit={{ opacity: 0, y: -6 }}
+                transition={{ duration: 0.2 }}
+                className={cn(
+                  "flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium",
+                  saveState === "saving"
+                    ? "bg-accent/10 text-accent"
+                    : "bg-gain/10 text-gain"
+                )}
+              >
+                {saveState === "saving" ? (
+                  <><Loader2 size={12} className="animate-spin" /> Saving...</>
+                ) : (
+                  <><CheckCircle size={12} /> Saved</>
+                )}
+              </motion.div>
+            )}
+          </AnimatePresence>
+        </div>
       </div>
 
       {/* ── Broker Connection ────────────────────────────────────────────────── */}

@@ -21,6 +21,7 @@ import {
   CalendarDays,
   BookOpen,
   ShieldCheck,
+  Workflow,
 } from "lucide-react";
 import { cn } from "../../lib/cn";
 import { getUser } from "../../lib/auth";
@@ -39,7 +40,7 @@ function BrokerStatusCard() {
 
   const connected = status?.connected === true;
   return (
-    <NavLink to="/settings" className="block mx-0 p-3 rounded-lg bg-bg-elevated border border-border hover:border-accent/40 transition-colors">
+    <NavLink to="/settings" data-tour="broker-status" className="block mx-0 p-3 rounded-lg bg-bg-elevated border border-border hover:border-accent/40 transition-colors">
       <div className="flex items-center gap-2 mb-1">
         <div className={cn("w-2 h-2 rounded-full", connected ? "bg-gain animate-pulse-slow" : "bg-warn")} />
         <span className="text-xs text-text-secondary">Paper Trading</span>
@@ -58,6 +59,7 @@ function BrokerStatusCard() {
 const NAV_GROUPS = [
   {
     label: "Trading",
+    tourId: "nav-trading",
     items: [
       { to: "/markets", icon: BarChart2, label: "Markets" },
       { to: "/dashboard", icon: LayoutDashboard, label: "Dashboard" },
@@ -71,6 +73,7 @@ const NAV_GROUPS = [
   },
   {
     label: "Portfolio",
+    tourId: "nav-portfolio",
     items: [
       { to: "/portfolio", icon: PieChart, label: "Portfolio" },
       { to: "/trades", icon: ScrollText, label: "Trade History" },
@@ -81,10 +84,12 @@ const NAV_GROUPS = [
   },
   {
     label: "Intelligence",
+    tourId: "nav-intelligence",
     items: [
       { to: "/analytics", icon: Brain, label: "Analytics" },
       { to: "/track-record", icon: ScrollText, label: "Track Record" },
       { to: "/strategy", icon: Zap, label: "Strategy" },
+      { to: "/how-it-works", icon: Workflow, label: "How It Works" },
       { to: "/learn", icon: BookOpen, label: "Learn" },
       { to: "/settings", icon: Settings, label: "Settings" },
     ],
@@ -173,7 +178,7 @@ export default function Sidebar({ onLogout, mobileOpen = false, onMobileClose }:
       {/* Nav */}
       <nav className="flex-1 px-3 py-4 overflow-y-auto">
         {navGroups.map((group) => (
-          <div key={group.label} className="mb-4">
+          <div key={group.label} className="mb-4" data-tour={group.tourId}>
             <p className="px-3 mb-1 text-[10px] font-semibold uppercase tracking-widest text-slate-600">
               {group.label}
             </p>

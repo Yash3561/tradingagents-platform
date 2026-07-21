@@ -3,6 +3,7 @@ import Sidebar from "./Sidebar";
 import Header from "./Header";
 import StatusBar from "./StatusBar";
 import VerifyEmailBanner from "./VerifyEmailBanner";
+import GuidedTour from "../onboarding/GuidedTour";
 
 interface ShellProps {
   children: ReactNode;
@@ -27,6 +28,7 @@ export default function Shell({ children, onLogout }: ShellProps) {
         </main>
         <StatusBar />
       </div>
+      <GuidedTour />
     </div>
   );
 }

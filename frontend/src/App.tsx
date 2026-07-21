@@ -20,6 +20,7 @@ import News from "./pages/News";
 import EconomicCalendar from "./pages/Calendar";
 import Learn from "./pages/Learn";
 import Strategy from "./pages/Strategy";
+import HowItWorks from "./pages/HowItWorks";
 import Login from "./pages/Login";
 import Signup from "./pages/Signup";
 import ForgotPassword from "./pages/Auth/ForgotPassword";
@@ -136,6 +137,7 @@ export default function App() {
               <Route path="/calendar" element={<EconomicCalendar />} />
               <Route path="/learn" element={<Learn />} />
               <Route path="/strategy" element={<Strategy />} />
+              <Route path="/how-it-works" element={<HowItWorks />} />
               <Route path="/track-record" element={<TrackRecord />} />
               <Route path="/settings" element={<Settings />} />
               <Route path="/admin" element={<AdminRoute />} />
