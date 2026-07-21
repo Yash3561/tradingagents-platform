@@ -27,6 +27,27 @@ log = structlog.get_logger()
 
 _NASDAQ_HEADERS = {"User-Agent": "Mozilla/5.0", "Accept": "application/json"}
 _ALPACA_TIMEOUT = 20.0
+_YF_TIMEOUT = 15.0
+
+
+def _yf_bounded(fn, timeout: float = _YF_TIMEOUT):
+    """
+    Run a yfinance call under a hard wall-clock timeout. yfinance is a scrape
+    API that sets none of its own — under Render's shared-IP Yahoo throttling
+    a single call can hang far longer than any caller expects (this stalled a
+    live whole-market earnings scan for 6+ minutes on 2026-07-21, one ticker
+    at a time, even with the 6-way prescreen parallelism). Returns None on
+    timeout or any other failure; the stuck thread is abandoned rather than
+    joined so the caller is never blocked past `timeout`.
+    """
+    import concurrent.futures
+    ex = concurrent.futures.ThreadPoolExecutor(max_workers=1)
+    try:
+        return ex.submit(fn).result(timeout=timeout)
+    except Exception:
+        return None
+    finally:
+        ex.shutdown(wait=False)
 
 # per-process cache: calendar date -> raw rows. Fetched while the date is
 # CURRENT, rows carry the report timing; NASDAQ strips it from past dates
@@ -87,7 +108,7 @@ def _yf_daily_bars(ticker: str, days: int):
     try:
         import yfinance as yf
         period = "1y" if days > 240 else "6mo"
-        hist = yf.Ticker(ticker).history(period=period, interval="1d")
+        hist = _yf_bounded(lambda: yf.Ticker(ticker).history(period=period, interval="1d"))
         if hist is None or hist.empty:
             return None
         hist.index = hist.index.tz_localize(None)
@@ -135,7 +156,7 @@ def get_snapshot(ticker: str) -> dict | None:
 
     try:
         import yfinance as yf
-        hist = yf.Ticker(ticker).history(period="5d", interval="1d")
+        hist = _yf_bounded(lambda: yf.Ticker(ticker).history(period="5d", interval="1d"))
         if hist is None or len(hist) < 2:
             return None
         return {"price": float(hist["Close"].iloc[-1]),
@@ -299,7 +320,7 @@ def _report_timing(ticker: str, report_date: date_t) -> bool | None:
     try:
         from datetime import time as dtime
         import yfinance as yf
-        ed = yf.Ticker(ticker).get_earnings_dates(limit=4)
+        ed = _yf_bounded(lambda: yf.Ticker(ticker).get_earnings_dates(limit=4))
         if ed is not None and not ed.empty:
             for ts in ed.index:
                 if ts.date() == report_date:
@@ -338,7 +359,7 @@ def get_latest_earnings_surprise(ticker: str) -> dict | None:
     try:
         from datetime import time as dtime
         import yfinance as yf
-        ed = yf.Ticker(ticker).get_earnings_dates(limit=4)
+        ed = _yf_bounded(lambda: yf.Ticker(ticker).get_earnings_dates(limit=4))
         if ed is None or ed.empty:
             return None
         ed = ed.dropna(subset=["Reported EPS", "Surprise(%)"]).sort_index()
