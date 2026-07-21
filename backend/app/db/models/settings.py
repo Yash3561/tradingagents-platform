@@ -95,6 +95,16 @@ DEFAULTS: dict = {
     "earnings_rr_ratio": 3.0,
     "earnings_hold_days": 10,
     "earnings_position_size_pct": 5.0,
+    # Whole-market candidate pool (every US reporter today/prior day via the
+    # NASDAQ earnings calendar) instead of the general top-market-cap
+    # watchlist — both "earnings" and "earnings_options" share this gate by
+    # design (see agents/earnings_pead_options.py). Platform default rather
+    # than a manual per-account toggle: a PEAD engine that only checks the
+    # top-150-by-cap names for a recent surprise will miss most real
+    # reporters most days, since "reported earnings" and "top market cap"
+    # are only loosely correlated.
+    "earnings_whole_market": True,
+    "earnings_min_market_cap_b": 2.0,
     # Quant policy profile — deploy walk-forward tournament winners here
     # (defaults mirror QUANT_PARAM_DEFAULTS in agents/quant_baseline.py)
     "quant_trend_rsi_min": 45.0,
