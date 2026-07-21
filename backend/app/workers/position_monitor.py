@@ -183,7 +183,22 @@ async def _check_account(user_id: int | None, broker) -> list[dict]:
 
             if reason:
                 try:
-                    await loop.run_in_executor(None, broker.close_position, ticker)
+                    if rj.get("engine") == "earnings-pead-options":
+                        # Alpaca's position-close endpoint is a blind market
+                        # order with no price bound — on a thin single-name
+                        # option book that turned a triggered -60% stop into
+                        # an actual -87% fill on 2026-07-21. A marketable
+                        # limit priced off our own last-known quote (5%
+                        # through it, aggressive enough to fill immediately
+                        # in any market with real liquidity) caps the
+                        # worst-case slippage instead of accepting whatever
+                        # a market order gets handed on a wide book.
+                        limit_price = round(current * 0.95, 2)
+                        await loop.run_in_executor(
+                            None, broker.submit_options_order, ticker, "sell",
+                            int(qty), limit_price)
+                    else:
+                        await loop.run_in_executor(None, broker.close_position, ticker)
                     log.info("monitor.position_closed", user_id=user_id,
                              ticker=ticker, reason=reason, pnl_pct=round(pnl_pct, 2))
 
