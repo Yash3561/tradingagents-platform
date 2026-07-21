@@ -94,7 +94,8 @@ function ScoreBar({ score }: { score: number }) {
   );
 }
 
-function MomBadge({ value }: { value: number }) {
+function MomBadge({ value }: { value: number | undefined | null }) {
+  if (value == null) return <span className="font-mono text-xs text-text-muted">—</span>;
   return (
     <span className={cn("font-mono text-xs", value >= 0 ? "text-gain" : "text-loss")}>
       {value >= 0 ? "+" : ""}{value.toFixed(1)}%
@@ -725,20 +726,26 @@ export default function Scanner() {
                               </span>
                             </td>
                             <td className="px-4 py-2.5 w-28"><ScoreBar score={s.score} /></td>
-                            <td className="px-4 py-2.5 text-right font-mono text-text-primary">${s.current_price.toLocaleString()}</td>
+                            <td className="px-4 py-2.5 text-right font-mono text-text-primary">
+                              {s.current_price != null ? `$${s.current_price.toLocaleString()}` : "—"}
+                            </td>
                             <td className={cn("px-4 py-2.5 text-right font-mono",
-                              s.rsi < 35 ? "text-gain" : s.rsi > 70 ? "text-loss" : "text-text-secondary")}>
-                              {s.rsi}
+                              s.rsi == null ? "text-text-muted" : s.rsi < 35 ? "text-gain" : s.rsi > 70 ? "text-loss" : "text-text-secondary")}>
+                              {s.rsi ?? "—"}
                             </td>
                             <td className="px-4 py-2.5 text-right"><MomBadge value={s.mom_1w_pct} /></td>
                             <td className="px-4 py-2.5 text-right"><MomBadge value={s.mom_1m_pct} /></td>
                             <td className="px-4 py-2.5 text-right"><MomBadge value={s.mom_3m_pct} /></td>
                             <td className="px-4 py-2.5 text-center">
-                              <span className={s.macd_bullish ? "text-gain" : "text-loss"}>{s.macd_bullish ? "▲" : "▼"}</span>
+                              {s.macd_bullish == null ? (
+                                <span className="text-text-muted">—</span>
+                              ) : (
+                                <span className={s.macd_bullish ? "text-gain" : "text-loss"}>{s.macd_bullish ? "▲" : "▼"}</span>
+                              )}
                             </td>
                             <td className={cn("px-4 py-2.5 text-right font-mono",
-                              s.vol_ratio > 1.5 ? "text-gain" : s.vol_ratio < 0.7 ? "text-text-muted" : "text-text-secondary")}>
-                              {s.vol_ratio}x
+                              s.vol_ratio == null ? "text-text-muted" : s.vol_ratio > 1.5 ? "text-gain" : s.vol_ratio < 0.7 ? "text-text-muted" : "text-text-secondary")}>
+                              {s.vol_ratio != null ? `${s.vol_ratio}x` : "—"}
                             </td>
                             <td className="px-4 py-2.5 text-right">
                               <div className="flex items-center justify-end gap-1">
