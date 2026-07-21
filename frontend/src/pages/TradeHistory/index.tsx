@@ -51,6 +51,16 @@ const CLOSE_REASON_STYLE: Record<string, string> = {
   take_profit: "text-gain",
 };
 
+// OCC option symbol: root (1-6 letters) + YYMMDD + C/P + 8-digit strike*1000,
+// e.g. CCK260821C00125000. One contract = 100 shares of notional, so P&L%
+// must scale the cost-basis denominator by the multiplier or it overstates
+// the real percentage by 100x (fill_price*qty alone is the PER-SHARE basis,
+// not the actual premium paid).
+const OCC_OPTION_RE = /^[A-Z]{1,6}\d{6}[CP]\d{8}$/;
+function optionMultiplier(ticker: string): number {
+  return OCC_OPTION_RE.test(ticker) ? 100 : 1;
+}
+
 function AuditPanel({ trade, onClose }: { trade: Trade; onClose: () => void }) {
   const [entries, setEntries] = useState<DebateEntry[]>([]);
   const [loading, setLoading] = useState(false);
@@ -73,7 +83,7 @@ function AuditPanel({ trade, onClose }: { trade: Trade; onClose: () => void }) {
   }, [trade.agent_run_id]);
 
   const pnlPct = trade.pnl != null && trade.filled_price != null && trade.qty
-    ? (trade.pnl / (trade.filled_price * trade.qty)) * 100
+    ? (trade.pnl / (trade.filled_price * trade.qty * optionMultiplier(trade.ticker))) * 100
     : null;
 
   return (
@@ -273,7 +283,7 @@ export default function TradeHistory() {
             <tbody className="divide-y divide-border/50">
               {trades.map(trade => {
                 const pnlPct = trade.pnl != null && trade.filled_price && trade.qty
-                  ? (trade.pnl / (trade.filled_price * trade.qty)) * 100
+                  ? (trade.pnl / (trade.filled_price * trade.qty * optionMultiplier(trade.ticker))) * 100
                   : null;
                 return (
                   <tr key={trade.id} className="hover:bg-bg-elevated/40 transition-colors">
