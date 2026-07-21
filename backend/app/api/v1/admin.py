@@ -261,6 +261,8 @@ STRATEGY_KEYS = [
     "momentum_lookback_days", "momentum_skip_days", "momentum_top_n",
     "momentum_rebalance_days", "momentum_weighting", "momentum_exposure_pct",
     "max_orders_per_day", "max_order_notional_pct",
+    "pead_options_target_days", "pead_options_target_delta", "pead_options_hold_days",
+    "pead_options_target_gain_pct", "pead_options_max_loss_pct", "pead_options_position_pct",
 ]
 
 

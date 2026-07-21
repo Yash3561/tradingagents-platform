@@ -184,6 +184,49 @@ class AlpacaClient:
                      ticker=ticker, stop=stop_price, take=take_price)
             return order
 
+    # ── Options ────────────────────────────────────────────────────────────
+
+    def submit_options_order(
+        self,
+        occ_symbol: str,
+        side: str,             # "buy" | "sell" — this platform only ever buys
+                                # (long calls/puts), never writes/sells naked
+        qty: int,               # CONTRACTS, not shares (1 contract ~= 100 shares)
+        limit_price: float,
+        time_in_force: str = "day",
+    ) -> dict:
+        """
+        Single-leg options order — same /v2/orders endpoint as equities,
+        just with an OCC contract symbol (e.g. "MSFT260731C00417500") as
+        `symbol`. Always a LIMIT order: options spreads are wide enough that
+        a market order can fill far from the quoted mid, and every caller
+        already has a real quoted bid/ask from core.alpaca_options to price
+        the limit off of — there's no excuse for a blind market order here.
+        """
+        payload = {
+            "symbol": occ_symbol,
+            "qty": str(max(1, int(qty))),
+            "side": side.lower(),
+            "type": "limit",
+            "time_in_force": time_in_force,
+            "limit_price": str(round(limit_price, 2)),
+        }
+        log.info("alpaca.options_order.submit", symbol=occ_symbol, side=side,
+                qty=qty, limit_price=limit_price)
+        with httpx.Client(timeout=15.0) as client:
+            r = client.post(f"{self.base_url}/v2/orders", headers=self.headers(), json=payload)
+            r.raise_for_status()
+            order = r.json()
+            log.info("alpaca.options_order.accepted", order_id=order.get("id"),
+                     symbol=occ_symbol, status=order.get("status"))
+            return order
+
+    def get_options_position(self, occ_symbol: str) -> dict | None:
+        return self.get_position(occ_symbol)  # same /v2/positions/{symbol} endpoint
+
+    def close_options_position(self, occ_symbol: str) -> dict | None:
+        return self.close_position(occ_symbol)  # same /v2/positions/{symbol} DELETE
+
     # ── History / clock ────────────────────────────────────────────────────
 
     def get_portfolio_history(self, period: str = "1M", timeframe: str = "1D") -> dict | None:

@@ -88,10 +88,20 @@ NUMERIC_BOUNDS: dict[str, tuple[float, float, bool]] = {
     # 100/day and 50pct notional keeps it a backstop, not a normal limit.
     "max_orders_per_day": (5, 100, True),
     "max_order_notional_pct": (10.0, 50.0, False),
+    # PEAD-options policy profile. target_delta capped well inside 0-1;
+    # position_pct ceiling lower than the stock arms' — options premium is
+    # the ENTIRE amount at risk, no partial-loss cushion like stock has.
+    "pead_options_target_days": (3, 60, True),
+    "pead_options_target_delta": (0.10, 0.60, False),
+    "pead_options_hold_days": (1, 30, True),
+    "pead_options_target_gain_pct": (25.0, 300.0, False),
+    "pead_options_max_loss_pct": (20.0, 90.0, False),
+    "pead_options_position_pct": (1.0, 15.0, False),
+    "pead_options_min_bid": (0.01, 5.0, False),
 }
 
 ENUM_VALUES: dict[str, set[str]] = {
-    "strategy_mode": {"agents", "quant", "intraday", "earnings", "momentum"},
+    "strategy_mode": {"agents", "quant", "intraday", "earnings", "momentum", "earnings_options"},
     "momentum_weighting": {"equal", "inv_vol"},
     "intraday_setup": {"orb", "vwaprev", "mom"},
     "llm_model": ALLOWED_LLM_MODELS,

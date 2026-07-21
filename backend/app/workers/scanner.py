@@ -506,6 +506,11 @@ async def run_market_scan(
     if use_earnings:
         model = EARNINGS_MODEL_LABEL
         debate_rounds_setting = 0
+    use_earnings_options = strategy_mode == "earnings_options"
+    if use_earnings_options:
+        from app.agents.earnings_pead_options import OPTIONS_MODEL_LABEL
+        model = OPTIONS_MODEL_LABEL
+        debate_rounds_setting = 0
 
     # ── Circuit breaker gate ───────────────────────────────────────────────────
     try:
@@ -580,7 +585,11 @@ async def run_market_scan(
 
     # Step 1: Pre-screen (fast, free)
     loop = asyncio.get_running_loop()
-    if use_earnings:
+    if use_earnings or use_earnings_options:
+        # earnings_options reuses the IDENTICAL entry gate as stock PEAD —
+        # same check_recent_earnings_surprise, same whole-market pool — it
+        # only differs in HOW the signal gets expressed (option vs stock),
+        # which happens later inside earnings_pead_options.py itself.
         earnings_params = await _load_earnings_params(user_id)
         # Whole-market mode: candidate pool = every US company that reported
         # today/yesterday (NASDAQ calendar, market-cap floored) instead of the
@@ -672,6 +681,14 @@ async def run_market_scan(
                 )
             elif use_earnings:
                 await run_earnings_pead_analysis(
+                    run_id=run_id,
+                    ticker=ticker,
+                    analysis_date=analysis_date,
+                    user_id=user_id,
+                )
+            elif use_earnings_options:
+                from app.agents.earnings_pead_options import run_earnings_pead_options_analysis
+                await run_earnings_pead_options_analysis(
                     run_id=run_id,
                     ticker=ticker,
                     analysis_date=analysis_date,

@@ -46,7 +46,18 @@ DEFAULTS: dict = {
     # "earnings" = post-earnings drift (no LLM cost),
     # "momentum" = monthly top-N relative-momentum rotation (no LLM cost,
     #              DEDICATED account — it rotates every universe position it sees)
+    # "earnings_options" = same PEAD entry gate as "earnings", expressed as a
+    #              defined-risk long call instead of stock (no LLM cost,
+    #              needs a REAL Alpaca options-enabled account)
     "strategy_mode": "agents",
+    # PEAD-options policy profile (see agents/earnings_pead_options.py)
+    "pead_options_target_days": 14.0,
+    "pead_options_target_delta": 0.35,
+    "pead_options_hold_days": 10.0,
+    "pead_options_target_gain_pct": 100.0,
+    "pead_options_max_loss_pct": 60.0,
+    "pead_options_position_pct": 5.0,
+    "pead_options_min_bid": 0.10,
     # Momentum rotation policy profile (defaults = 2026-07-18 tournament winner)
     "momentum_lookback_days": 126,
     "momentum_skip_days": 0,

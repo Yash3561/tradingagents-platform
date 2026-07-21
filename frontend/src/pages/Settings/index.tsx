@@ -607,7 +607,7 @@ export default function Settings() {
       <Section title="AI Model">
         <Field
           label="Strategy Engine"
-          description="AI Agents = full LLM debate pipeline. Quant Baseline = deterministic regime-filtered trend + mean-reversion rules (no AI credits) — the control group the agents must beat. Intraday Rules = 5-minute-bar engine that trades during market hours and is always flat by the close (no AI credits). Earnings Drift = event-driven post-earnings-surprise entries, held for days (no AI credits). Momentum Rotation = concentrated monthly top-4 relative-strength rotation, no stops, exits only on rotation (no AI credits) — use a DEDICATED paper account, it manages every universe position it sees."
+          description="AI Agents = full LLM debate pipeline. Quant Baseline = deterministic regime-filtered trend + mean-reversion rules (no AI credits) — the control group the agents must beat. Intraday Rules = 5-minute-bar engine that trades during market hours and is always flat by the close (no AI credits). Earnings Drift = event-driven post-earnings-surprise entries, held for days (no AI credits). Momentum Rotation = concentrated monthly top-4 relative-strength rotation, no stops, exits only on rotation (no AI credits) — use a DEDICATED paper account, it manages every universe position it sees. Earnings Drift — Options = same earnings-surprise trigger expressed as a defined-risk long call instead of stock, exits on a target premium gain, a max premium loss, or a time exit — needs a real options-enabled Alpaca account and its own DEDICATED paper account."
         >
           <select
             value={settings.strategy_mode}
@@ -620,6 +620,7 @@ export default function Settings() {
             <option value="intraday">Intraday Rules (5m bars, flat by close)</option>
             <option value="earnings">Earnings Drift (post-earnings, multi-day hold)</option>
             <option value="momentum">Momentum Rotation (monthly top-4, dedicated account)</option>
+            <option value="earnings_options">Earnings Drift — Options (defined-risk long calls, dedicated account)</option>
           </select>
         </Field>
 

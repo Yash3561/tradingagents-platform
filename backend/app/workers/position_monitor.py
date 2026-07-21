@@ -126,28 +126,42 @@ async def _check_account(user_id: int | None, broker) -> list[dict]:
             if avg_entry <= 0 or current <= 0:
                 continue
 
-            pnl_pct = (current - avg_entry) / avg_entry * 100
-            pnl_dollar = (current - avg_entry) * qty
-
             trade_info = open_trades.get(ticker, {})
-            stop = -(trade_info.get("stop_loss_pct") or DEFAULT_STOP_LOSS_PCT)
-            tp = trade_info.get("take_profit_pct") or DEFAULT_TAKE_PROFIT_PCT
-
-            reason = None
-
             rj = trade_info.get("reasoning_json") or {}
+
+            pnl_pct = (current - avg_entry) / avg_entry * 100
+            # Options: each contract = multiplier (usually 100) shares of
+            # exposure — pnl_dollar must scale accordingly or it understates
+            # real P&L by ~100x. pnl_pct is a ratio, unaffected either way.
+            multiplier = float(pos.get("multiplier") or rj.get("multiplier") or 1)
+            pnl_dollar = (current - avg_entry) * qty * multiplier
 
             # Momentum-rotation positions have NO stop/target by design — the
             # engine exits them itself when they fall out of the ranks. Without
-            # this skip the None stop above falls back to the 7%/15% defaults
+            # this skip the None stop below falls back to the 7%/15% defaults
             # and this loop would silently dismantle the rotation book.
             if rj.get("engine") == "momentum-rotation":
                 continue
 
-            # Time-based exit — currently only the earnings-PEAD engine sets this.
+            if rj.get("engine") == "earnings-pead-options":
+                # Options premium swings are far larger than the equity 7/20
+                # defaults assume — pnl_pct here is already the option's OWN
+                # premium % change (Alpaca tracks avg_entry/current per
+                # symbol, so this is correct with zero extra math), just
+                # compared against the position's own target/max-loss instead.
+                stop = -(rj.get("max_loss_pct") or 60.0)
+                tp = rj.get("target_gain_pct") or 100.0
+            else:
+                stop = -(trade_info.get("stop_loss_pct") or DEFAULT_STOP_LOSS_PCT)
+                tp = trade_info.get("take_profit_pct") or DEFAULT_TAKE_PROFIT_PCT
+
+            reason = None
+
+            # Time-based exit — earnings-PEAD (stock and options) engines set this.
             # Bracket orders have no native time exit, so this loop is the only
             # enforcement (same role it already plays as the stop/tp safety net).
-            hold_days = rj.get("hold_days") if rj.get("engine") == "earnings-pead" else None
+            hold_days = rj.get("hold_days") if rj.get("engine") in (
+                "earnings-pead", "earnings-pead-options") else None
             submitted_at = trade_info.get("submitted_at")
             if hold_days and submitted_at:
                 st = submitted_at if submitted_at.tzinfo else submitted_at.replace(tzinfo=UTC)
