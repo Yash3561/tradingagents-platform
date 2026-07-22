@@ -16,6 +16,8 @@ import {
   ArrowRight,
   Lock,
   CheckCircle2,
+  Timer,
+  Repeat,
 } from "lucide-react";
 import { api } from "../../lib/api";
 import { cn } from "../../lib/cn";
@@ -369,6 +371,67 @@ function FrameworkMarquee() {
   );
 }
 
+const ENGINES = [
+  {
+    icon: BrainCircuit, cost: "LLM pipeline",
+    name: "AI Agents",
+    body: "The full 7-agent debate, run end to end on every candidate. The most expensive and the most explainable — every decision carries its own reasoning trail.",
+  },
+  {
+    icon: Scale, cost: "zero LLM cost",
+    name: "Quant Baseline",
+    body: "Deterministic, regime-filtered rules with no model in the loop — the control group. If the agents can't beat this, the story is explainability, not alpha.",
+  },
+  {
+    icon: Timer, cost: "zero LLM cost",
+    name: "Intraday Rules",
+    body: "A 5-minute-bar rule engine that trades during market hours and is always flat by the close.",
+  },
+  {
+    icon: Newspaper, cost: "zero LLM cost",
+    name: "Earnings Drift",
+    body: "Enters long the first session after a qualifying EPS surprise, holds for days, exits by stop, target, or a hold-days timer.",
+  },
+  {
+    icon: Repeat, cost: "zero LLM cost",
+    name: "Momentum Rotation",
+    body: "A concentrated monthly top-N relative-momentum rotation — exits only happen when a name rotates out of the ranks.",
+  },
+  {
+    icon: Lock, cost: "zero LLM cost",
+    name: "Earnings Drift — Options",
+    body: "The same earnings-surprise trigger, expressed as a defined-risk long call instead of stock — loss capped at the premium paid.",
+  },
+];
+
+function Engines() {
+  return (
+    <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-4 md:gap-5">
+      {ENGINES.map((e, i) => (
+        <motion.div
+          key={e.name}
+          initial={{ opacity: 0, y: 20 }}
+          whileInView={{ opacity: 1, y: 0 }}
+          viewport={{ once: true, margin: "-60px" }}
+          transition={{ delay: (i % 3) * 0.1, duration: 0.5, ease: EASE }}
+          className="card card-hover p-6"
+        >
+          <div className="flex items-center justify-between mb-4">
+            <div className="w-9 h-9 rounded-lg bg-accent-muted/40 border border-accent/30 flex items-center justify-center">
+              <e.icon size={16} className="text-accent-bright" />
+            </div>
+            <span className="text-2xs px-1.5 py-0.5 rounded bg-bg-elevated text-text-muted border border-border">
+              {e.cost}
+            </span>
+          </div>
+          <h3 className="text-sm font-semibold text-text-primary mb-2">{e.name}</h3>
+          <p className="text-sm text-text-secondary leading-relaxed">{e.body}</p>
+        </motion.div>
+      ))}
+    </div>
+  );
+}
+
 const STEPS = [
   { n: "01", title: "Create your account", body: "Sign up in 30 seconds. Connect your free Alpaca paper account — virtual money, real market data." },
   { n: "02", title: "Point the agents at a stock", body: "Run a full analysis on any ticker, or let the scanner pre-screen the market and pick candidates." },
@@ -569,6 +632,27 @@ export default function Landing({ onGetStarted, onSignIn }: Props) {
           </p>
         </motion.div>
         <Features />
+      </section>
+
+      {/* Strategy engines */}
+      <section className="max-w-6xl mx-auto px-5 pb-20 md:pb-28">
+        <motion.div
+          initial={{ opacity: 0, y: 16 }}
+          whileInView={{ opacity: 1, y: 0 }}
+          viewport={{ once: true }}
+          transition={{ duration: 0.6, ease: EASE }}
+          className="text-center mb-12"
+        >
+          <h2 className="text-2xl md:text-4xl font-bold tracking-tight">
+            Six engines. Pick your own control group.
+          </h2>
+          <p className="mt-3 text-text-secondary max-w-xl mx-auto">
+            Five of the six run at zero LLM cost by design — the AI Agents engine is
+            judged forward against them, never backtested, since its training data
+            already contains the historical outcomes.
+          </p>
+        </motion.div>
+        <Engines />
       </section>
 
       {/* How it works */}
