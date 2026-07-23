@@ -107,7 +107,7 @@ async def system_status():
     try:
         account = await loop.run_in_executor(None, _fetch_account_sync)
         equity = float(account.get("equity", 0))
-        last_equity = float(account.get("last_equity", equity))
+        last_equity = float(account.get("last_equity", 0))
         if last_equity > 0:
             today_pnl_pct = round((equity - last_equity) / last_equity * 100, 4)
     except Exception as e:

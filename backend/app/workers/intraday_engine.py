@@ -529,9 +529,10 @@ async def _cycle():
                 # backstop: whole-account equity delta vs prior close catches
                 # this engine's real day P&L even if a trade's pnl wasn't
                 # recorded yet (e.g. bracket-exit reconciliation lag)
-                last_equity = account.get("last_equity")
-                if last_equity is not None:
-                    broker_day_pnl = equity_now - float(last_equity)
+                last_equity = float(account.get("last_equity", 0))
+                if last_equity > 0:
+                    from app.core.pnl import compute_day_pnl
+                    broker_day_pnl, _ = compute_day_pnl(equity_now, last_equity)
             except Exception:
                 pass
             if equity_halt:

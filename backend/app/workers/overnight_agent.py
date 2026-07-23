@@ -228,10 +228,10 @@ def _run_overnight_research(positions: list[dict], account: dict) -> dict:
             earnings_risks[ticker] = ed
 
     # ── Today's P&L ────────────────────────────────────────────────────────────
+    from app.core.pnl import compute_day_pnl
     equity = float(account.get("equity", 0))
-    last_equity = float(account.get("last_equity", equity))
-    day_pnl = equity - last_equity
-    day_pnl_pct = (day_pnl / last_equity * 100) if last_equity > 0 else 0.0
+    last_equity = float(account.get("last_equity", 0))
+    day_pnl, day_pnl_pct = compute_day_pnl(equity, last_equity)
 
     # ── Pre-screen tomorrow's candidates ───────────────────────────────────────
     screened = []

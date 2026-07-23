@@ -10,6 +10,7 @@ import structlog
 from app.core.auth import require_user
 from app.broker.alpaca_client import AlpacaClient
 from app.broker.credentials import optional_broker
+from app.core.pnl import compute_day_pnl
 
 router = APIRouter()
 log = structlog.get_logger()
@@ -112,11 +113,12 @@ async def get_performance_summary(user=Depends(require_user),
                 loop_.run_in_executor(None, broker.get_account),
             )
             equity = float(acct.get("equity", 0))
-            last_equity = float(acct.get("last_equity", equity))
+            last_equity = float(acct.get("last_equity", 0))
+            day_pnl, day_pnl_pct = compute_day_pnl(equity, last_equity)
             metrics = {
                 "equity": equity,
-                "day_pnl": equity - last_equity,
-                "day_pnl_pct": (equity - last_equity) / last_equity * 100 if last_equity else 0,
+                "day_pnl": day_pnl,
+                "day_pnl_pct": day_pnl_pct,
             }
         except Exception as e:
             log.warning("analytics.alpaca_fetch_failed", error=str(e))

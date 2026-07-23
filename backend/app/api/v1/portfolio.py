@@ -6,6 +6,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.postgres import get_db
 from app.core.auth import require_user
+from app.core.pnl import compute_day_pnl
 from app.broker.alpaca_client import AlpacaClient
 from app.broker.credentials import optional_broker
 
@@ -74,10 +75,10 @@ async def risk_metrics(
             log.warning("portfolio.metrics_alpaca_failed", error=str(e))
 
     equity = float(acct_data.get("equity", 100000))
-    last_equity = float(acct_data.get("last_equity", equity))
+    last_equity = float(acct_data.get("last_equity", 0))
     long_mv = float(acct_data.get("long_market_value", 0))
     cash = float(acct_data.get("cash", equity))
-    day_pnl = equity - last_equity
+    day_pnl, day_pnl_pct = compute_day_pnl(equity, last_equity)
 
     perf = await compute_performance_metrics(days=90, user_id=user.id)
 
@@ -86,7 +87,7 @@ async def risk_metrics(
         "cash": round(cash, 2),
         "long_market_value": round(long_mv, 2),
         "day_pnl": round(day_pnl, 2),
-        "day_pnl_pct": round(day_pnl / last_equity * 100, 2) if last_equity else 0,
+        "day_pnl_pct": round(day_pnl_pct, 2),
         "buying_power": round(float(acct_data.get("buying_power", equity)), 2),
         "cash_pct": round(cash / equity * 100, 1) if equity else 100,
         "invested_pct": round(long_mv / equity * 100, 1) if equity else 0,

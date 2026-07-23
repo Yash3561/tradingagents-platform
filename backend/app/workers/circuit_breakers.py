@@ -149,7 +149,7 @@ async def check_circuit_breakers(user_id: int | None = None) -> dict:
         try:
             account = await loop.run_in_executor(None, broker.get_account)
             equity = float(account.get("equity", 0))
-            last_equity = float(account.get("last_equity", equity))
+            last_equity = float(account.get("last_equity", 0))
 
             if last_equity > 0:
                 day_pnl_pct = (equity - last_equity) / last_equity

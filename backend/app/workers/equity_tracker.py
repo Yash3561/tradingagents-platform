@@ -12,6 +12,8 @@ import math
 from datetime import datetime, UTC
 import structlog
 
+from app.core.pnl import compute_day_pnl
+
 log = structlog.get_logger()
 
 SNAPSHOT_INTERVAL = 900   # 15 minutes
@@ -22,11 +24,13 @@ def _fetch_account_snapshot(broker) -> dict | None:
     try:
         acct = broker.get_account()
         positions = broker.get_positions()
+        equity = float(acct.get("equity", 0))
+        day_pnl, _ = compute_day_pnl(equity, float(acct.get("last_equity", 0)))
         return {
-            "equity": float(acct.get("equity", 0)),
+            "equity": equity,
             "cash": float(acct.get("cash", 0)),
             "long_market_value": float(acct.get("long_market_value", 0)),
-            "day_pnl": float(acct.get("equity", 0)) - float(acct.get("last_equity", 0)),
+            "day_pnl": day_pnl,
             "positions_count": len(positions),
         }
     except Exception as e:

@@ -7,6 +7,7 @@ from app.config import get_settings
 from app.core.auth import require_user
 from app.broker.alpaca_client import AlpacaClient
 from app.broker.credentials import optional_broker
+from app.core.pnl import compute_day_pnl
 
 router = APIRouter()
 log = structlog.get_logger()
@@ -21,9 +22,8 @@ async def get_summary(broker: AlpacaClient | None = Depends(optional_broker)):
             loop = asyncio.get_running_loop()
             acct = await loop.run_in_executor(None, broker.get_account)
             equity = float(acct.get("equity", 0))
-            last_equity = float(acct.get("last_equity", equity))
-            day_pnl = equity - last_equity
-            day_pnl_pct = (day_pnl / last_equity * 100) if last_equity else 0
+            last_equity = float(acct.get("last_equity", 0))
+            day_pnl, day_pnl_pct = compute_day_pnl(equity, last_equity)
             return {
                 "equity": round(equity, 2),
                 "day_pnl": round(day_pnl, 2),
