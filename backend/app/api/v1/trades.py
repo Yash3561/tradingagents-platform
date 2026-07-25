@@ -1,3 +1,4 @@
+import asyncio
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, desc
@@ -103,6 +104,55 @@ async def get_trade(trade_id: str, db: AsyncSession = Depends(get_db), user=Depe
         "reasoning_json": trade.reasoning_json,
         "submitted_at": trade.submitted_at.isoformat() if trade.submitted_at else None,
         "filled_at": trade.filled_at.isoformat() if trade.filled_at else None,
+    }
+
+
+@router.get("/{trade_id}/market-context")
+async def trade_market_context(trade_id: str, db: AsyncSession = Depends(get_db),
+                               user=Depends(require_user)):
+    """
+    Real exchange-wide OHLCV for the trade's entry day (and exit day, if
+    closed) — context for judging a fill against that day's actual trading
+    activity, not just the fill price in isolation. Options trades resolve
+    to their underlying (`reasoning_json.underlying`) since Alpaca doesn't
+    carry daily volume history for individual option contract symbols.
+    """
+    trade = await db.get(Trade, trade_id)
+    if not trade or trade.user_id != user.id:
+        raise HTTPException(404, "Trade not found")
+
+    lookup_ticker = (trade.reasoning_json or {}).get("underlying") or trade.ticker
+
+    from app.core.market_data import get_daily_bars
+    loop = asyncio.get_running_loop()
+    bars = await loop.run_in_executor(None, get_daily_bars, lookup_ticker, 400)
+    if bars is None or bars.empty:
+        return {"ticker": lookup_ticker, "entry_day": None, "exit_day": None}
+
+    def _day_row(dt):
+        if dt is None:
+            return None
+        import pandas as pd
+        ts = pd.Timestamp(dt)
+        if ts.tzinfo is not None:
+            ts = ts.tz_convert(None)
+        ts = ts.normalize()
+        if ts not in bars.index:
+            return None
+        row = bars.loc[ts]
+        return {
+            "date": ts.date().isoformat(),
+            "open": round(float(row["Open"]), 4),
+            "high": round(float(row["High"]), 4),
+            "low": round(float(row["Low"]), 4),
+            "close": round(float(row["Close"]), 4),
+            "volume": int(row["Volume"]),
+        }
+
+    return {
+        "ticker": lookup_ticker,
+        "entry_day": _day_row(trade.submitted_at),
+        "exit_day": _day_row(trade.closed_at) if trade.closed_at else None,
     }
 
 

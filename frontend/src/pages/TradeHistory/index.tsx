@@ -61,9 +61,19 @@ function optionMultiplier(ticker: string): number {
   return OCC_OPTION_RE.test(ticker) ? 100 : 1;
 }
 
+interface MarketDay {
+  date: string;
+  open: number;
+  high: number;
+  low: number;
+  close: number;
+  volume: number;
+}
+
 function AuditPanel({ trade, onClose }: { trade: Trade; onClose: () => void }) {
   const [entries, setEntries] = useState<DebateEntry[]>([]);
   const [loading, setLoading] = useState(false);
+  const [marketCtx, setMarketCtx] = useState<{ ticker: string; entry_day: MarketDay | null; exit_day: MarketDay | null } | null>(null);
 
   useEffect(() => {
     if (!trade.agent_run_id) return;
@@ -81,6 +91,13 @@ function AuditPanel({ trade, onClose }: { trade: Trade; onClose: () => void }) {
       .catch(() => {})
       .finally(() => setLoading(false));
   }, [trade.agent_run_id]);
+
+  useEffect(() => {
+    setMarketCtx(null);
+    api.get(`/trades/${trade.id}/market-context`)
+      .then(({ data }) => setMarketCtx(data))
+      .catch(() => {});
+  }, [trade.id]);
 
   const pnlPct = trade.pnl != null && trade.filled_price != null && trade.qty
     ? (trade.pnl / (trade.filled_price * trade.qty * optionMultiplier(trade.ticker))) * 100
@@ -135,6 +152,36 @@ function AuditPanel({ trade, onClose }: { trade: Trade; onClose: () => void }) {
           </div>
         ))}
       </div>
+
+      {marketCtx && (marketCtx.entry_day || marketCtx.exit_day) && (
+        <div className="px-5 py-4 border-b border-border">
+          <p className="metric-label mb-2">Market Context — {marketCtx.ticker}</p>
+          <div className="flex gap-4 flex-wrap">
+            {marketCtx.entry_day && (
+              <div className="min-w-[160px]">
+                <p className="text-2xs text-text-muted mb-1">Entry day ({marketCtx.entry_day.date})</p>
+                <p className="text-xs font-mono text-text-secondary">
+                  Range {fmt.price(marketCtx.entry_day.low)}–{fmt.price(marketCtx.entry_day.high)}
+                </p>
+                <p className="text-xs font-mono text-text-secondary">
+                  Volume {fmt.compact(marketCtx.entry_day.volume)} shares
+                </p>
+              </div>
+            )}
+            {marketCtx.exit_day && (
+              <div className="min-w-[160px]">
+                <p className="text-2xs text-text-muted mb-1">Exit day ({marketCtx.exit_day.date})</p>
+                <p className="text-xs font-mono text-text-secondary">
+                  Range {fmt.price(marketCtx.exit_day.low)}–{fmt.price(marketCtx.exit_day.high)}
+                </p>
+                <p className="text-xs font-mono text-text-secondary">
+                  Volume {fmt.compact(marketCtx.exit_day.volume)} shares
+                </p>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
 
       <div className="flex-1 overflow-y-auto p-5">
         <h3 className="text-xs font-semibold text-text-secondary uppercase tracking-wider mb-4">Agent Reasoning</h3>
