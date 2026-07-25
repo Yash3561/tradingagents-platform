@@ -1,6 +1,6 @@
 import { motion } from "framer-motion";
 import { useQuery } from "@tanstack/react-query";
-import { TrendingUp, Brain, Target, Percent, Loader2 } from "lucide-react";
+import { TrendingUp, Brain, Target, Percent, Loader2, ArrowRight } from "lucide-react";
 import {
   ResponsiveContainer,
   ComposedChart,
@@ -79,9 +79,9 @@ export default function TrackRecord({ standalone = false }: { standalone?: boole
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
         <Kpi
           icon={Brain}
-          label="AI Analyses"
+          label="Total Analyses"
           value={data.total_analyses.toLocaleString()}
-          sub="full multi-agent debates"
+          sub="across all 6 strategy engines"
         />
         <Kpi
           icon={Target}
@@ -215,7 +215,15 @@ export default function TrackRecord({ standalone = false }: { standalone?: boole
         </div>
       </div>
 
-      <p className="text-xs text-text-muted">{data.disclaimer}</p>
+      <div className="flex items-center justify-between flex-wrap gap-2">
+        <p className="text-xs text-text-muted">{data.disclaimer}</p>
+        <a
+          href="/track-record/methodology"
+          className="flex items-center gap-1 text-xs text-accent hover:text-accent-bright transition-colors shrink-0"
+        >
+          How these numbers are computed <ArrowRight size={12} />
+        </a>
+      </div>
     </div>
   );
 

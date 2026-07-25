@@ -28,6 +28,7 @@ import ResetPassword from "./pages/Auth/ResetPassword";
 import VerifyEmail from "./pages/Auth/VerifyEmail";
 import Admin from "./pages/Admin";
 import TrackRecord from "./pages/TrackRecord";
+import TrackRecordMethodology from "./pages/TrackRecord/Methodology";
 import Landing from "./pages/Landing";
 import { Terms, Privacy } from "./pages/Legal";
 import { isAuthenticated, clearAuth, getUser, getRefreshToken } from "./lib/auth";
@@ -62,6 +63,9 @@ export default function App() {
   // Public pages — no login required
   if (!authed && window.location.pathname === "/track-record") {
     return <TrackRecord standalone />;
+  }
+  if (!authed && window.location.pathname === "/track-record/methodology") {
+    return <TrackRecordMethodology standalone />;
   }
   if (window.location.pathname === "/terms") return <Terms />;
   if (window.location.pathname === "/privacy") return <Privacy />;
@@ -139,6 +143,7 @@ export default function App() {
               <Route path="/strategy" element={<Strategy />} />
               <Route path="/how-it-works" element={<HowItWorks />} />
               <Route path="/track-record" element={<TrackRecord />} />
+              <Route path="/track-record/methodology" element={<TrackRecordMethodology />} />
               <Route path="/settings" element={<Settings />} />
               <Route path="/admin" element={<AdminRoute />} />
               <Route path="*" element={<Navigate to="/dashboard" replace />} />
