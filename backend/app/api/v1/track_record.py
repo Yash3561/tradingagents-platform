@@ -39,6 +39,22 @@ async def track_record(db: AsyncSession = Depends(get_db)):
         await db.execute(select(func.count(AgentRun.id)).where(completed))
     ).scalar() or 0
 
+    # Platform-wide "did anything run today" signal for the scan watchdog —
+    # deliberately separate from `recent` below. `recent` is capped at 20 for
+    # the public page's display and is NOT a reliable freshness check: a busy
+    # Agents-engine day (up to ~20 analyses on its own) can push a same-day
+    # trade from a different, zero-LLM account out of that window before the
+    # evening watchdog run checks it (caused a false-alarm failure 2026-07-20,
+    # confirmed the real trade existed in that account's own history — the
+    # scheduler was never actually down). This field counts the full day, not
+    # a capped window.
+    today_str = datetime.now(UTC).strftime("%Y-%m-%d")
+    analyses_today = (
+        await db.execute(
+            select(func.count(AgentRun.id)).where(completed, AgentRun.analysis_date == today_str)
+        )
+    ).scalar() or 0
+
     decision_rows = (
         await db.execute(
             select(AgentRun.decision, func.count(AgentRun.id))
@@ -127,6 +143,7 @@ async def track_record(db: AsyncSession = Depends(get_db)):
     payload = {
         "generated_at": datetime.now(UTC).isoformat(),
         "total_analyses": total_analyses,
+        "analyses_today": analyses_today,
         "decisions": {d: c for d, c in decision_rows},
         "avg_confidence": round(float(avg_confidence), 3) if avg_confidence else None,
         "trades": {

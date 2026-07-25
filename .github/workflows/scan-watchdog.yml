@@ -22,8 +22,6 @@ jobs:
         run: |
           python3 - <<'EOF'
           import json, sys, urllib.request
-          from datetime import datetime
-          from zoneinfo import ZoneInfo
 
           BASE = "https://tradingagents-backend-p8ef.onrender.com"
 
@@ -40,13 +38,17 @@ jobs:
 
           _, body = get("/api/v1/track-record/")
           data = json.loads(body)
-          today_et = datetime.now(ZoneInfo("America/New_York")).strftime("%Y-%m-%d")
-          todays = [r for r in data.get("recent", []) if r.get("date") == today_et]
-          if not todays:
-              print(f"FAIL: zero completed analyses dated {today_et} — "
+          # analyses_today is a full-day count, unlike `recent` (capped at 20
+          # for the public page's display) — a busy Agents-engine day can
+          # push a same-day trade from a different account out of that
+          # window before this check runs, which is exactly what caused a
+          # false-alarm failure on 2026-07-20 (confirmed via that account's
+          # own trade history: the scheduler was never actually down).
+          count = data.get("analyses_today", 0)
+          if not count:
+              print("FAIL: zero completed analyses today — "
                     "scheduler dead, scans blocked, or all runs failed. "
                     "Check Render logs (scheduler.heartbeat should appear 2x/hour).")
               sys.exit(1)
-          print(f"OK: {len(todays)} analyses today: "
-                + ", ".join(f"{r['ticker']}:{r['decision']}" for r in todays[:10]))
+          print(f"OK: {count} analyses today")
           EOF
