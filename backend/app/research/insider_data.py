@@ -211,7 +211,30 @@ def fetch_form4_transactions(ticker: str, cik: str, accession: str,
                 "shares": shares, "price": price, "acquired_disposed": ad_code,
                 "shares_owned_after": shares_after,
             })
-        return rows
+
+        # Real, empirically-confirmed filing-agent bug (HD accession
+        # 0000354950-25-000082, 2025-03-14, confirmed 2026-07-25 by pulling
+        # the raw XML): the SAME <nonDerivativeTransaction> block can appear
+        # twice in one filing's own transaction table — not two separate
+        # co-filers, not two real trades. The tell is shares_owned_after:
+        # two genuinely distinct same-day trades at the same price would
+        # still show the cumulative running total increasing between them;
+        # an exact repeat (code, date, shares, price, direction, AND the
+        # post-transaction total all identical) means the source XML itself
+        # double-printed one transaction. Dedupe on that full tuple, keep
+        # first occurrence, preserve order.
+        seen: set[tuple] = set()
+        deduped = []
+        for row in rows:
+            key = (row["transaction_code"], row["transaction_date"], row["shares"],
+                  row["price"], row["acquired_disposed"], row["shares_owned_after"])
+            if key in seen:
+                log.info("insider.duplicate_transaction_in_filing", ticker=ticker,
+                         accession=accession, transaction_date=row["transaction_date"])
+                continue
+            seen.add(key)
+            deduped.append(row)
+        return deduped
 
     return _cached_json(f"tx_{ticker}_{accession}", _fetch)
 
