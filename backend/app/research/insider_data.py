@@ -267,14 +267,29 @@ def fetch_insider_purchases(ticker: str, start_date: str, end_date: str,
         return []
 
     filings = list_form4_filings(ticker, start_date, end_date)
-    purchases = []
-    for f in filings:
+
+    # Parallelized (6 workers, same pattern as scanner.py's prescreens) —
+    # the shared _throttle_lock still serializes actual SEC request starts
+    # to the same ~6.7/sec ceiling regardless of worker count, so this stays
+    # compliant with the fair-access cap. What parallelism buys back is
+    # response-wait overlap: a mega-cap with 400+ filings (BAC) was taking
+    # 6-8 minutes fetched one at a time, which made anything past a
+    # hand-picked handful of tickers impractical (confirmed 2026-07-25 —
+    # 8 tickers sequentially took over an hour).
+    def _fetch_one(f):
         try:
             rows = fetch_form4_transactions(ticker, cik, f["accession"], f["primary_doc"])
         except Exception as e:
             log.debug("insider.filing_fetch_failed", ticker=ticker,
                      accession=f["accession"], error=str(e)[:150])
-            continue
+            rows = []
+        return f["filing_date"], rows
+
+    from concurrent.futures import ThreadPoolExecutor
+    purchases = []
+    with ThreadPoolExecutor(max_workers=6) as pool:
+        results = pool.map(_fetch_one, filings)
+    for filing_date, rows in results:
         for row in rows:
             if row["transaction_code"] != "P" or row["acquired_disposed"] != "A" \
                     or not row["price"] or not row["shares"]:
@@ -283,7 +298,7 @@ def fetch_insider_purchases(ticker: str, start_date: str, end_date: str,
                 continue
             if row["shares"] * row["price"] < min_notional:
                 continue
-            row["filing_date"] = f["filing_date"]
+            row["filing_date"] = filing_date
             purchases.append(row)
     return purchases
 
