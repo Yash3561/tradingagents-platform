@@ -97,6 +97,28 @@ def ticker_to_cik(ticker: str) -> str | None:
     return _load_ticker_cik_map().get(ticker.upper())
 
 
+def dedupe_tickers_by_cik(tickers: list[str]) -> list[str]:
+    """
+    Multi-share-class companies (GOOG/GOOGL/GOOGM/GOOGN all being Alphabet)
+    share one CIK — every Form 4 an Alphabet insider files is filed against
+    that one CIK regardless of which ticker class it gets associated with
+    downstream, so scanning all four class tickers finds and counts the
+    SAME real transaction four times, not four independent signals. Caught
+    on the first 150-ticker universe run (2026-07-25): one $4.95M purchase
+    counted 4x. Callers scanning a broad ticker universe should dedupe
+    through this first; keeps the first-seen ticker per CIK, order preserved.
+    """
+    seen_ciks: set[str] = set()
+    out: list[str] = []
+    for t in tickers:
+        cik = ticker_to_cik(t)
+        if cik is None or cik in seen_ciks:
+            continue
+        seen_ciks.add(cik)
+        out.append(t)
+    return out
+
+
 def _submissions(cik: str) -> dict:
     return _cached_json(f"submissions_{cik}", lambda: _get(
         f"https://data.sec.gov/submissions/CIK{cik}.json").json())
@@ -172,14 +194,22 @@ def fetch_form4_transactions(ticker: str, cik: str, accession: str,
         owner_el = root.find("reportingOwner")
         owner_name = owner_el.findtext("reportingOwnerId/rptOwnerName") if owner_el is not None else None
         # Some filings list the issuer itself (or a company-administered
-        # benefit/DRIP plan) as the "reporting owner" — not a person. These
-        # show up as e.g. 1 share at $0.01, nothing to do with insider
-        # conviction. Flag via a corporate-suffix heuristic so callers can
-        # exclude them without ticker-specific special-casing.
+        # benefit/DRIP plan, or an institutional/VC fund entity) as the
+        # "reporting owner" — not a person. These show up as anything from
+        # 1 share at $0.01 (benefit-plan noise) to multi-hundred-million-
+        # dollar "purchases" (a parent/holding entity, not real conviction).
+        # Flag via a corporate-suffix heuristic so callers can exclude them
+        # without ticker-specific special-casing. Punctuation is stripped
+        # before matching — "SUMITOMO MITSUI FINANCIAL GROUP, INC." and
+        # "GV 2021 GP, L.L.C." both slipped through undetected until a
+        # 150-ticker run surfaced them (2026-07-25): the original suffix
+        # list only matched an exact trailing " INC"/" LLC", not the
+        # trailing period/comma real EDGAR filings actually use.
         _CORP_SUFFIXES = (" CORP", " CORPORATION", " INC", " CO", " LTD",
-                         " LLC", " TRUST", " PLAN", " LP", " N.V.", " N V")
+                         " LLC", " TRUST", " PLAN", " LP", " GP", " NV")
         _name_upper = re.sub(r"\s*/[A-Z]{2}/\s*$", "", (owner_name or "").upper())  # strip " /DE/" style suffix
-        is_entity = bool(owner_name) and any(_name_upper.endswith(s) for s in _CORP_SUFFIXES)
+        _name_normalized = _name_upper.replace(".", "").replace(",", "")
+        is_entity = bool(owner_name) and any(_name_normalized.endswith(s) for s in _CORP_SUFFIXES)
         rel = owner_el.find("reportingOwnerRelationship") if owner_el is not None else None
         is_officer = (rel.findtext("isOfficer") == "true") if rel is not None else False
         is_director = (rel.findtext("isDirector") == "true") if rel is not None else False
