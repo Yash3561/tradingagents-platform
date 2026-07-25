@@ -123,6 +123,14 @@ const DEFAULTS = {
   earnings_rr_ratio: 3,
   earnings_hold_days: 10,
   earnings_position_size_pct: 5,
+  // Earnings PEAD — Options policy profile (drives the earnings_options engine only)
+  pead_options_target_days: 14,
+  pead_options_target_delta: 0.35,
+  pead_options_hold_days: 10,
+  pead_options_target_gain_pct: 100,
+  pead_options_max_loss_pct: 60,
+  pead_options_position_pct: 5,
+  pead_options_min_bid: 0.10,
   // AI Model
   llm_model: "deepseek-ai/deepseek-v4-flash",
   debate_rounds: 2,
@@ -865,6 +873,72 @@ export default function Settings() {
           min={1} max={10} step={0.5}
           format={v => `${v}%`}
           onChange={v => update("earnings_position_size_pct", v)}
+        />
+      </Section>
+
+      {/* ── Earnings Drift — Options Policy ───────────────────────────────────── */}
+      <Section title="Earnings Drift — Options Policy">
+        <p className="text-xs text-text-muted -mt-1">
+          Parameters for the options variant (only used when Strategy Engine is Earnings
+          Drift — Options). Same earnings-surprise trigger as the stock engine above,
+          expressed as a defined-risk long call instead — loss capped at the premium paid.
+          Needs a real options-enabled Alpaca account and its own dedicated account.
+        </p>
+        <SliderField
+          label="Target Expiry"
+          description="How far out to pick a contract, in calendar days"
+          value={settings.pead_options_target_days}
+          min={3} max={60} step={1}
+          format={v => `${v} days out`}
+          onChange={v => update("pead_options_target_days", v)}
+        />
+        <SliderField
+          label="Target Delta"
+          description="How in/out-of-the-money the picked contract should be"
+          value={settings.pead_options_target_delta}
+          min={0.10} max={0.60} step={0.05}
+          format={v => v.toFixed(2)}
+          onChange={v => update("pead_options_target_delta", v)}
+        />
+        <SliderField
+          label="Hold Days"
+          description="Force-close via time exit after this many trading days"
+          value={settings.pead_options_hold_days}
+          min={1} max={30} step={1}
+          format={v => `${v} trading days`}
+          onChange={v => update("pead_options_hold_days", v)}
+        />
+        <SliderField
+          label="Target Premium Gain"
+          description="Take profit once the option's premium gains this much"
+          value={settings.pead_options_target_gain_pct}
+          min={25} max={300} step={5}
+          format={v => `+${v}%`}
+          onChange={v => update("pead_options_target_gain_pct", v)}
+        />
+        <SliderField
+          label="Max Premium Loss"
+          description="Stop out once the option's premium falls this much"
+          value={settings.pead_options_max_loss_pct}
+          min={20} max={90} step={5}
+          format={v => `-${v}%`}
+          onChange={v => update("pead_options_max_loss_pct", v)}
+        />
+        <SliderField
+          label="Position Size"
+          description="Percent of equity per entry (premium paid, not notional exposure)"
+          value={settings.pead_options_position_pct}
+          min={1} max={15} step={0.5}
+          format={v => `${v}%`}
+          onChange={v => update("pead_options_position_pct", v)}
+        />
+        <SliderField
+          label="Min Liquidity"
+          description="Skip contracts quoting below this bid — avoids near-worthless, illiquid strikes"
+          value={settings.pead_options_min_bid}
+          min={0.01} max={5} step={0.01}
+          format={v => `$${v.toFixed(2)} bid floor`}
+          onChange={v => update("pead_options_min_bid", v)}
         />
       </Section>
 
