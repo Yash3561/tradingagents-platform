@@ -86,6 +86,22 @@ interface LabAccount {
 
 const LAB_COLORS = ["#2D7DD2", "#00E676", "#FFB740", "#FF3D57", "#A78BFA", "#22D3EE"];
 
+const ENGINE_LABEL: Record<string, string> = {
+  agents: "Agents",
+  quant: "Quant",
+  intraday: "Intraday",
+  earnings: "Earnings",
+  momentum: "Momentum",
+  earnings_options: "Earnings Opts",
+};
+const ENGINE_BADGE_CLASS: Record<string, string> = {
+  quant: "bg-warn/10 text-warn",
+  intraday: "bg-gain/10 text-gain",
+  earnings: "bg-loss/10 text-loss",
+  momentum: "bg-accent/10 text-accent-bright",
+  earnings_options: "bg-loss/10 text-loss",
+};
+
 function StrategyLab() {
   const { data, isLoading } = useQuery<{ days: number; accounts: LabAccount[] }>({
     queryKey: ["admin", "strategy-lab"],
@@ -213,11 +229,9 @@ function StrategyLab() {
                 <td className="py-2.5 pr-4 text-xs">
                   <span className={cn(
                     "px-1.5 py-0.5 rounded font-medium",
-                    a.settings.strategy_mode === "quant"
-                      ? "bg-warn/10 text-warn"
-                      : "bg-accent/10 text-accent"
+                    ENGINE_BADGE_CLASS[a.settings.strategy_mode as string] ?? "bg-accent/10 text-accent"
                   )}>
-                    {a.settings.strategy_mode === "quant" ? "Quant" : "Agents"}
+                    {ENGINE_LABEL[a.settings.strategy_mode as string] ?? "Agents"}
                   </span>
                 </td>
                 <td className={cn("py-2.5 pr-4 price text-xs text-right", (a.return_pct ?? 0) >= 0 ? "text-gain" : "text-loss")}>
