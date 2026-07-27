@@ -54,6 +54,7 @@ async def get_summary(broker: AlpacaClient | None = Depends(optional_broker)):
 async def market_pulse():
     """Real-time market indices using yfinance."""
     import yfinance as yf
+    from app.core.market_data import _yf_bounded
 
     symbols = [
         ("SPY", "S&P 500"),
@@ -63,33 +64,42 @@ async def market_pulse():
         ("^TNX", "10Y"),
     ]
 
-    result = []
-    for symbol, label in symbols:
-        try:
-            t = yf.Ticker(symbol)
-            hist = t.history(period="2d", interval="1d")
-            if len(hist) >= 2:
-                prev = float(hist["Close"].iloc[-2])
-                curr = float(hist["Close"].iloc[-1])
-                change_pct = (curr - prev) / prev * 100
-                result.append({
-                    "label": label,
-                    "ticker": symbol,
-                    "value": round(curr, 2),
-                    "change_pct": round(change_pct, 2),
-                })
-            elif len(hist) == 1:
-                curr = float(hist["Close"].iloc[-1])
-                result.append({
-                    "label": label,
-                    "ticker": symbol,
-                    "value": round(curr, 2),
-                    "change_pct": 0.0,
-                })
-        except Exception as e:
-            log.warning("market_pulse.fetch_error", symbol=symbol, error=str(e))
+    def _fetch_all():
+        # Runs off the event loop, per-symbol wall-clock capped — a raw
+        # yf.Ticker().history() call here previously ran straight in the
+        # coroutine with no timeout, so a Yahoo stall (documented recurring
+        # issue on Render's shared egress IP) blocked the single event loop
+        # for every other concurrent request, /health included.
+        out = []
+        for symbol, label in symbols:
+            try:
+                hist = _yf_bounded(lambda s=symbol: yf.Ticker(s).history(period="2d", interval="1d"))
+                if hist is None:
+                    continue
+                if len(hist) >= 2:
+                    prev = float(hist["Close"].iloc[-2])
+                    curr = float(hist["Close"].iloc[-1])
+                    change_pct = (curr - prev) / prev * 100
+                    out.append({
+                        "label": label,
+                        "ticker": symbol,
+                        "value": round(curr, 2),
+                        "change_pct": round(change_pct, 2),
+                    })
+                elif len(hist) == 1:
+                    curr = float(hist["Close"].iloc[-1])
+                    out.append({
+                        "label": label,
+                        "ticker": symbol,
+                        "value": round(curr, 2),
+                        "change_pct": 0.0,
+                    })
+            except Exception as e:
+                log.warning("market_pulse.fetch_error", symbol=symbol, error=str(e))
+        return out
 
-    return result
+    loop = asyncio.get_running_loop()
+    return await loop.run_in_executor(None, _fetch_all)
 
 
 @router.get("/market-brief")
