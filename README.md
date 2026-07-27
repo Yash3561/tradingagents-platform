@@ -1,198 +1,187 @@
 # TradingAgents Platform
 
-A professional-grade multi-agent trading platform powered by LangGraph and large language models. Features a full 7-agent AI pipeline that debates market positions, manages risk autonomously, and executes paper trades on Alpaca.
+**A multi-tenant paper-trading platform that runs six different strategy engines head-to-head — a 7-agent LLM debate pipeline against five deterministic, zero-cost rule engines — and proves which one actually works with real walk-forward research, not backtested marketing claims.**
 
-> **Paper trading only by default.** `ALPACA_BASE_URL` defaults to the Alpaca paper API. Never switch to live without explicit configuration.
+Every decision any engine makes is recorded immutably and published on a public, unauthenticated track record. Nothing is claimed that can't be checked.
+
+> **Paper trading only, enforced server-side.** `broker_connections.base_url` is hardcoded to Alpaca's paper API in `db/models/broker_connection.py` — not a config flag, a code-level guarantee. Live trading is a deliberate future decision, not something that can be flipped on by accident.
 
 ---
 
-## Features
+## Why this is different from another "AI trading bot"
 
-### AI Agent Pipeline
-- **7-agent debate system**: Technical → Sentiment → News → Fundamental analysts feed into a Bull vs Bear researcher debate, Risk Manager (veto power), and Portfolio Manager (final BUY/HOLD/SELL)
-- **Typed agent contracts**: Every agent outputs a strict Pydantic schema — no free-form text between agents
-- **Live WebSocket streaming**: Watch the debate unfold in real-time as each agent completes
-- **Autonomous trade execution**: Approved signals auto-execute on Alpaca paper account
+Most AI-trading projects run one backtest, like the result, and ship it. This platform is built around **disproving its own ideas before they go live**:
 
-### Pages (19 total)
+- The momentum-rotation engine looked like a clean winner by raw return in its own tournament — until an out-of-universe validation showed the extra return was concentration, not risk-adjusted edge (test-era Sharpe ~0.93 vs. 0.91 for an equal-weight benchmark). Shipped anyway, but explicitly labeled a forward experiment, not a proven strategy.
+- An insider-buying signal tournament found the pattern that looked strongest *by eye* — multiple executives buying the same stock the same week — actually **lost** to the simplest possible signal (one large purchase) once tested out-of-sample. The eye-catching hypothesis was noise; the boring one wasn't.
+- Two independent walk-forward rounds on a 5-minute intraday rule engine found **no robust edge at all**, on a bigger and better search the second time. It's still in the codebase, but shelved — not deployed on any live account.
+- The one signal that *did* survive three separate validations (5-fold walk-forward, an 18-month one-shot holdout, and two independent out-of-universe checks on completely unrelated ticker sets) is post-earnings-announcement drift — a 60-year-old, well-documented academic anomaly, not a novel discovery. The platform's edge is discipline, not a secret alpha source.
 
-| Page | What it does |
-|------|-------------|
-| **Dashboard** | KPIs, AI market brief (Redis cached), live position prices with flash animation |
-| **Markets** | TradingView candlestick charts for any stock/ETF/index, 160+ ticker autocomplete, sector heatmap, top movers |
-| **Watchlist** | Live price grid for saved tickers, 52-week range bar, 8s polling with ▲/▼ flash |
-| **News** | Per-ticker news feed via Alpaca News API (yfinance fallback), 5min auto-refresh |
-| **Calendar** | FOMC, CPI, NFP schedule + earnings dates for watchlist tickers |
-| **Scanner** | Pre-screens 40+ stocks with RSI/MACD/MA/momentum signals, custom filter criteria, runs AI on top candidates |
-| **Agent Hub** | Run analysis on any ticker, watch 7-agent debate live, `?ticker=` URL pre-fill |
-| **Options Desk** | AI CALL/PUT/NO_PLAY recommendation + live options chain (IV, OI, bid/ask, ITM) |
-| **Portfolio** | Live positions, equity curve (15min snapshots + 30-day Alpaca backfill), P&L calendar heatmap |
-| **Orders** | View/cancel open orders with live 10s polling, bracket order legs, order history |
-| **Trade History** | Virtualized table with full AI reasoning audit drawer, CSV export |
-| **Backtesting** | RSI/MACD/MA signal simulation, equity curve vs SPY benchmark |
-| **Analytics** | AI performance grade A–F, correlation matrix, sector exposure |
-| **Alerts** | 5 smart alert types: concentration, drawdown, take-profit, RSI, stale positions |
-| **Settings** | Model selector, risk sliders, watchlist CRUD, API key fields (hot-reload — no restart needed) |
-| **Notifications** | Slide-in drawer, unread badge, mark-read/all-read |
+Every strategy has a documented, honest verdict in [`GRADUATION.md`](GRADUATION.md) — a live scorecard of what's actually proven versus what's still a forward experiment, with hard criteria (beats the deterministic baseline out-of-sample, Sharpe ≥ 1.0, survives a real drawdown untouched, enough trades to not be luck) so "prove it out longer" has a real finish line instead of being an open-ended vibe.
+
+---
+
+## Six strategy engines, racing in production
+
+| Engine | Approach | Cost | Status |
+|---|---|---|---|
+| **Agents** | 7-agent LLM debate (technical/sentiment/news/fundamental analysts → bull/bear researcher debate → risk manager veto → portfolio construction) | LLM inference | Forward-tested vs. the Quant baseline |
+| **Quant Baseline** | Deterministic trend + mean-reversion rules, regime-gated | Free | The control group — if Agents can't beat this, the product is explainability, not alpha |
+| **Intraday Rules** | 5-minute-bar momentum/ORB/VWAP-reversion, flat by close | Free | **Proven to have no edge** across two walk-forward rounds — kept in the repo, not deployed |
+| **Momentum Rotation** | Monthly top-4 relative-momentum rotation, no stops by design | Free | Live forward experiment — tournament found the extra return is concentration, not alpha |
+| **Earnings Drift (PEAD)** | Long-only entry on qualifying EPS surprises, held for days | Free | The most validated signal here — survived 3 independent out-of-sample checks |
+| **Earnings Drift — Options** | Same PEAD trigger, expressed as a defined-risk long call instead of stock | LLM-free, uses live options chain | Live, risk capped at premium paid |
+
+Every engine shares the same infrastructure: typed Pydantic contracts, the same broker integration, the same position monitor, the same public track record. Nothing gets a special code path that skips the discipline.
+
+---
+
+## The agent pipeline
+
+```
+POST /api/v1/agents/run { ticker, debate_rounds, model }
+                          │
+    ┌─────────────────────┼─────────────────────┐
+    │           │           │                    │
+Technical   Sentiment      News            Fundamental
+Analyst     Analyst      Analyst            Analyst
+[Wyckoff,   [Options flow, [Earnings risk,  [CANSLIM, PEAD,
+ ICT, Turtle, inst. flow]   macro events]    AQR Quality]
+ SMC]
+    │           │           │                    │
+    └───────────┴───────────┴────────────────────┘
+                          │  AnalystBundle (typed)
+                          ▼
+                  Researcher Debate
+                  (Bull vs Bear, N rounds)
+                          │
+                          ▼
+                   Risk Manager
+                  (Kelly-sized, ATR stops, veto power)
+                          │
+                          ▼
+                 Portfolio Manager
+              → BUY / HOLD / SELL + order params
+                          │
+              ┌───────────┴────────────┐
+              │                        │
+       Bracket order              Broadcast WS
+       submitted to Alpaca        → frontend animates
+       (native stop + target)     the debate live
+```
+
+Every agent's output is a strict Pydantic schema — no free-form text parsing between stages. Every step streams a WebSocket event the frontend renders in real time.
+
+**Hardcoded discipline that cannot be overridden by settings:** 5% max position size, 2:1 minimum reward/risk, confidence gates that scale from 65% (bull trending) to 85% (high volatility), 3-of-4 analyst consensus required, VIX > 30 suppresses new buys, -5% daily drawdown halts all scanning.
+
+---
+
+## Production engineering, not just a model prompt
+
+This is the part that doesn't show up in a demo GIF. A sample of real incidents found and fixed, documented in [`INCIDENTS.md`](INCIDENTS.md):
+
+- **A silent multi-day scan outage** (stale Alpaca keys read as "market closed" + no scheduler timeouts + a shared egress IP getting rate-limited by Yahoo Finance) — root-caused and fixed with a hardened scheduler (bounded catch-up windows, Redis dedupe, heartbeats) and an Alpaca-first/yfinance-fallback data layer.
+- **A P&L display bug live in the admin account**: `equity - last_equity` used a naive `.get(key, default)` fallback that only fires when a key is *missing* — but Alpaca returns a real `0` for a freshly-reset account, so day P&L silently showed total equity instead. Found across 8 call sites, fixed with one shared `compute_day_pnl()` function.
+- **An event-loop-blocking bug found live, minutes before market open**: a dashboard endpoint called `yfinance` synchronously with no timeout, directly in an async handler — freezing the single-threaded event loop under Yahoo rate-limiting and returning 503s on *unrelated* concurrent requests, including a bare `/health` check with zero dependencies of its own. Fixed by routing through a thread executor with the platform's existing 15-second hard-timeout helper.
+- **Automated trade-close emails silently never sent, on every account, since launch** — a notification helper had been duplicated instead of reused, so the code path that fires on every stop-loss/take-profit/time-exit never called the function that actually triggers the email.
+
+Also: a kill switch checked at three independent enforcement points (scheduler, order placement, the always-on intraday loop) that deliberately does *not* gate position monitoring — a halt should never disable the thing protecting capital already at risk. Order seatbelts (daily order cap, notional ceiling vs. equity, duplicate-run guard). Nightly encrypted DB backups verified running green. A GitHub Action that catches silent scan outages by comparing real daily activity against the platform's own public stats — which itself had a false-positive bug (comparing against a capped display list instead of the real count) found and fixed.
+
+---
+
+## Research discipline
+
+`app/research/` is a proper walk-forward policy tournament, not a single backtest:
+
+- Time-ordered train/test folds — **never shuffled**
+- A held-out final period that only the single tournament winner ever touches, once
+- Regime-sliced and setup-sliced metrics, overfit gap (train Sharpe − test Sharpe) reported for every candidate, not just the winner
+- Out-of-universe validation on completely unrelated ticker sets as a second, independent check beyond the time-based holdout
+- **LLM strategies are explicitly excluded from backtesting** — a model's training data contains the historical outcomes, so backtesting an LLM strategy is lookahead by construction. Agents are only ever evaluated forward, against the tournament-winning deterministic baseline.
+
+Every tournament report is committed to `docs/research/` — the actual JSON leaderboards and markdown writeups, including the ones that killed a strategy, not just the ones that shipped one.
+
+---
+
+## Security & multi-tenancy
+
+- JWT auth (30-min access tokens + rotating refresh tokens with family-based replay detection), invite-gated signup, per-user rate limits on every LLM endpoint
+- Broker credentials Fernet-encrypted at rest; platform LLM keys are admin-only and rejected server-side if a non-admin tries to write them
+- Every cost-sensitive setting (debate rounds, scan candidates, confidence thresholds) is clamped server-side, not just validated client-side
+- CORS pinned to the production frontend origin in production; API docs disabled in production; full CSP enforced (not report-only)
+- Data isolation verified end-to-end: cross-user trade access returns 404, WebSocket run-rooms reject non-owners with a close code, watchlists are per-user
 
 ---
 
 ## Stack
 
 | Layer | Tech |
-|-------|------|
-| Agent framework | LangGraph + LLM API |
+|---|---|
+| Agent framework | Custom structured runner — Claude tool-use + strict Pydantic contracts (not LangGraph) |
 | Backend | FastAPI + asyncpg + SQLAlchemy async |
 | Message queue | Redis pub/sub |
 | Database | PostgreSQL 16 |
-| Cache | Redis 7 |
-| Broker | Alpaca (paper by default) |
-| Market data | yfinance, Alpaca Data API |
+| Broker | Alpaca (paper by default, enforced server-side) |
+| Market data | Alpaca-first (bars, snapshots, options chain), NASDAQ public calendar, yfinance as last-resort fallback only |
 | Frontend | React 18 + TypeScript + Vite + Tailwind CSS |
 | Animations | Framer Motion |
-| Charts | TradingView Lightweight Charts (candlestick), Recharts (portfolio/backtest) |
+| Charts | Recharts |
 | State | Zustand + TanStack Query |
-| Infra | Docker Compose (9 services) |
+| Infra | Docker Compose locally; Vercel + Render + Neon + Upstash in production, entirely on free tiers |
 
 ---
 
-## Quick Start
-
-### Prerequisites
-- Docker + Docker Compose
-- Alpaca paper trading account (free at [alpaca.markets](https://alpaca.markets))
-- LLM API key (Anthropic or NVIDIA NIM)
-
-### Setup
+## Quick start
 
 ```bash
 git clone https://github.com/Yash3561/tradingagents-platform.git
 cd tradingagents-platform
+cp .env.example .env      # fill in ANTHROPIC_API_KEY (or NVIDIA_API_KEY for free inference) + Alpaca paper keys
 
-cp .env.example .env
-# Edit .env and fill in your API keys
-```
-
-Required `.env` values:
-
-```bash
-ANTHROPIC_API_KEY=sk-ant-...      # or use NVIDIA_API_KEY for free inference
-ALPACA_API_KEY=PK...
-ALPACA_API_SECRET=...
-ALPACA_BASE_URL=https://paper-api.alpaca.markets   # keep this — paper only
-```
-
-### Run
-
-```bash
-make up         # starts all 9 services
+make up                   # starts all 9 services
 ```
 
 - Frontend: http://localhost:5173
 - Backend API: http://localhost:8000
 - API docs: http://localhost:8000/docs
 
-### Local dev (no Docker)
-
 ```bash
-make frontend   # npm install + vite dev
-make backend    # uvicorn --reload
+make frontend    # local dev: npm install + vite dev server
+make backend     # local dev: uvicorn --reload
+```
+
+Full deploy walkthrough (Vercel/Render/Neon/Upstash, entirely free-tier) is in [`DEPLOY.md`](DEPLOY.md).
+
+---
+
+## Repository layout
+
+```
+backend/app/
+├── agents/           # Agent contracts, the structured debate runner, momentum/PEAD/options engines
+├── research/          # Walk-forward tournament engine, data layer, run scripts
+├── workers/           # Scanner, scheduler, position monitor, intraday engine, circuit breakers
+├── api/v1/            # REST endpoints
+├── core/              # Market data (Alpaca-first), crypto, rate limiting, mailer, pnl
+└── db/models/         # ORM models — trades, agent_runs, users, refresh tokens, settings
+
+frontend/src/
+├── pages/             # Dashboard, Agent Hub, Scanner, Strategy Lab, Track Record, Admin, ...
+└── components/        # Agent debate visualization, data display, layout
+
+docs/research/          # Committed walk-forward tournament reports (JSON + markdown)
+GRADUATION.md           # Live scorecard: what's proven vs. what's still a forward experiment
+INCIDENTS.md            # Operational landmines found in production, and how they were fixed
 ```
 
 ---
 
-## Agent Pipeline
+## Database schema (abridged)
 
-```
-POST /api/v1/agents/run { ticker, debate_rounds, model }
-                │
-    ┌───────────┼───────────────────┐
-    │           │           │       │
-Technical   Sentiment   News   Fundamental
-Analyst     Analyst   Analyst   Analyst
-    │           │           │       │
-    └───────────┴───────────┴───────┘
-                │  AnalystBundle
-                ▼
-        Researcher Debate
-        (Bull vs Bear, N rounds)
-                │
-                ▼
-          Risk Manager
-          (veto power — approved: bool)
-                │
-                ▼
-        Portfolio Manager
-        → BUY / HOLD / SELL + order params
-                │
-        ┌───────┴────────┐
-        │                │
-    Save to DB      Broadcast WS
-    (full audit)    → frontend animates
-```
-
-Every step streams a WebSocket event to the frontend in real-time.
-
----
-
-## Agent Discipline Rules
-
-| Rule | Value |
-|------|-------|
-| Min confidence to signal | 0.60 |
-| Min confidence to trade | 0.70 |
-| Min analyst consensus | 3 of 4 |
-| Max position size | 5% portfolio |
-| Mandatory stop-loss | 7% default |
-| HIGH risk → auto-reject | always |
-
-> "Being wrong on a HOLD costs opportunity. Being wrong on a BUY costs real money."
-
----
-
-## Database Schema
-
-**`agent_runs`** — full debate log + typed contract JSON per run
-
-**`trades`** — every trade with complete AI reasoning audit trail (JSONB)
-
-**`equity_snapshots`** — 15-minute equity curve snapshots
-
-**`notifications`**, **`activity_log`**, **`settings`**, **`users`**
-
-Run migrations after schema changes:
-```bash
-docker exec tap_backend alembic upgrade head
-```
-
----
-
-## Scanner
-
-The scanner pre-screens 40+ stocks using free technical signals (no AI cost):
-- RSI-14, MACD crossover, MA50/MA200 trend, 1W/1M/3M momentum, volume ratio
-- Custom filter criteria via the UI (RSI range, volume spike, direction, MA filters)
-- Top candidates run through the full 7-agent AI pipeline
-- VIX gate: suppresses BUY signals when VIX > 30
-- Circuit breakers: blocks scan under extreme drawdown conditions
-
----
-
-## Environment Variables
-
-See `.env.example` for the full list. Key variables:
-
-```bash
-ANTHROPIC_API_KEY        # Claude API
-NVIDIA_API_KEY           # NVIDIA NIM (free tier available)
-ALPACA_API_KEY           # Alpaca broker
-ALPACA_API_SECRET
-ALPACA_BASE_URL          # https://paper-api.alpaca.markets (default)
-POSTGRES_USER/PASSWORD/DB
-REDIS_URL
-LLM_MODEL                # default: deepseek-ai/deepseek-v4-flash
-AGENT_DEBATE_ROUNDS      # default: 2
-```
+**`agent_runs`** — full debate log + typed contract JSON per run, across all six engines
+**`trades`** — every trade with a complete reasoning audit trail (JSONB), tagged by engine
+**`equity_snapshots`** — 15-minute equity curve, one series per user
+**`users`**, **`broker_connections`**, **`refresh_tokens`**, **`user_settings`**, **`notifications`**
 
 ---
 
