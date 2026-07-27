@@ -18,7 +18,7 @@ router = APIRouter()
 # Money events also go out by EMAIL (when SMTP is configured and the user
 # hasn't turned off the email_trade_notifications setting). Scan chatter and
 # briefs stay in-app only — the inbox should only ring when money moved.
-EMAIL_TYPES = {"trade_placed", "stop_loss_hit", "take_profit_hit", "circuit_breaker"}
+EMAIL_TYPES = {"trade_placed", "trade_closed", "stop_loss_hit", "take_profit_hit", "circuit_breaker"}
 
 
 async def _email_notification(user_id: int, title: str, body: str,

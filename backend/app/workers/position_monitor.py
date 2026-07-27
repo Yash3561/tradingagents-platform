@@ -7,7 +7,6 @@ The legacy env-configured account (user_id NULL) is monitored too.
 """
 from __future__ import annotations
 import asyncio
-import uuid
 from datetime import datetime, UTC
 import structlog
 
@@ -68,8 +67,12 @@ async def _mark_trade_closed(trade_id: str, reason: str, pnl: float):
 
 async def _save_close_notification(user_id: int | None, ticker: str, reason: str,
                                    pnl_dollar: float, pnl_pct: float):
-    from app.db.models.notification import Notification
-    from app.core.postgres import AsyncSessionLocal
+    # Routes through the shared helper (not a direct Notification() insert)
+    # specifically so this gets the same fire-and-forget email mirror that
+    # trade_placed already gets — this function used to build the row itself
+    # and never emailed a single automated close (stop-loss, take-profit, or
+    # time-exit) on any account, regardless of type.
+    from app.api.v1.notifications import save_notification
 
     labels = {"stop_loss": ("stop_loss_hit", "Stop-loss"),
              "take_profit": ("take_profit_hit", "Take-profit"),
@@ -81,18 +84,10 @@ async def _save_close_notification(user_id: int | None, ticker: str, reason: str
         f"{ticker} position automatically closed via {reason.replace('_', '-')}. "
         f"P&L: {pnl_sign}${pnl_dollar:,.2f} ({pnl_pct:+.2f}%)"
     )
-    async with AsyncSessionLocal() as db:
-        notif = Notification(
-            id=str(uuid.uuid4()),
-            user_id=user_id,
-            type=notif_type,
-            title=title,
-            body=body,
-            ticker=ticker,
-            pnl=round(pnl_dollar, 2),
-        )
-        db.add(notif)
-        await db.commit()
+    await save_notification(
+        type=notif_type, title=title, body=body,
+        ticker=ticker, pnl=round(pnl_dollar, 2), user_id=user_id,
+    )
 
 
 async def _check_account(user_id: int | None, broker) -> list[dict]:
